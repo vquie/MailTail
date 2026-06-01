@@ -102,8 +102,8 @@ func (p *DomainPolicy) OnMailFrom(_ SessionMetadata, from string) *ResponseError
 	return nil
 }
 
-func (p *DomainPolicy) OnRcptTo(_ SessionMetadata, recipient string) *ResponseError {
-	if response := p.mailFail.MatchRcpt(recipient); response != nil {
+func (p *DomainPolicy) OnRcptTo(session SessionMetadata, recipient string) *ResponseError {
+	if response := p.mailFail.MatchRcpt(session.MailFrom, recipient); response != nil {
 		return response
 	}
 	if p.acceptedRcptDomains.Empty() {
@@ -119,7 +119,7 @@ func (p *DomainPolicy) OnRcptTo(_ SessionMetadata, recipient string) *ResponseEr
 }
 
 func (p *DomainPolicy) OnData(session SessionMetadata) *ResponseError {
-	if response := p.mailFail.MatchData(session.RcptTo); response != nil {
+	if response := p.mailFail.MatchData(session.MailFrom, session.RcptTo); response != nil {
 		return response
 	}
 	return nil

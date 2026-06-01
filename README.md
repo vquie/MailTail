@@ -302,6 +302,17 @@ rules:
     code: 552
     enhancedCode: "5.2.2"
     message: "Mailbox full"
+
+  - name: greylist
+    trigger: mf-greylist
+    stage: rcpt
+    action: greylist
+    allowAfter: 1
+    minRetryAfter: 5m
+    resetAfter: 1h
+    code: 451
+    enhancedCode: "4.7.1"
+    message: "Try again later"
 ```
 
 Triggering is done via plus-addressing in the localpart:
@@ -315,13 +326,31 @@ Supported stages for localpart-driven rules:
 - `rcpt`
 - `data`
 
-The current implementation supports `action: reject` and returns the full SMTP reply composed from `code`, optional `enhancedCode`, and `message`.
+Supported actions:
+
+- `reject`
+  Returns the configured SMTP failure every time.
+- `greylist`
+  Returns a temporary failure for the first matching attempts and then accepts later retries for the same sender/recipient/trigger combination.
+  `allowAfter: 1` means "reject once, accept on the second attempt".
+  `minRetryAfter` defines how long the sender must wait before the retry is accepted.
+  `resetAfter` defines when the greylist state expires and becomes temporary again. The default is `1h`.
 
 Examples:
 
 - `550 5.1.1 User unknown`
 - `451 4.7.1 Try again later`
 - `552 5.2.2 Mailbox full`
+
+For greylisting, the state key is based on:
+
+- rule trigger
+- stage
+- `MAIL FROM`
+- matching recipient address
+
+That makes repeated retry tests deterministic for a given sender/recipient pair.
+If `minRetryAfter` is set, retries that arrive too early continue to receive the temporary failure until the wait period has passed.
 
 ## Configuration
 

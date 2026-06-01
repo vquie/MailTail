@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -13,27 +15,41 @@ type MailFailConfig struct {
 }
 
 type MailFailRule struct {
-	Name         string `yaml:"name"`
-	Trigger      string `yaml:"trigger"`
-	Stage        string `yaml:"stage"`
-	Action       string `yaml:"action"`
-	Code         int    `yaml:"code"`
-	EnhancedCode string `yaml:"enhancedCode"`
-	Message      string `yaml:"message"`
+	Name          string `yaml:"name"`
+	Trigger       string `yaml:"trigger"`
+	Stage         string `yaml:"stage"`
+	Action        string `yaml:"action"`
+	AllowAfter    int    `yaml:"allowAfter"`
+	MinRetryAfter string `yaml:"minRetryAfter"`
+	ResetAfter    string `yaml:"resetAfter"`
+	Code          int    `yaml:"code"`
+	EnhancedCode  string `yaml:"enhancedCode"`
+	Message       string `yaml:"message"`
 }
 
 type MailFailEngine struct {
-	rules []mailFailRule
+	rules          []mailFailRule
+	greylistStates map[string]greylistState
+	mu             sync.Mutex
 }
 
 type mailFailRule struct {
-	name         string
-	trigger      string
-	stage        string
-	action       string
-	code         int
-	enhancedCode string
-	message      string
+	name          string
+	trigger       string
+	stage         string
+	action        string
+	allowAfter    int
+	minRetryAfter time.Duration
+	resetAfter    time.Duration
+	code          int
+	enhancedCode  string
+	message       string
+}
+
+type greylistState struct {
+	firstSeen time.Time
+	lastSeen  time.Time
+	attempts  int
 }
 
 func LoadMailFailEngine(path string) (*MailFailEngine, error) {
@@ -52,7 +68,8 @@ func LoadMailFailEngine(path string) (*MailFailEngine, error) {
 
 func NewMailFailEngine(config MailFailConfig) (*MailFailEngine, error) {
 	engine := &MailFailEngine{
-		rules: make([]mailFailRule, 0, len(config.Rules)),
+		rules:          make([]mailFailRule, 0, len(config.Rules)),
+		greylistStates: make(map[string]greylistState),
 	}
 
 	for _, rule := range config.Rules {
@@ -78,26 +95,26 @@ func (e *MailFailEngine) RuleCount() int {
 }
 
 func (e *MailFailEngine) MatchMailFrom(address string) *ResponseError {
-	return e.match("mailfrom", address)
+	return e.match("mailfrom", "", address)
 }
 
-func (e *MailFailEngine) MatchRcpt(address string) *ResponseError {
-	return e.match("rcpt", address)
+func (e *MailFailEngine) MatchRcpt(mailFrom, address string) *ResponseError {
+	return e.match("rcpt", mailFrom, address)
 }
 
-func (e *MailFailEngine) MatchData(recipients []string) *ResponseError {
+func (e *MailFailEngine) MatchData(mailFrom string, recipients []string) *ResponseError {
 	if e == nil {
 		return nil
 	}
 	for _, recipient := range recipients {
-		if response := e.match("data", recipient); response != nil {
+		if response := e.match("data", mailFrom, recipient); response != nil {
 			return response
 		}
 	}
 	return nil
 }
 
-func (e *MailFailEngine) match(stage, address string) *ResponseError {
+func (e *MailFailEngine) match(stage, mailFrom, address string) *ResponseError {
 	if e == nil {
 		return nil
 	}
@@ -113,10 +130,58 @@ func (e *MailFailEngine) match(stage, address string) *ResponseError {
 			continue
 		}
 		if containsExactSegment(segments, rule.trigger) {
+			if rule.action == "greylist" {
+				return e.greylistResponse(rule, mailFrom, address)
+			}
 			return &ResponseError{
 				Code:    rule.code,
 				Message: rule.replyText(),
 			}
+		}
+	}
+
+	return nil
+}
+
+func (e *MailFailEngine) greylistResponse(rule mailFailRule, mailFrom, address string) *ResponseError {
+	key := rule.greylistKey(mailFrom, address)
+	now := time.Now().UTC()
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	state, ok := e.greylistStates[key]
+	if ok && rule.resetAfter > 0 && now.Sub(state.lastSeen) >= rule.resetAfter {
+		ok = false
+	}
+	if !ok {
+		state = greylistState{
+			firstSeen: now,
+			lastSeen:  now,
+			attempts:  1,
+		}
+		e.greylistStates[key] = state
+		return &ResponseError{
+			Code:    rule.code,
+			Message: rule.replyText(),
+		}
+	}
+
+	state.attempts++
+	state.lastSeen = now
+	e.greylistStates[key] = state
+
+	if state.attempts <= rule.allowAfter {
+		return &ResponseError{
+			Code:    rule.code,
+			Message: rule.replyText(),
+		}
+	}
+
+	if rule.minRetryAfter > 0 && now.Sub(state.firstSeen) < rule.minRetryAfter {
+		return &ResponseError{
+			Code:    rule.code,
+			Message: rule.replyText(),
 		}
 	}
 
@@ -129,6 +194,7 @@ func compileMailFailRule(rule MailFailRule) (mailFailRule, error) {
 		trigger:      strings.ToLower(strings.TrimSpace(rule.Trigger)),
 		stage:        strings.ToLower(strings.TrimSpace(rule.Stage)),
 		action:       strings.ToLower(strings.TrimSpace(rule.Action)),
+		allowAfter:   rule.AllowAfter,
 		code:         rule.Code,
 		enhancedCode: strings.TrimSpace(rule.EnhancedCode),
 		message:      strings.TrimSpace(rule.Message),
@@ -148,7 +214,10 @@ func compileMailFailRule(rule MailFailRule) (mailFailRule, error) {
 	if compiled.action == "" {
 		compiled.action = "reject"
 	}
-	if compiled.action != "reject" {
+	switch compiled.action {
+	case "reject":
+	case "greylist":
+	default:
 		return mailFailRule{}, fmt.Errorf("mailfail rule %q has unsupported action %q", compiled.name, rule.Action)
 	}
 	if compiled.code < 400 || compiled.code > 599 {
@@ -156,6 +225,30 @@ func compileMailFailRule(rule MailFailRule) (mailFailRule, error) {
 	}
 	if compiled.message == "" {
 		return mailFailRule{}, fmt.Errorf("mailfail rule %q is missing message", compiled.name)
+	}
+	if compiled.action == "greylist" {
+		if compiled.stage != "rcpt" && compiled.stage != "data" {
+			return mailFailRule{}, fmt.Errorf("mailfail rule %q uses action greylist but stage %q is unsupported", compiled.name, rule.Stage)
+		}
+		if compiled.code < 400 || compiled.code > 499 {
+			return mailFailRule{}, fmt.Errorf("mailfail rule %q uses action greylist but code %d is not temporary", compiled.name, rule.Code)
+		}
+		if compiled.allowAfter <= 0 {
+			compiled.allowAfter = 1
+		}
+		minRetryAfter, err := parseOptionalDuration(rule.MinRetryAfter)
+		if err != nil {
+			return mailFailRule{}, fmt.Errorf("mailfail rule %q has invalid minRetryAfter %q: %w", compiled.name, rule.MinRetryAfter, err)
+		}
+		compiled.minRetryAfter = minRetryAfter
+		resetAfter, err := parseOptionalDuration(rule.ResetAfter)
+		if err != nil {
+			return mailFailRule{}, fmt.Errorf("mailfail rule %q has invalid resetAfter %q: %w", compiled.name, rule.ResetAfter, err)
+		}
+		if resetAfter <= 0 {
+			resetAfter = time.Hour
+		}
+		compiled.resetAfter = resetAfter
 	}
 
 	return compiled, nil
@@ -166,6 +259,23 @@ func (r mailFailRule) replyText() string {
 		return r.message
 	}
 	return r.enhancedCode + " " + r.message
+}
+
+func (r mailFailRule) greylistKey(mailFrom, address string) string {
+	return strings.Join([]string{
+		r.stage,
+		r.trigger,
+		strings.ToLower(strings.TrimSpace(mailFrom)),
+		strings.ToLower(strings.TrimSpace(address)),
+	}, "|")
+}
+
+func parseOptionalDuration(raw string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	return time.ParseDuration(raw)
 }
 
 func extractLocalPart(address string) (string, bool) {

@@ -10,7 +10,10 @@ rules:
   - name: greylist
     trigger: mf-greylist
     stage: rcpt
-    action: reject
+    action: greylist
+    allowAfter: 1
+    minRetryAfter: 5m
+    resetAfter: 1h
     code: 451
     enhancedCode: "4.7.1"
     message: "Try again later"
