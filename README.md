@@ -94,6 +94,32 @@ make docker-rm
 
 Data is persisted in the Docker volume `mailtail-data` by default.
 
+### GitHub release workflow
+
+Pushing a Git tag that starts with `v` creates a GitHub Release and publishes a multi-arch image to GHCR.
+
+Example:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Published image:
+
+```text
+ghcr.io/vquie/mailtail:v0.1.0
+ghcr.io/vquie/mailtail:v0.1
+ghcr.io/vquie/mailtail:v0
+ghcr.io/vquie/mailtail:0.1.0
+ghcr.io/vquie/mailtail:0.1
+ghcr.io/vquie/mailtail:0
+ghcr.io/vquie/mailtail:latest
+```
+
+The workflow uses the repository `GITHUB_TOKEN`, so no extra registry secret is required as long as GitHub Actions has permission to write packages.
+The Git tag itself must start with `v`, for example `v0.1.0`.
+
 ## REST API
 
 - `GET /api/messages`
