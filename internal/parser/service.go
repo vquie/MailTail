@@ -10,7 +10,7 @@ import (
 	"net/mail"
 	"strings"
 
-	"github.com/vitaliquiering/mailtail/internal/models"
+	"github.com/vquie/MailTail/internal/models"
 )
 
 type Service struct{}

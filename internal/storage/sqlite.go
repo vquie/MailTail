@@ -13,7 +13,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/vitaliquiering/mailtail/internal/models"
+	"github.com/vquie/MailTail/internal/models"
 )
 
 //go:embed migrations/*.sql

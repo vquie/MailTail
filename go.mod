@@ -1,4 +1,4 @@
-module github.com/vitaliquiering/mailtail
+module github.com/vquie/MailTail
 
 go 1.25.0
 

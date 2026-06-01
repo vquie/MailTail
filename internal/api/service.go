@@ -3,9 +3,9 @@ package api
 import (
 	"context"
 
-	"github.com/vitaliquiering/mailtail/internal/models"
-	"github.com/vitaliquiering/mailtail/internal/parser"
-	"github.com/vitaliquiering/mailtail/internal/storage"
+	"github.com/vquie/MailTail/internal/models"
+	"github.com/vquie/MailTail/internal/parser"
+	"github.com/vquie/MailTail/internal/storage"
 )
 
 type Service struct {

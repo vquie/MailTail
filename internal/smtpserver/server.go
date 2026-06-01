@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vitaliquiering/mailtail/internal/parser"
-	"github.com/vitaliquiering/mailtail/internal/storage"
+	"github.com/vquie/MailTail/internal/parser"
+	"github.com/vquie/MailTail/internal/storage"
 )
 
 type Server struct {
