@@ -9,12 +9,13 @@ import (
 )
 
 type Service struct {
-	store  storage.Store
-	parser *parser.Service
+	store   storage.Store
+	parser  *parser.Service
+	version string
 }
 
-func NewService(store storage.Store, parser *parser.Service) *Service {
-	return &Service{store: store, parser: parser}
+func NewService(store storage.Store, parser *parser.Service, version string) *Service {
+	return &Service{store: store, parser: parser, version: version}
 }
 
 func (s *Service) ListMessages(ctx context.Context, query string) ([]models.Message, error) {
@@ -58,4 +59,8 @@ func (s *Service) DeleteAllMessages(ctx context.Context) error {
 
 func (s *Service) Stats(ctx context.Context) (models.Stats, error) {
 	return s.store.Stats(ctx)
+}
+
+func (s *Service) AppInfo() models.AppInfo {
+	return models.AppInfo{Version: s.version}
 }

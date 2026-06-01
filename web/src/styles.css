@@ -173,6 +173,13 @@ input {
   align-content: start;
 }
 
+.sidebarVersion {
+  margin-top: 8px;
+  color: rgb(248 243 234 / 46%);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}
+
 .messageItem {
   text-align: left;
   border: 1px solid rgb(255 255 255 / 5%);

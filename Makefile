@@ -10,6 +10,7 @@ GO_ENV := GOCACHE=$(GO_CACHE) GOMODCACHE=$(GO_MOD_CACHE)
 HTTP_ADDR ?= :8080
 SMTP_ADDR ?= :8025
 WEB_DIST := $(WEB_DIR)/dist
+APP_VERSION ?= dev
 DOCKER_IMAGE ?= mailtail:dev
 DOCKER_CONTAINER ?= mailtail
 DOCKER_VOLUME ?= mailtail-data
@@ -77,7 +78,7 @@ lint-fix:
 	docker run $(MEGALINTER_COMMON_ARGS) $(MEGALINTER_COMMON_ENV) -e APPLY_FIXES=all $(MEGALINTER_IMAGE)
 
 build: setup build-web
-	env $(GO_ENV) $(GO) build -o $(APP) ./cmd/mailtail
+	env $(GO_ENV) $(GO) build -ldflags "-X main.version=$(APP_VERSION)" -o $(APP) ./cmd/mailtail
 
 build-web:
 	cd $(WEB_DIR) && $(NPM) run build
@@ -102,7 +103,7 @@ dev-web:
 dev: run
 
 docker-build:
-	docker build -t $(DOCKER_IMAGE) .
+	docker build --build-arg APP_VERSION=$(APP_VERSION) -t $(DOCKER_IMAGE) .
 
 docker-run: docker-build
 	docker volume create $(DOCKER_VOLUME)

@@ -34,6 +34,7 @@ func NewServer(addr, staticDir string, service *Service, logger *log.Logger, aut
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/app", server.handleAppInfo)
 	mux.HandleFunc("/api/messages", server.handleMessages)
 	mux.HandleFunc("/api/messages/", server.handleMessageByID)
 	mux.HandleFunc("/api/stats", server.handleStats)
@@ -197,6 +198,14 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
+func (s *Server) handleAppInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.service.AppInfo())
+}
+
 func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		w.WriteHeader(http.StatusNotFound)
@@ -248,6 +257,8 @@ func isNoisyPollingRequest(r *http.Request) bool {
 	}
 
 	switch {
+	case r.URL.Path == "/api/app":
+		return true
 	case r.URL.Path == "/api/stats":
 		return true
 	case r.URL.Path == "/api/messages":

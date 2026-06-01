@@ -1,4 +1,4 @@
-import type { Message, Stats } from "./types";
+import type { AppInfo, Message, Stats } from "./types";
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const response = await fetch(input, withCSRF(init));
@@ -29,6 +29,10 @@ export async function fetchMessage(id: number): Promise<Message> {
 
 export async function fetchStats(): Promise<Stats> {
   return request<Stats>("/api/stats");
+}
+
+export async function fetchAppInfo(): Promise<AppInfo> {
+  return request<AppInfo>("/api/app");
 }
 
 export async function deleteMessage(id: number): Promise<void> {

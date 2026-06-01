@@ -18,6 +18,8 @@ import (
 	"github.com/vquie/MailTail/internal/storage"
 )
 
+var version = "dev"
+
 func main() {
 	logger := log.New(os.Stdout, "mailtail ", log.LstdFlags|log.Lmsgprefix)
 
@@ -37,6 +39,7 @@ func main() {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		logger.Fatalf("create data dir: %v", err)
 	}
+	logger.Printf("version: %s", version)
 	if len(acceptedRcptDomains) == 0 {
 		logger.Printf("warning: MAILTAIL_ACCEPTED_RCPT_DOMAINS is empty, accepting RCPT TO for all domains")
 	} else {
@@ -90,7 +93,7 @@ func main() {
 	defer store.Close()
 
 	parseSvc := parser.NewService()
-	apiSvc := api.NewService(store, parseSvc)
+	apiSvc := api.NewService(store, parseSvc, version)
 	httpServer := api.NewServer(httpAddr, staticDir, apiSvc, logger, api.AuthConfig{
 		Username: authUsername,
 		Password: authPassword,

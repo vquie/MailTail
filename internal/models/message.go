@@ -73,3 +73,7 @@ type Stats struct {
 	TotalSize        int64      `json:"totalSize"`
 	LatestReceivedAt *time.Time `json:"latestReceivedAt,omitempty"`
 }
+
+type AppInfo struct {
+	Version string `json:"version"`
+}

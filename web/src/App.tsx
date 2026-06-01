@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   attachmentUrl,
+  fetchAppInfo,
   clearInbox,
   deleteMessage,
   fetchMessage,
@@ -24,6 +25,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [stats, setStats] = useState<Stats>({ messageCount: 0, totalSize: 0 });
+  const [version, setVersion] = useState("dev");
   const [query, setQuery] = useState("");
   const [queryInput, setQueryInput] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("html");
@@ -89,12 +91,14 @@ export function App() {
       if (options.setBusy ?? true) {
         setLoading(true);
       }
-      const [messageList, currentStats] = await Promise.all([
+      const [messageList, currentStats, appInfo] = await Promise.all([
         fetchMessages(search),
-        fetchStats()
+        fetchStats(),
+        fetchAppInfo()
       ]);
       setMessages(messageList);
       setStats(currentStats);
+      setVersion(appInfo.version);
 
       const preferredId = options.preferredId ?? selectedIdRef.current;
       const nextSelectedId =
@@ -273,6 +277,8 @@ export function App() {
             </div>
           ) : null}
         </div>
+
+        <div className="sidebarVersion">Version {version}</div>
       </aside>
 
       <main className="contentPane">

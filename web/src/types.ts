@@ -37,3 +37,7 @@ export type Stats = {
   totalSize: number;
   latestReceivedAt?: string;
 };
+
+export type AppInfo = {
+  version: string;
+};
