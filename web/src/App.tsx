@@ -27,6 +27,7 @@ export function App() {
   const [query, setQuery] = useState("");
   const [queryInput, setQueryInput] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("html");
+  const [attachmentsExpanded, setAttachmentsExpanded] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const queryRef = useRef(query);
@@ -51,6 +52,10 @@ export function App() {
   useEffect(() => {
     selectedMessageRef.current = selectedMessage;
   }, [selectedMessage]);
+
+  useEffect(() => {
+    setAttachmentsExpanded(true);
+  }, [selectedMessage?.id]);
 
   useEffect(() => {
     void loadOverview(query, {
@@ -204,6 +209,7 @@ export function App() {
   }, [activeTab, availableTabs]);
 
   const hasMessages = messages.length > 0;
+  const hasAttachments = Boolean(selectedMessage?.attachments?.length);
   const smtpExampleRecipient = "test@example.test";
   const smtpExampleSender = "sender@example.test";
 
@@ -312,7 +318,7 @@ export function App() {
               </div>
             </div>
 
-            <div className="detailGrid">
+            <div className={hasAttachments && attachmentsExpanded ? "detailGrid hasAttachments" : "detailGrid"}>
               <section className="viewerCard">
                 <div className="viewerHeader">
                   <div className="tabs">
@@ -339,30 +345,38 @@ export function App() {
                 )}
               </section>
 
-              <section className="attachmentsCard">
-                <div className="attachmentsHeader">
-                  <h3>Attachments</h3>
-                  <span>{selectedMessage.attachments?.length ?? 0}</span>
-                </div>
-                {selectedMessage.attachments?.length ? (
-                  <div className="attachmentList">
-                    {selectedMessage.attachments.map((attachment) => (
-                      <a
-                        key={attachment.id}
-                        className="attachmentItem"
-                        href={attachmentUrl(selectedMessage.id, attachment.id)}
+              {hasAttachments ? (
+                <section className={attachmentsExpanded ? "attachmentsCard" : "attachmentsToggleCard"}>
+                  <div className="attachmentsHeader">
+                    <h3>Attachments</h3>
+                    <div className="attachmentsHeaderActions">
+                      <span>{selectedMessage.attachments?.length ?? 0}</span>
+                      <button
+                        className="ghostButton compactButton attachmentsToggle"
+                        onClick={() => setAttachmentsExpanded((current) => !current)}
                       >
-                        <strong>{attachment.fileName}</strong>
-                        <span>
-                          {attachment.contentType} · {formatBytes(attachment.size)}
-                        </span>
-                      </a>
-                    ))}
+                        {attachmentsExpanded ? "Collapse" : "Expand"}
+                      </button>
+                    </div>
                   </div>
-                ) : (
-                  <p className="emptyState">No attachments in this message.</p>
-                )}
-              </section>
+                  {attachmentsExpanded ? (
+                    <div className="attachmentList">
+                      {selectedMessage.attachments?.map((attachment) => (
+                        <a
+                          key={attachment.id}
+                          className="attachmentItem"
+                          href={attachmentUrl(selectedMessage.id, attachment.id)}
+                        >
+                          <strong>{attachment.fileName}</strong>
+                          <span>
+                            {attachment.contentType} · {formatBytes(attachment.size)}
+                          </span>
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
             </div>
           </section>
         ) : (

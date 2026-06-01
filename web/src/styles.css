@@ -122,6 +122,12 @@ input {
   color: rgb(248 243 234 / 70%);
 }
 
+.attachmentsHeaderActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .statPill span,
 .statPill strong {
   line-height: 1;
@@ -293,6 +299,10 @@ input {
   white-space: nowrap;
 }
 
+.attachmentsToggle {
+  padding: 7px 10px;
+}
+
 .messageWorkspace {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -310,10 +320,14 @@ input {
 .detailGrid {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: stretch;
   overflow: hidden;
+}
+
+.detailGrid.hasAttachments {
+  grid-template-columns: minmax(0, 1fr) 260px;
 }
 
 .emptyHero {
@@ -394,6 +408,15 @@ input {
   grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
   overflow: auto;
+}
+
+.attachmentsToggleCard {
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 4.5%);
+  border-radius: 8px;
+  box-shadow: 0 14px 40px rgb(0 0 0 / 18%);
+  padding: 12px;
+  align-self: start;
 }
 
 .viewerCard {
