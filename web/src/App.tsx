@@ -165,16 +165,12 @@ export function App() {
       return {
         html: "<p>No message selected.</p>",
         text: "No message selected.",
-        headers: "",
         raw: ""
       };
     }
     return {
       html: selectedMessage.htmlBody || "<p>No HTML part available.</p>",
       text: selectedMessage.textBody || "No text part available.",
-      headers: (selectedMessage.headers ?? [])
-        .map((header) => `${header.key}: ${header.value}`)
-        .join("\n"),
       raw: selectedMessage.raw || ""
     };
   }, [selectedMessage]);
@@ -340,6 +336,19 @@ export function App() {
                     sandbox=""
                     srcDoc={content.html}
                   />
+                ) : activeTab === "headers" ? (
+                  <div className="headersList">
+                    {(selectedMessage.headers ?? []).length ? (
+                      selectedMessage.headers?.map((header, index) => (
+                        <div key={`${header.key}-${index}`} className="headerRow">
+                          <span className="headerKey">{header.key}</span>
+                          <span className="headerValue">{header.value}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="emptyState">No headers available.</p>
+                    )}
+                  </div>
                 ) : (
                   <pre className="codeBlock">{content[activeTab]}</pre>
                 )}

@@ -449,6 +449,39 @@ input {
   line-height: 1.5;
 }
 
+.headersList {
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.headerRow {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgb(255 255 255 / 6%);
+}
+
+.headerKey {
+  color: rgb(248 243 234 / 62%);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.headerValue {
+  color: #dce7f9;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .attachmentsHeader {
   display: flex;
   justify-content: space-between;
@@ -529,5 +562,10 @@ input {
 
   .topToolbar button {
     flex: 1 1 0;
+  }
+
+  .headerRow {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 }
