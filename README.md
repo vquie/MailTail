@@ -369,6 +369,7 @@ Environment variables:
 - `MAILTAIL_DATA_DIR` default: `data`
 - `MAILTAIL_HTTP_ADDR` default: `:8080`
 - `MAILTAIL_SMTP_ADDR` default: `:8025`
+- `MAILTAIL_SMTP_LOG_VERBOSE` default: `false`, logs only accepted messages and rejects/errors. Set to `true` for per-command SMTP tracing.
 - `MAILTAIL_WEB_DIR` default: `web/dist`
 - `MAILTAIL_AUTH_USERNAME` default: empty, disables login protection for web UI and API and logs a startup warning
 - `MAILTAIL_AUTH_PASSWORD` default: empty, disables login protection for web UI and API and logs a startup warning

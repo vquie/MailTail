@@ -17,20 +17,22 @@ import (
 )
 
 type Server struct {
-	addr   string
-	store  storage.Store
-	parser *parser.Service
-	policy SMTPResponsePolicy
-	logger *log.Logger
+	addr       string
+	store      storage.Store
+	parser     *parser.Service
+	policy     SMTPResponsePolicy
+	logger     *log.Logger
+	logVerbose bool
 }
 
-func NewServer(addr string, store storage.Store, parser *parser.Service, policy SMTPResponsePolicy, logger *log.Logger) *Server {
+func NewServer(addr string, store storage.Store, parser *parser.Service, policy SMTPResponsePolicy, logger *log.Logger, logVerbose bool) *Server {
 	return &Server{
-		addr:   addr,
-		store:  store,
-		parser: parser,
-		policy: policy,
-		logger: logger,
+		addr:       addr,
+		store:      store,
+		parser:     parser,
+		policy:     policy,
+		logger:     logger,
+		logVerbose: logVerbose,
 	}
 }
 
@@ -65,11 +67,13 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 
 	remoteIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
 	session := SessionMetadata{RemoteIP: remoteIP}
-	if err := s.sendLine(conn, "220 MailTail SMTP ready"); err != nil {
+	if response := s.policy.OnConnect(session); response != nil {
+		s.logSMTPAction(session, "connect-rejected", "", "", response)
+		_ = s.sendStatus(conn, response.Code, response.Message)
 		return
 	}
-	if response := s.policy.OnConnect(session); response != nil {
-		_ = s.sendStatus(conn, response.Code, response.Message)
+	s.logSMTPAction(session, "connect-accepted", "", "", nil)
+	if err := s.sendLine(conn, "220 MailTail SMTP ready"); err != nil {
 		return
 	}
 
@@ -91,44 +95,53 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		switch command {
 		case "EHLO", "HELO":
 			session.Helo = argument
+			s.logSMTPAction(session, "helo", "", "", nil)
 			if err := s.sendLine(conn, "250-Hello "+argument+"\r\n250 SIZE 10485760"); err != nil {
 				return
 			}
 		case "MAIL":
 			from, ok := parsePathArgument(argument, "FROM:")
 			if !ok {
+				s.logSMTPAction(session, "mailfrom-rejected", "", "", &ResponseError{Code: 501, Message: "Syntax: MAIL FROM:<address>"})
 				_ = s.sendStatus(conn, 501, "Syntax: MAIL FROM:<address>")
 				continue
 			}
 			if response := s.policy.OnMailFrom(session, from); response != nil {
+				s.logSMTPAction(session, "mailfrom-rejected", from, "", response)
 				_ = s.sendStatus(conn, response.Code, response.Message)
 				continue
 			}
 			session.MailFrom = from
 			session.RcptTo = nil
+			s.logSMTPAction(session, "mailfrom-accepted", from, "", nil)
 			if err := s.sendStatus(conn, 250, "Sender OK"); err != nil {
 				return
 			}
 		case "RCPT":
 			recipient, ok := parsePathArgument(argument, "TO:")
 			if !ok {
+				s.logSMTPAction(session, "rcpt-rejected", "", "", &ResponseError{Code: 501, Message: "Syntax: RCPT TO:<address>"})
 				_ = s.sendStatus(conn, 501, "Syntax: RCPT TO:<address>")
 				continue
 			}
 			if response := s.policy.OnRcptTo(session, recipient); response != nil {
+				s.logSMTPAction(session, "rcpt-rejected", "", recipient, response)
 				_ = s.sendStatus(conn, response.Code, response.Message)
 				continue
 			}
 			session.RcptTo = append(session.RcptTo, recipient)
+			s.logSMTPAction(session, "rcpt-accepted", "", recipient, nil)
 			if err := s.sendStatus(conn, 250, "Recipient OK"); err != nil {
 				return
 			}
 		case "DATA":
 			if session.MailFrom == "" || len(session.RcptTo) == 0 {
+				s.logSMTPAction(session, "data-rejected", "", "", &ResponseError{Code: 503, Message: "Need MAIL FROM and RCPT TO first"})
 				_ = s.sendStatus(conn, 503, "Need MAIL FROM and RCPT TO first")
 				continue
 			}
 			if response := s.policy.OnData(session); response != nil {
+				s.logSMTPAction(session, "data-rejected", "", "", response)
 				_ = s.sendStatus(conn, response.Code, response.Message)
 				continue
 			}
@@ -137,20 +150,23 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 			}
 			raw, err := readDataBlock(reader.R)
 			if err != nil {
+				s.logSMTPAction(session, "data-read-failed", "", "", &ResponseError{Code: 451, Message: "Failed to read message data"})
 				_ = s.sendStatus(conn, 451, "Failed to read message data")
 				return
 			}
 			if err := s.persistMessage(ctx, session, raw); err != nil {
-				s.logger.Printf("store message: %v", err)
+				s.logSMTPAction(session, "store-failed", "", "", err)
 				_ = s.sendStatus(conn, 451, "Failed to store message")
 				continue
 			}
+			s.logSMTPAction(session, "message-accepted", "", "", nil)
 			if err := s.sendStatus(conn, 250, "Message accepted"); err != nil {
 				return
 			}
 		case "RSET":
 			session.MailFrom = ""
 			session.RcptTo = nil
+			s.logSMTPAction(session, "reset", "", "", nil)
 			if err := s.sendStatus(conn, 250, "State reset"); err != nil {
 				return
 			}
@@ -159,9 +175,11 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 				return
 			}
 		case "QUIT":
+			s.logSMTPAction(session, "quit", "", "", nil)
 			_ = s.sendStatus(conn, 221, "Bye")
 			return
 		default:
+			s.logSMTPAction(session, "command-rejected", "", "", &ResponseError{Code: 502, Message: "Command not implemented"})
 			if err := s.sendStatus(conn, 502, "Command not implemented"); err != nil {
 				return
 			}
@@ -253,4 +271,60 @@ func (s *Server) sendStatus(conn net.Conn, code int, message string) error {
 func (s *Server) sendLine(conn net.Conn, value string) error {
 	_, err := io.WriteString(conn, value+"\r\n")
 	return err
+}
+
+func (s *Server) logSMTPAction(session SessionMetadata, action, sender, recipient string, err error) {
+	if !s.logVerbose && !shouldLogSMTPAction(action, err) {
+		return
+	}
+
+	if sender == "" {
+		sender = session.MailFrom
+	}
+	if recipient == "" && len(session.RcptTo) > 0 {
+		recipient = strings.Join(session.RcptTo, ",")
+	}
+
+	message := "-"
+	if err != nil {
+		message = err.Error()
+	}
+
+	s.logger.Printf(
+		`smtp remote_ip=%q helo=%q sender=%q recipient=%q action=%q error=%q`,
+		sanitizeLogValue(session.RemoteIP),
+		sanitizeLogValue(session.Helo),
+		sanitizeLogValue(sender),
+		sanitizeLogValue(recipient),
+		sanitizeLogValue(action),
+		sanitizeLogValue(message),
+	)
+}
+
+func shouldLogSMTPAction(action string, err error) bool {
+	if err != nil {
+		return true
+	}
+
+	switch action {
+	case "message-accepted":
+		return true
+	default:
+		return false
+	}
+}
+
+func sanitizeLogValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
+	}
+
+	replacer := strings.NewReplacer("\r", " ", "\n", " ", "\t", " ")
+	value = replacer.Replace(value)
+	value = strings.Join(strings.Fields(value), " ")
+	if len(value) > 256 {
+		return value[:253] + "..."
+	}
+	return value
 }

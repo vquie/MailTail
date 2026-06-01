@@ -30,6 +30,7 @@ func main() {
 	authUsername := strings.TrimSpace(os.Getenv("MAILTAIL_AUTH_USERNAME"))
 	authPassword := os.Getenv("MAILTAIL_AUTH_PASSWORD")
 	allowedOrigins := parseCSVEnv("MAILTAIL_ALLOWED_ORIGINS")
+	smtpLogVerbose := strings.EqualFold(strings.TrimSpace(os.Getenv("MAILTAIL_SMTP_LOG_VERBOSE")), "true")
 	mailFailEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("MAILTAIL_MAILFAIL_ENABLED")), "true")
 	mailFailRulesFile := strings.TrimSpace(os.Getenv("MAILTAIL_MAILFAIL_RULES_FILE"))
 	acceptedRcptDomains := parseCSVEnv("MAILTAIL_ACCEPTED_RCPT_DOMAINS")
@@ -67,6 +68,9 @@ func main() {
 		logger.Printf("CORS disabled for cross-origin browsers; web UI and API are same-origin by default")
 	} else {
 		logger.Printf("allowed CORS origins: %s", strings.Join(allowedOrigins, ", "))
+	}
+	if smtpLogVerbose {
+		logger.Printf("verbose SMTP logging enabled")
 	}
 
 	var mailFailEngine *smtpserver.MailFailEngine
@@ -106,7 +110,7 @@ func main() {
 	if err != nil {
 		logger.Fatalf("invalid smtp policy config: %v", err)
 	}
-	smtpServer := smtpserver.NewServer(smtpAddr, store, parseSvc, smtpPolicy, logger)
+	smtpServer := smtpserver.NewServer(smtpAddr, store, parseSvc, smtpPolicy, logger, smtpLogVerbose)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
