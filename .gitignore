@@ -1,7 +1,7 @@
 .cache/
 .env
 data/
-mailtail
+/mailtail
 web/dist/
 web/node_modules/
 web/*.tsbuildinfo
