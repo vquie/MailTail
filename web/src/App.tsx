@@ -174,6 +174,35 @@ export function App() {
     };
   }, [selectedMessage]);
 
+  const availableTabs = useMemo<Array<{ key: TabKey; label: string }>>(() => {
+    const hasHTML = Boolean(selectedMessage?.htmlBody?.trim());
+    const hasText = Boolean(selectedMessage?.textBody?.trim());
+
+    const contentTabs: Array<{ key: TabKey; label: string }> = [];
+    if (hasHTML) {
+      contentTabs.push({ key: "html", label: "HTML" });
+    }
+    if (hasText) {
+      contentTabs.push({ key: "text", label: "Text" });
+    }
+    if (!hasHTML && !hasText) {
+      contentTabs.push({ key: "text", label: "Text" });
+    }
+
+    return [
+      ...contentTabs,
+      { key: "headers", label: "Headers" },
+      { key: "raw", label: "Raw" }
+    ];
+  }, [selectedMessage]);
+
+  useEffect(() => {
+    if (availableTabs.some((tab) => tab.key === activeTab)) {
+      return;
+    }
+    setActiveTab(availableTabs[0]?.key ?? "text");
+  }, [activeTab, availableTabs]);
+
   const hasMessages = messages.length > 0;
   const smtpExampleRecipient = "test@example.test";
   const smtpExampleSender = "sender@example.test";
@@ -287,7 +316,7 @@ export function App() {
               <section className="viewerCard">
                 <div className="viewerHeader">
                   <div className="tabs">
-                    {tabs.map((tab) => (
+                    {availableTabs.map((tab) => (
                       <button
                         key={tab.key}
                         className={activeTab === tab.key ? "tab active" : "tab"}
