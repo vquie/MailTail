@@ -387,9 +387,9 @@ Recipient and sender allow-lists accept either exact domains such as `example.te
 If a sender domain is not allowed, MailTail rejects `MAIL FROM` with `550 Sender domain not allowed`.
 If a recipient domain is not allowed, MailTail rejects `RCPT TO` with `550 Recipient domain not allowed`.
 
-## Future MailFail extension
+## MailFail roadmap
 
-The SMTP server already exposes a response policy interface:
+MailFail is already available as an initial MVP through the SMTP response policy layer:
 
 ```go
 type SMTPResponsePolicy interface {
@@ -400,7 +400,20 @@ type SMTPResponsePolicy interface {
 }
 ```
 
-The default policy accepts every command, which keeps the MVP behavior simple while preserving a clean seam for future SMTP failure simulation.
+The current MailFail implementation supports:
+
+- localpart-based triggers via plus-addressing
+- configurable SMTP replies from YAML
+- `reject`
+- `greylist`
+
+Planned next steps include:
+
+- `delay`
+- `disconnect`
+- artificial timeouts
+- probabilistic failures
+- more advanced matching beyond the localpart trigger
 
 ## License
 
