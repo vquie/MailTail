@@ -55,8 +55,19 @@ jobs:
           labels: |
             org.opencontainers.image.title=MailTail
             org.opencontainers.image.description=Modern open-source SMTP test inbox
+            org.opencontainers.image.licenses=MIT
             org.opencontainers.image.url=https://github.com/${{ github.repository }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}#readme
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          annotations: |
+            org.opencontainers.image.title=MailTail
+            org.opencontainers.image.description=Modern open-source SMTP test inbox
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}#readme
             org.opencontainers.image.version=${{ github.ref_name }}
             org.opencontainers.image.revision=${{ github.sha }}
 
@@ -70,6 +81,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: true
