@@ -183,3 +183,7 @@ type SMTPResponsePolicy interface {
 ```
 
 The default policy accepts every command, which keeps the MVP behavior simple while preserving a clean seam for future SMTP failure simulation.
+
+## License
+
+MailTail is licensed under the MIT License. See [LICENSE](/Users/vitaliquiering/git/MailTail/LICENSE).
