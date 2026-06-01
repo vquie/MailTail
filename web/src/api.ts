@@ -1,7 +1,7 @@
 import type { Message, Stats } from "./types";
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init);
+  const response = await fetch(input, withCSRF(init));
   if (!response.ok) {
     if (response.status === 401) {
       window.location.href = "/login";
@@ -39,6 +39,38 @@ export async function clearInbox(): Promise<void> {
   await request<void>("/api/messages", { method: "DELETE" });
 }
 
+export async function logout(): Promise<void> {
+  await request<void>("/auth/logout", { method: "POST" });
+}
+
 export function attachmentUrl(messageId: number, attachmentId: number): string {
   return `/api/messages/${messageId}/attachments/${attachmentId}`;
+}
+
+function withCSRF(init?: RequestInit): RequestInit | undefined {
+  if (!init?.method || ["GET", "HEAD", "OPTIONS"].includes(init.method.toUpperCase())) {
+    return init;
+  }
+
+  const headers = new Headers(init.headers ?? {});
+  const token = readCookie("mailtail_csrf");
+  if (token) {
+    headers.set("X-CSRF-Token", token);
+  }
+
+  return {
+    ...init,
+    headers
+  };
+}
+
+function readCookie(name: string): string {
+  const prefix = `${name}=`;
+  for (const part of document.cookie.split(";")) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(prefix)) {
+      return decodeURIComponent(trimmed.slice(prefix.length));
+    }
+  }
+  return "";
 }

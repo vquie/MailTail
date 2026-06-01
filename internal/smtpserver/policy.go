@@ -1,6 +1,9 @@
 package smtpserver
 
-import "strings"
+import (
+	"net"
+	"strings"
+)
 
 type SMTPResponsePolicy interface {
 	OnConnect(session SessionMetadata) *ResponseError
@@ -28,16 +31,46 @@ func (e *ResponseError) Error() string {
 type DomainPolicy struct {
 	acceptedRcptDomains map[string]struct{}
 	acceptedFromDomains map[string]struct{}
+	allowedRemoteNets   []*net.IPNet
 }
 
-func NewDomainPolicy(acceptedRcptDomains, acceptedFromDomains []string) *DomainPolicy {
+func NewDomainPolicy(acceptedRcptDomains, acceptedFromDomains, allowedRemoteCIDRs []string) (*DomainPolicy, error) {
+	allowedRemoteNets, err := parseAllowedRemoteCIDRs(allowedRemoteCIDRs)
+	if err != nil {
+		return nil, err
+	}
+
 	return &DomainPolicy{
 		acceptedRcptDomains: normalizeDomainSet(acceptedRcptDomains),
 		acceptedFromDomains: normalizeDomainSet(acceptedFromDomains),
-	}
+		allowedRemoteNets:   allowedRemoteNets,
+	}, nil
 }
 
-func (p *DomainPolicy) OnConnect(SessionMetadata) *ResponseError { return nil }
+func (p *DomainPolicy) OnConnect(session SessionMetadata) *ResponseError {
+	if len(p.allowedRemoteNets) == 0 {
+		return nil
+	}
+
+	ip := net.ParseIP(strings.TrimSpace(session.RemoteIP))
+	if ip == nil {
+		return &ResponseError{
+			Code:    554,
+			Message: "Connection not allowed",
+		}
+	}
+
+	for _, network := range p.allowedRemoteNets {
+		if network.Contains(ip) {
+			return nil
+		}
+	}
+
+	return &ResponseError{
+		Code:    554,
+		Message: "Connection not allowed",
+	}
+}
 
 func (p *DomainPolicy) OnData(SessionMetadata) *ResponseError { return nil }
 
@@ -96,4 +129,33 @@ func extractDomain(address string) (string, bool) {
 		return "", false
 	}
 	return strings.ToLower(strings.TrimSpace(address[at+1:])), true
+}
+
+func parseAllowedRemoteCIDRs(values []string) ([]*net.IPNet, error) {
+	networks := make([]*net.IPNet, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+
+		if ip := net.ParseIP(value); ip != nil {
+			maskBits := 32
+			if ip.To4() == nil {
+				maskBits = 128
+			}
+			networks = append(networks, &net.IPNet{
+				IP:   ip,
+				Mask: net.CIDRMask(maskBits, maskBits),
+			})
+			continue
+		}
+
+		_, network, err := net.ParseCIDR(value)
+		if err != nil {
+			return nil, err
+		}
+		networks = append(networks, network)
+	}
+	return networks, nil
 }

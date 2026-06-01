@@ -1,20 +1,21 @@
 package api
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
+	"crypto/rand"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/hex"
-	"fmt"
 	"html/template"
+	"net"
 	"net/http"
-	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
-const sessionCookieName = "mailtail_session"
+const (
+	sessionCookieName = "mailtail_session"
+	csrfCookieName    = "mailtail_csrf"
+)
 
 type AuthConfig struct {
 	Username string
@@ -23,11 +24,24 @@ type AuthConfig struct {
 }
 
 type SessionAuth struct {
-	config AuthConfig
+	config       AuthConfig
+	sessions     map[string]sessionRecord
+	loginLimiter map[string][]time.Time
+	mu           sync.Mutex
+}
+
+type sessionRecord struct {
+	Username  string
+	CSRFToken string
+	ExpiresAt time.Time
 }
 
 func NewSessionAuth(config AuthConfig) *SessionAuth {
-	return &SessionAuth{config: config}
+	return &SessionAuth{
+		config:       config,
+		sessions:     make(map[string]sessionRecord),
+		loginLimiter: make(map[string][]time.Time),
+	}
 }
 
 func (c AuthConfig) Enabled() bool {
@@ -47,27 +61,34 @@ func (a *SessionAuth) Middleware(next http.Handler) http.Handler {
 		case r.URL.Path == "/auth/login" && r.Method == http.MethodPost:
 			a.handleLogin(w, r)
 			return
-		case r.URL.Path == "/auth/logout":
+		case r.URL.Path == "/auth/logout" && r.Method == http.MethodPost:
 			a.handleLogout(w, r)
 			return
 		}
 
-		if a.isAuthenticated(r) {
-			next.ServeHTTP(w, r)
+		record, ok := a.currentSession(r)
+		if !ok {
+			a.rejectUnauthorized(w, r)
 			return
 		}
 
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			writeError(w, http.StatusUnauthorized, "authentication required")
+		if requiresCSRFFProtection(r.Method) && !a.validCSRF(r, record) {
+			writeError(w, http.StatusForbidden, "invalid csrf token")
 			return
 		}
 
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		next.ServeHTTP(w, r)
 	})
 }
 
 func (a *SessionAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if a.loginLimited(r) {
+		a.serveLoginPageWithStatus(w, "Too many login attempts. Please wait and try again.", http.StatusTooManyRequests)
+		return
+	}
+
 	if err := r.ParseForm(); err != nil {
+		a.recordLoginAttempt(r)
 		a.serveLoginPage(w, "Invalid login request.")
 		return
 	}
@@ -75,50 +96,75 @@ func (a *SessionAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
 	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
 	if !a.credentialsMatch(username, password) {
+		a.recordLoginAttempt(r)
 		a.serveLoginPage(w, "Invalid username or password.")
 		return
 	}
 
-	value, expiresAt, err := a.createSessionValue()
+	a.clearLoginAttempts(r)
+
+	sessionID, err := randomToken(32)
 	if err != nil {
 		http.Error(w, "Failed to create session", http.StatusInternalServerError)
 		return
 	}
+	csrfToken, err := randomToken(32)
+	if err != nil {
+		http.Error(w, "Failed to create session", http.StatusInternalServerError)
+		return
+	}
+	expiresAt := time.Now().Add(24 * time.Hour).UTC()
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    value,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   r.TLS != nil,
-		Expires:  expiresAt,
-		MaxAge:   int(time.Until(expiresAt).Seconds()),
-	})
+	a.mu.Lock()
+	a.sessions[sessionID] = sessionRecord{
+		Username:  a.config.Username,
+		CSRFToken: csrfToken,
+		ExpiresAt: expiresAt,
+	}
+	a.mu.Unlock()
 
+	setSessionCookies(w, r, sessionID, csrfToken, expiresAt)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (a *SessionAuth) handleLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   r.TLS != nil,
-		MaxAge:   -1,
-		Expires:  time.Unix(0, 0),
-	})
+	sessionID, ok := a.sessionIDFromRequest(r)
+	if ok {
+		a.mu.Lock()
+		delete(a.sessions, sessionID)
+		a.mu.Unlock()
+	}
+
+	clearSessionCookies(w, r)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-func (a *SessionAuth) isAuthenticated(r *http.Request) bool {
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		return false
+func (a *SessionAuth) currentSession(r *http.Request) (sessionRecord, bool) {
+	sessionID, ok := a.sessionIDFromRequest(r)
+	if !ok {
+		return sessionRecord{}, false
 	}
-	return a.validateSessionValue(cookie.Value)
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	record, exists := a.sessions[sessionID]
+	if !exists {
+		return sessionRecord{}, false
+	}
+	if time.Now().UTC().After(record.ExpiresAt) {
+		delete(a.sessions, sessionID)
+		return sessionRecord{}, false
+	}
+	return record, true
+}
+
+func (a *SessionAuth) sessionIDFromRequest(r *http.Request) (string, bool) {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil || cookie.Value == "" {
+		return "", false
+	}
+	return cookie.Value, true
 }
 
 func (a *SessionAuth) credentialsMatch(username, password string) bool {
@@ -127,51 +173,146 @@ func (a *SessionAuth) credentialsMatch(username, password string) bool {
 	return usernameMatch && passwordMatch
 }
 
-func (a *SessionAuth) createSessionValue() (string, time.Time, error) {
-	expiresAt := time.Now().Add(24 * time.Hour).UTC()
-	payload := fmt.Sprintf("%s|%d", a.config.Username, expiresAt.Unix())
-	mac := hmac.New(sha256.New, []byte(a.config.Password))
-	if _, err := mac.Write([]byte(payload)); err != nil {
-		return "", time.Time{}, err
+func (a *SessionAuth) validCSRF(r *http.Request, record sessionRecord) bool {
+	headerToken := strings.TrimSpace(r.Header.Get("X-CSRF-Token"))
+	if headerToken == "" {
+		return false
 	}
-	signature := hex.EncodeToString(mac.Sum(nil))
-	token := payload + "|" + signature
-	return base64.RawURLEncoding.EncodeToString([]byte(token)), expiresAt, nil
+	return subtle.ConstantTimeCompare([]byte(headerToken), []byte(record.CSRFToken)) == 1
 }
 
-func (a *SessionAuth) validateSessionValue(value string) bool {
-	raw, err := base64.RawURLEncoding.DecodeString(value)
-	if err != nil {
-		return false
+func (a *SessionAuth) rejectUnauthorized(w http.ResponseWriter, r *http.Request) {
+	clearSessionCookies(w, r)
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
 	}
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
 
-	parts := strings.Split(string(raw), "|")
-	if len(parts) != 3 {
-		return false
-	}
+func (a *SessionAuth) loginLimited(r *http.Request) bool {
+	key := clientIP(r)
+	now := time.Now()
 
-	username, expiresRaw, signature := parts[0], parts[1], parts[2]
-	if subtle.ConstantTimeCompare([]byte(username), []byte(a.config.Username)) != 1 {
-		return false
-	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
-	expiresUnix, err := strconv.ParseInt(expiresRaw, 10, 64)
-	if err != nil || time.Now().UTC().After(time.Unix(expiresUnix, 0).UTC()) {
-		return false
-	}
+	attempts := pruneAttempts(a.loginLimiter[key], now)
+	a.loginLimiter[key] = attempts
+	return len(attempts) >= 5
+}
 
-	payload := username + "|" + expiresRaw
-	mac := hmac.New(sha256.New, []byte(a.config.Password))
-	if _, err := mac.Write([]byte(payload)); err != nil {
+func (a *SessionAuth) recordLoginAttempt(r *http.Request) {
+	key := clientIP(r)
+	now := time.Now()
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	attempts := pruneAttempts(a.loginLimiter[key], now)
+	a.loginLimiter[key] = append(attempts, now)
+}
+
+func (a *SessionAuth) clearLoginAttempts(r *http.Request) {
+	key := clientIP(r)
+	a.mu.Lock()
+	delete(a.loginLimiter, key)
+	a.mu.Unlock()
+}
+
+func pruneAttempts(attempts []time.Time, now time.Time) []time.Time {
+	cutoff := now.Add(-15 * time.Minute)
+	kept := attempts[:0]
+	for _, attempt := range attempts {
+		if attempt.After(cutoff) {
+			kept = append(kept, attempt)
+		}
+	}
+	return kept
+}
+
+func setSessionCookies(w http.ResponseWriter, r *http.Request, sessionID, csrfToken string, expiresAt time.Time) {
+	secure := r.TLS != nil
+	maxAge := int(time.Until(expiresAt).Seconds())
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    sessionID,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
+		Expires:  expiresAt,
+		MaxAge:   maxAge,
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    csrfToken,
+		Path:     "/",
+		HttpOnly: false,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
+		Expires:  expiresAt,
+		MaxAge:   maxAge,
+	})
+}
+
+func clearSessionCookies(w http.ResponseWriter, r *http.Request) {
+	secure := r.TLS != nil
+	for _, name := range []string{sessionCookieName, csrfCookieName} {
+		http.SetCookie(w, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: name == sessionCookieName,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   secure,
+			MaxAge:   -1,
+			Expires:  time.Unix(0, 0),
+		})
+	}
+}
+
+func randomToken(size int) (string, error) {
+	buf := make([]byte, size)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+func requiresCSRFFProtection(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
 		return false
 	}
-	expectedSignature := hex.EncodeToString(mac.Sum(nil))
-	return subtle.ConstantTimeCompare([]byte(signature), []byte(expectedSignature)) == 1
+}
+
+func clientIP(r *http.Request) string {
+	if forwardedFor := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwardedFor != "" {
+		parts := strings.Split(forwardedFor, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
+		return realIP
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 func (a *SessionAuth) serveLoginPage(w http.ResponseWriter, message string) {
+	a.serveLoginPageWithStatus(w, message, http.StatusOK)
+}
+
+func (a *SessionAuth) serveLoginPageWithStatus(w http.ResponseWriter, message string, status int) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(status)
 	_ = loginTemplate.Execute(w, map[string]string{
 		"Message": message,
 		"Realm":   a.config.Realm,

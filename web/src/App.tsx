@@ -5,7 +5,8 @@ import {
   deleteMessage,
   fetchMessage,
   fetchMessages,
-  fetchStats
+  fetchStats,
+  logout
 } from "./api";
 import type { Message, Stats } from "./types";
 
@@ -149,6 +150,11 @@ export function App() {
     await loadOverview("", { preferredId: null, forceDetail: true });
   }
 
+  async function handleLogout() {
+    await logout();
+    window.location.href = "/login";
+  }
+
   const content = useMemo(() => {
     if (!selectedMessage) {
       return {
@@ -240,9 +246,9 @@ export function App() {
 
       <main className="contentPane">
         <div className="topToolbar">
-          <a className="ghostButton compactButton toolbarLink" href="/auth/logout">
+          <button className="ghostButton compactButton" onClick={() => void handleLogout()}>
             Logout
-          </a>
+          </button>
           <button
             className="ghostButton compactButton"
             onClick={() => void loadOverview(queryRef.current, { preferredId: selectedIdRef.current, forceDetail: true })}
