@@ -28,6 +28,8 @@ func main() {
 	authUsername := strings.TrimSpace(os.Getenv("MAILTAIL_AUTH_USERNAME"))
 	authPassword := os.Getenv("MAILTAIL_AUTH_PASSWORD")
 	allowedOrigins := parseCSVEnv("MAILTAIL_ALLOWED_ORIGINS")
+	mailFailEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("MAILTAIL_MAILFAIL_ENABLED")), "true")
+	mailFailRulesFile := strings.TrimSpace(os.Getenv("MAILTAIL_MAILFAIL_RULES_FILE"))
 	acceptedRcptDomains := parseCSVEnv("MAILTAIL_ACCEPTED_RCPT_DOMAINS")
 	acceptedFromDomains := parseCSVEnv("MAILTAIL_ACCEPTED_FROM_DOMAINS")
 	allowedRemoteIPs := parseCSVEnv("MAILTAIL_ALLOWED_REMOTE_IPS")
@@ -64,6 +66,23 @@ func main() {
 		logger.Printf("allowed CORS origins: %s", strings.Join(allowedOrigins, ", "))
 	}
 
+	var mailFailEngine *smtpserver.MailFailEngine
+	switch {
+	case !mailFailEnabled && mailFailRulesFile != "":
+		logger.Printf("mailfail disabled; ignoring MAILTAIL_MAILFAIL_RULES_FILE=%s", mailFailRulesFile)
+	case mailFailEnabled && mailFailRulesFile == "":
+		logger.Fatal("invalid mailfail config: MAILTAIL_MAILFAIL_ENABLED=true requires MAILTAIL_MAILFAIL_RULES_FILE")
+	case mailFailEnabled:
+		engine, err := smtpserver.LoadMailFailEngine(mailFailRulesFile)
+		if err != nil {
+			logger.Fatalf("load mailfail rules: %v", err)
+		}
+		mailFailEngine = engine
+		logger.Printf("mailfail enabled with %d rule(s) from %s", engine.RuleCount(), mailFailRulesFile)
+	default:
+		logger.Printf("mailfail disabled")
+	}
+
 	store, err := storage.NewSQLiteStore(filepath.Join(dataDir, "mailtail.db"))
 	if err != nil {
 		logger.Fatalf("open storage: %v", err)
@@ -80,7 +99,7 @@ func main() {
 		AllowedOrigins: normalizeExactSet(allowedOrigins),
 	})
 
-	smtpPolicy, err := smtpserver.NewDomainPolicy(acceptedRcptDomains, acceptedFromDomains, allowedRemoteIPs)
+	smtpPolicy, err := smtpserver.NewDomainPolicy(acceptedRcptDomains, acceptedFromDomains, allowedRemoteIPs, mailFailEngine)
 	if err != nil {
 		logger.Fatalf("invalid smtp policy config: %v", err)
 	}

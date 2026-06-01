@@ -1,0 +1,24 @@
+rules:
+  - name: user-unknown
+    trigger: mf-user-unknown
+    stage: rcpt
+    action: reject
+    code: 550
+    enhancedCode: "5.1.1"
+    message: "User unknown"
+
+  - name: greylist
+    trigger: mf-greylist
+    stage: rcpt
+    action: reject
+    code: 451
+    enhancedCode: "4.7.1"
+    message: "Try again later"
+
+  - name: quota
+    trigger: mf-quota
+    stage: data
+    action: reject
+    code: 552
+    enhancedCode: "5.2.2"
+    message: "Mailbox full"

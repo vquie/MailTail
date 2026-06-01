@@ -34,9 +34,10 @@ type DomainPolicy struct {
 	acceptedRcptDomains *addressMatcher
 	acceptedFromDomains *addressMatcher
 	allowedRemoteNets   []*net.IPNet
+	mailFail            *MailFailEngine
 }
 
-func NewDomainPolicy(acceptedRcptDomains, acceptedFromDomains, allowedRemoteCIDRs []string) (*DomainPolicy, error) {
+func NewDomainPolicy(acceptedRcptDomains, acceptedFromDomains, allowedRemoteCIDRs []string, mailFail *MailFailEngine) (*DomainPolicy, error) {
 	allowedRemoteNets, err := parseAllowedRemoteCIDRs(allowedRemoteCIDRs)
 	if err != nil {
 		return nil, err
@@ -56,6 +57,7 @@ func NewDomainPolicy(acceptedRcptDomains, acceptedFromDomains, allowedRemoteCIDR
 		acceptedRcptDomains: rcptMatcher,
 		acceptedFromDomains: fromMatcher,
 		allowedRemoteNets:   allowedRemoteNets,
+		mailFail:            mailFail,
 	}, nil
 }
 
@@ -84,9 +86,10 @@ func (p *DomainPolicy) OnConnect(session SessionMetadata) *ResponseError {
 	}
 }
 
-func (p *DomainPolicy) OnData(SessionMetadata) *ResponseError { return nil }
-
 func (p *DomainPolicy) OnMailFrom(_ SessionMetadata, from string) *ResponseError {
+	if response := p.mailFail.MatchMailFrom(from); response != nil {
+		return response
+	}
 	if p.acceptedFromDomains.Empty() {
 		return nil
 	}
@@ -100,6 +103,9 @@ func (p *DomainPolicy) OnMailFrom(_ SessionMetadata, from string) *ResponseError
 }
 
 func (p *DomainPolicy) OnRcptTo(_ SessionMetadata, recipient string) *ResponseError {
+	if response := p.mailFail.MatchRcpt(recipient); response != nil {
+		return response
+	}
 	if p.acceptedRcptDomains.Empty() {
 		return nil
 	}
@@ -108,6 +114,13 @@ func (p *DomainPolicy) OnRcptTo(_ SessionMetadata, recipient string) *ResponseEr
 			Code:    550,
 			Message: "Recipient domain not allowed",
 		}
+	}
+	return nil
+}
+
+func (p *DomainPolicy) OnData(session SessionMetadata) *ResponseError {
+	if response := p.mailFail.MatchData(session.RcptTo); response != nil {
+		return response
 	}
 	return nil
 }

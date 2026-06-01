@@ -251,6 +251,78 @@ curl --url smtp://localhost:8025 \
   --upload-file sample.eml
 ```
 
+## MailFail
+
+MailTail can optionally simulate SMTP failures based on the localpart of the sender or recipient address.
+
+MailFail is disabled by default and requires:
+
+- `MAILTAIL_MAILFAIL_ENABLED=true`
+- `MAILTAIL_MAILFAIL_RULES_FILE=/path/to/mailfail.yaml`
+
+With the provided Makefile you can keep a local path in `.env`, for example:
+
+```env
+MAILTAIL_MAILFAIL_ENABLED=true
+MAILTAIL_MAILFAIL_RULES_FILE=examples/mailfail.yaml
+```
+
+Then:
+
+```bash
+make run
+```
+
+or:
+
+```bash
+make docker-run
+```
+
+`make docker-run` mounts the configured rules file read-only into the container automatically and rewrites the container-side path for MailTail.
+
+Rules are loaded from YAML. See [examples/mailfail.yaml](/Users/vitaliquiering/git/MailTail/examples/mailfail.yaml).
+
+Example:
+
+```yaml
+rules:
+  - name: user-unknown
+    trigger: mf-user-unknown
+    stage: rcpt
+    action: reject
+    code: 550
+    enhancedCode: "5.1.1"
+    message: "User unknown"
+
+  - name: quota
+    trigger: mf-quota
+    stage: data
+    action: reject
+    code: 552
+    enhancedCode: "5.2.2"
+    message: "Mailbox full"
+```
+
+Triggering is done via plus-addressing in the localpart:
+
+- `test+mf-user-unknown@example.test`
+- `test+mf-quota@example.test`
+
+Supported stages for localpart-driven rules:
+
+- `mailfrom`
+- `rcpt`
+- `data`
+
+The current implementation supports `action: reject` and returns the full SMTP reply composed from `code`, optional `enhancedCode`, and `message`.
+
+Examples:
+
+- `550 5.1.1 User unknown`
+- `451 4.7.1 Try again later`
+- `552 5.2.2 Mailbox full`
+
 ## Configuration
 
 Environment variables:
@@ -262,6 +334,8 @@ Environment variables:
 - `MAILTAIL_AUTH_USERNAME` default: empty, disables login protection for web UI and API and logs a startup warning
 - `MAILTAIL_AUTH_PASSWORD` default: empty, disables login protection for web UI and API and logs a startup warning
 - `MAILTAIL_ALLOWED_ORIGINS` default: empty, disables cross-origin browser access. Set this only if you intentionally need browser clients from another origin.
+- `MAILTAIL_MAILFAIL_ENABLED` default: `false`
+- `MAILTAIL_MAILFAIL_RULES_FILE` default: empty. Required when MailFail is enabled.
 - `MAILTAIL_ALLOWED_REMOTE_IPS` default: empty, accepts SMTP connections from all IPs and logs a startup warning. Supports IPs and CIDR ranges.
 - `MAILTAIL_ACCEPTED_RCPT_DOMAINS` default: empty, accepts recipients for all domains and logs a startup warning. Values may be exact domains or regular expressions.
 - `MAILTAIL_ACCEPTED_FROM_DOMAINS` default: empty, accepts senders for all domains and logs a startup warning. Values may be exact domains or regular expressions.
