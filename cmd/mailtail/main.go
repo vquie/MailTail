@@ -37,12 +37,12 @@ func main() {
 	if len(acceptedRcptDomains) == 0 {
 		logger.Printf("warning: MAILTAIL_ACCEPTED_RCPT_DOMAINS is empty, accepting RCPT TO for all domains")
 	} else {
-		logger.Printf("accepted RCPT TO domains: %s", strings.Join(acceptedRcptDomains, ", "))
+		logger.Printf("accepted RCPT TO patterns: %s", strings.Join(acceptedRcptDomains, ", "))
 	}
 	if len(acceptedFromDomains) == 0 {
 		logger.Printf("warning: MAILTAIL_ACCEPTED_FROM_DOMAINS is empty, accepting MAIL FROM for all domains")
 	} else {
-		logger.Printf("accepted MAIL FROM domains: %s", strings.Join(acceptedFromDomains, ", "))
+		logger.Printf("accepted MAIL FROM patterns: %s", strings.Join(acceptedFromDomains, ", "))
 	}
 	if len(allowedRemoteIPs) == 0 {
 		logger.Printf("warning: MAILTAIL_ALLOWED_REMOTE_IPS is empty, accepting SMTP connections from all remote IPs")

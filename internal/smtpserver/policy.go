@@ -1,7 +1,9 @@
 package smtpserver
 
 import (
+	"fmt"
 	"net"
+	"regexp"
 	"strings"
 )
 
@@ -29,8 +31,8 @@ func (e *ResponseError) Error() string {
 }
 
 type DomainPolicy struct {
-	acceptedRcptDomains map[string]struct{}
-	acceptedFromDomains map[string]struct{}
+	acceptedRcptDomains *addressMatcher
+	acceptedFromDomains *addressMatcher
 	allowedRemoteNets   []*net.IPNet
 }
 
@@ -40,9 +42,19 @@ func NewDomainPolicy(acceptedRcptDomains, acceptedFromDomains, allowedRemoteCIDR
 		return nil, err
 	}
 
+	rcptMatcher, err := newAddressMatcher(acceptedRcptDomains)
+	if err != nil {
+		return nil, fmt.Errorf("MAILTAIL_ACCEPTED_RCPT_DOMAINS: %w", err)
+	}
+
+	fromMatcher, err := newAddressMatcher(acceptedFromDomains)
+	if err != nil {
+		return nil, fmt.Errorf("MAILTAIL_ACCEPTED_FROM_DOMAINS: %w", err)
+	}
+
 	return &DomainPolicy{
-		acceptedRcptDomains: normalizeDomainSet(acceptedRcptDomains),
-		acceptedFromDomains: normalizeDomainSet(acceptedFromDomains),
+		acceptedRcptDomains: rcptMatcher,
+		acceptedFromDomains: fromMatcher,
 		allowedRemoteNets:   allowedRemoteNets,
 	}, nil
 }
@@ -75,11 +87,10 @@ func (p *DomainPolicy) OnConnect(session SessionMetadata) *ResponseError {
 func (p *DomainPolicy) OnData(SessionMetadata) *ResponseError { return nil }
 
 func (p *DomainPolicy) OnMailFrom(_ SessionMetadata, from string) *ResponseError {
-	if len(p.acceptedFromDomains) == 0 {
+	if p.acceptedFromDomains.Empty() {
 		return nil
 	}
-	domain, ok := extractDomain(from)
-	if !ok || !p.isAllowed(p.acceptedFromDomains, domain) {
+	if !p.acceptedFromDomains.Match(from) {
 		return &ResponseError{
 			Code:    550,
 			Message: "Sender domain not allowed",
@@ -89,11 +100,10 @@ func (p *DomainPolicy) OnMailFrom(_ SessionMetadata, from string) *ResponseError
 }
 
 func (p *DomainPolicy) OnRcptTo(_ SessionMetadata, recipient string) *ResponseError {
-	if len(p.acceptedRcptDomains) == 0 {
+	if p.acceptedRcptDomains.Empty() {
 		return nil
 	}
-	domain, ok := extractDomain(recipient)
-	if !ok || !p.isAllowed(p.acceptedRcptDomains, domain) {
+	if !p.acceptedRcptDomains.Match(recipient) {
 		return &ResponseError{
 			Code:    550,
 			Message: "Recipient domain not allowed",
@@ -102,21 +112,84 @@ func (p *DomainPolicy) OnRcptTo(_ SessionMetadata, recipient string) *ResponseEr
 	return nil
 }
 
-func (p *DomainPolicy) isAllowed(allowed map[string]struct{}, domain string) bool {
-	_, ok := allowed[strings.ToLower(strings.TrimSpace(domain))]
-	return ok
+type addressMatcher struct {
+	exactDomains map[string]struct{}
+	patterns     []*regexp.Regexp
 }
 
-func normalizeDomainSet(domains []string) map[string]struct{} {
-	set := make(map[string]struct{}, len(domains))
-	for _, domain := range domains {
-		domain = strings.ToLower(strings.TrimSpace(domain))
-		if domain == "" {
+func newAddressMatcher(values []string) (*addressMatcher, error) {
+	matcher := &addressMatcher{
+		exactDomains: make(map[string]struct{}, len(values)),
+		patterns:     make([]*regexp.Regexp, 0, len(values)),
+	}
+
+	for _, value := range values {
+		normalized := strings.TrimSpace(value)
+		if normalized == "" {
 			continue
 		}
-		set[domain] = struct{}{}
+
+		lower := strings.ToLower(normalized)
+		if isPlainDomain(lower) {
+			matcher.exactDomains[lower] = struct{}{}
+			continue
+		}
+
+		re, err := regexp.Compile(lower)
+		if err != nil {
+			return nil, fmt.Errorf("invalid pattern %q: %w", value, err)
+		}
+		matcher.patterns = append(matcher.patterns, re)
 	}
-	return set
+
+	return matcher, nil
+}
+
+func (m *addressMatcher) Empty() bool {
+	return len(m.exactDomains) == 0 && len(m.patterns) == 0
+}
+
+func (m *addressMatcher) Match(address string) bool {
+	normalizedAddress := strings.ToLower(strings.TrimSpace(address))
+	if normalizedAddress == "" {
+		return false
+	}
+
+	domain, ok := extractDomain(normalizedAddress)
+	if ok {
+		if _, allowed := m.exactDomains[domain]; allowed {
+			return true
+		}
+	}
+
+	for _, pattern := range m.patterns {
+		if pattern.MatchString(normalizedAddress) {
+			return true
+		}
+		if ok && pattern.MatchString(domain) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isPlainDomain(value string) bool {
+	if value == "" || strings.HasPrefix(value, ".") || strings.HasSuffix(value, ".") {
+		return false
+	}
+
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9':
+		case r == '.' || r == '-':
+		default:
+			return false
+		}
+	}
+
+	return strings.Contains(value, ".")
 }
 
 func extractDomain(address string) (string, bool) {
