@@ -14,8 +14,8 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
 
 export async function fetchMessages(query: string): Promise<Message[]> {
   const url = query ? `/api/messages?q=${encodeURIComponent(query)}` : "/api/messages";
-  const data = await request<{ messages: Message[] }>(url);
-  return data.messages;
+  const data = await request<{ messages: Message[] | null }>(url);
+  return data.messages ?? [];
 }
 
 export async function fetchMessage(id: number): Promise<Message> {

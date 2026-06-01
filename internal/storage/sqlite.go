@@ -154,7 +154,7 @@ func (s *SQLiteStore) ListMessages(ctx context.Context, filter models.MessageFil
 	}
 	defer rows.Close()
 
-	var messages []models.Message
+	messages := make([]models.Message, 0)
 	for rows.Next() {
 		msg, err := scanMessageSummary(rows)
 		if err != nil {
@@ -306,7 +306,7 @@ func (s *SQLiteStore) listAttachments(ctx context.Context, messageID int64) ([]m
 	}
 	defer rows.Close()
 
-	var attachments []models.Attachment
+	attachments := make([]models.Attachment, 0)
 	for rows.Next() {
 		var attachment models.Attachment
 		var inlineInt int
