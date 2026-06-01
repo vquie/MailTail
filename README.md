@@ -4,8 +4,8 @@ MailTail is a modern open-source SMTP test inbox focused on mail infrastructure 
 
 ## Features
 
-- SMTP server on port `1025`
-- Web UI and REST API on port `8025`
+- SMTP server on port `8025`
+- Web UI and REST API on port `8080`
 - SQLite persistence with surviving container restarts
 - MIME parsing for text, HTML, and attachments
 - Search over subject, sender, and recipient
@@ -35,6 +35,7 @@ web
 ### Make targets
 
 ```bash
+cp .env.example .env
 make install
 make test
 make lint
@@ -44,6 +45,7 @@ make docker-run
 ```
 
 `make lint` runs MegaLinter in Docker. `make lint-fix` enables automatic fixes where supported by the active linters.
+If `.env` exists in the project root, `make run` and `make docker-run` load it automatically.
 
 ### Start the backend
 
@@ -80,7 +82,7 @@ go run ./cmd/mailtail
 make docker-run
 ```
 
-Open the UI at [http://localhost:8025](http://localhost:8025). Send SMTP mail to `localhost:1025`.
+Open the UI at [http://localhost:8080](http://localhost:8080). Send SMTP mail to `localhost:8025`.
 
 Useful container commands:
 
@@ -106,7 +108,7 @@ Data is persisted in the Docker volume `mailtail-data` by default.
 ## Example SMTP test
 
 ```bash
-curl --url smtp://localhost:1025 \
+curl --url smtp://localhost:8025 \
   --mail-from sender@example.test \
   --mail-rcpt receiver@example.test \
   --upload-file sample.eml
@@ -117,9 +119,21 @@ curl --url smtp://localhost:1025 \
 Environment variables:
 
 - `MAILTAIL_DATA_DIR` default: `data`
-- `MAILTAIL_HTTP_ADDR` default: `:8025`
-- `MAILTAIL_SMTP_ADDR` default: `:1025`
+- `MAILTAIL_HTTP_ADDR` default: `:8080`
+- `MAILTAIL_SMTP_ADDR` default: `:8025`
 - `MAILTAIL_WEB_DIR` default: `web/dist`
+- `MAILTAIL_ACCEPTED_RCPT_DOMAINS` default: empty, accepts recipients for all domains and logs a startup warning
+- `MAILTAIL_ACCEPTED_FROM_DOMAINS` default: empty, accepts senders for all domains and logs a startup warning
+
+Example:
+
+```bash
+cp .env.example .env
+make run
+```
+
+If a sender domain is not allowed, MailTail rejects `MAIL FROM` with `550 Sender domain not allowed`.
+If a recipient domain is not allowed, MailTail rejects `RCPT TO` with `550 Recipient domain not allowed`.
 
 ## Future MailFail extension
 

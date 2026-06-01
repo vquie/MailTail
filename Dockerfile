@@ -20,10 +20,10 @@ COPY --from=go-build /out/mailtail /app/mailtail
 COPY --from=web-build /src/web/dist /app/web/dist
 RUN mkdir -p /data && chown -R mailtail:mailtail /app /data
 USER mailtail
-EXPOSE 1025 8025
+EXPOSE 8025 8080
 VOLUME ["/data"]
 ENV MAILTAIL_DATA_DIR=/data
-ENV MAILTAIL_HTTP_ADDR=:8025
-ENV MAILTAIL_SMTP_ADDR=:1025
+ENV MAILTAIL_HTTP_ADDR=:8080
+ENV MAILTAIL_SMTP_ADDR=:8025
 ENV MAILTAIL_WEB_DIR=/app/web/dist
 CMD ["/app/mailtail"]
