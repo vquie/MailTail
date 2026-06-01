@@ -108,6 +108,10 @@ export function App() {
     };
   }, [selectedMessage]);
 
+  const hasMessages = messages.length > 0;
+  const smtpExampleRecipient = "test@example.test";
+  const smtpExampleSender = "sender@example.test";
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -116,33 +120,33 @@ export function App() {
             <p className="eyebrow">SMTP Test Inbox</p>
             <h1>MailTail</h1>
           </div>
-          <button className="ghostButton" onClick={() => void loadOverview(query, selectedId)}>
-            Refresh
-          </button>
         </div>
 
-        <div className="statsCard">
-          <div>
-            <span>Stored messages</span>
+        <div className="statsRow">
+          <div className="statPill">
+            <span>Messages</span>
             <strong>{stats.messageCount}</strong>
           </div>
-          <div>
-            <span>Total size</span>
+          <div className="statPill">
+            <span>Size</span>
             <strong>{formatBytes(stats.totalSize)}</strong>
           </div>
-          <button className="dangerButton" onClick={() => void handleClearInbox()}>
-            Clear inbox
-          </button>
         </div>
 
-        <label className="searchField">
-          <span>Search</span>
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Subject, From, To"
-          />
-        </label>
+        <div className="searchCard">
+          <label className="searchField">
+            <span>Search</span>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Subject, From, To"
+            />
+          </label>
+          <div className="listMeta">
+            <span>{messages.length} visible</span>
+            <span>{selectedMessage ? `#${selectedMessage.id}` : "No selection"}</span>
+          </div>
+        </div>
 
         <div className="messageList">
           {messages.map((message) => (
@@ -153,87 +157,122 @@ export function App() {
             >
               <div className="messageTop">
                 <strong>{message.subject || "(no subject)"}</strong>
-                <span>{formatTime(message.receivedAt)}</span>
+                <span className="messageTime">{formatTime(message.receivedAt)}</span>
               </div>
-              <span>{message.headerFrom || message.mailFrom}</span>
-              <span className="mutedText">{message.headerTo || message.rcptTo.join(", ")}</span>
+              <span className="messageLine">{message.headerFrom || message.mailFrom}</span>
+              <span className="mutedText messageLine">{message.headerTo || message.rcptTo.join(", ")}</span>
             </button>
           ))}
-          {!loading && messages.length === 0 ? <p className="emptyState">No messages found.</p> : null}
+          {!loading && messages.length === 0 ? (
+            <div className="emptyListCard">
+              <strong>Inbox is empty</strong>
+              <p>No messages captured yet.</p>
+            </div>
+          ) : null}
         </div>
       </aside>
 
       <main className="contentPane">
-        <div className="heroCard">
-          <div>
-            <p className="eyebrow">Current message</p>
-            <h2>{selectedMessage?.subject || "Inbox is empty"}</h2>
-            <div className="metaGrid">
-              <span>From: {selectedMessage?.headerFrom || "-"}</span>
-              <span>To: {selectedMessage?.headerTo || "-"}</span>
-              <span>Received: {selectedMessage ? formatDate(selectedMessage.receivedAt) : "-"}</span>
-              <span>Size: {selectedMessage ? formatBytes(selectedMessage.size) : "-"}</span>
-              <span>HELO: {selectedMessage?.helo || "-"}</span>
-              <span>Remote IP: {selectedMessage?.remoteIp || "-"}</span>
-            </div>
-          </div>
-
-          <div className="heroActions">
-            <button className="ghostButton" disabled={!selectedMessage} onClick={() => void handleDeleteCurrent()}>
-              Delete message
-            </button>
-          </div>
+        <div className="topToolbar">
+          <button className="ghostButton compactButton" onClick={() => void loadOverview(query, selectedId)}>
+            Refresh
+          </button>
+          <button className="dangerButton compactButton" disabled={!hasMessages} onClick={() => void handleClearInbox()}>
+            Clear all messages
+          </button>
         </div>
 
-        <div className="tabs">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              className={activeTab === tab.key ? "tab active" : "tab"}
-              onClick={() => setActiveTab(tab.key)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {selectedMessage ? (
+          <section className="messageWorkspace">
+            <div className="heroCard compactHero">
+              <div className="heroCopy">
+                <p className="eyebrow">Current message</p>
+                <h2>{selectedMessage.subject}</h2>
+                <div className="metaGrid">
+                  <span>From: {selectedMessage.headerFrom || "-"}</span>
+                  <span>To: {selectedMessage.headerTo || "-"}</span>
+                  <span>Received: {formatDate(selectedMessage.receivedAt)}</span>
+                  <span>Size: {formatBytes(selectedMessage.size)}</span>
+                  <span>HELO: {selectedMessage.helo || "-"}</span>
+                  <span>Remote IP: {selectedMessage.remoteIp || "-"}</span>
+                </div>
+              </div>
 
-        <section className="viewerCard">
-          {activeTab === "html" ? (
-            <iframe
-              className="htmlFrame"
-              title="HTML preview"
-              sandbox=""
-              srcDoc={content.html}
-            />
-          ) : (
-            <pre className="codeBlock">{content[activeTab]}</pre>
-          )}
-        </section>
-
-        <section className="attachmentsCard">
-          <div className="attachmentsHeader">
-            <h3>Attachments</h3>
-            <span>{selectedMessage?.attachments?.length ?? 0}</span>
-          </div>
-          {selectedMessage?.attachments?.length ? (
-            <div className="attachmentList">
-              {selectedMessage.attachments.map((attachment) => (
-                <a
-                  key={attachment.id}
-                  className="attachmentItem"
-                  href={attachmentUrl(selectedMessage.id, attachment.id)}
-                >
-                  <strong>{attachment.fileName}</strong>
-                  <span>
-                    {attachment.contentType} · {formatBytes(attachment.size)}
-                  </span>
-                </a>
-              ))}
+              <div className="heroActions">
+                <button className="ghostButton compactButton" onClick={() => void handleDeleteCurrent()}>
+                  Delete message
+                </button>
+              </div>
             </div>
-          ) : (
-            <p className="emptyState">No attachments in this message.</p>
-          )}
-        </section>
+
+            <div className="detailGrid">
+              <section className="viewerCard">
+                <div className="viewerHeader">
+                  <div className="tabs">
+                    {tabs.map((tab) => (
+                      <button
+                        key={tab.key}
+                        className={activeTab === tab.key ? "tab active" : "tab"}
+                        onClick={() => setActiveTab(tab.key)}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {activeTab === "html" ? (
+                  <iframe
+                    className="htmlFrame"
+                    title="HTML preview"
+                    sandbox=""
+                    srcDoc={content.html}
+                  />
+                ) : (
+                  <pre className="codeBlock">{content[activeTab]}</pre>
+                )}
+              </section>
+
+              <section className="attachmentsCard">
+                <div className="attachmentsHeader">
+                  <h3>Attachments</h3>
+                  <span>{selectedMessage.attachments?.length ?? 0}</span>
+                </div>
+                {selectedMessage.attachments?.length ? (
+                  <div className="attachmentList">
+                    {selectedMessage.attachments.map((attachment) => (
+                      <a
+                        key={attachment.id}
+                        className="attachmentItem"
+                        href={attachmentUrl(selectedMessage.id, attachment.id)}
+                      >
+                        <strong>{attachment.fileName}</strong>
+                        <span>
+                          {attachment.contentType} · {formatBytes(attachment.size)}
+                        </span>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="emptyState">No attachments in this message.</p>
+                )}
+              </section>
+            </div>
+          </section>
+        ) : (
+          <section className="emptyHero">
+            <div className="emptyHeroMain">
+              <p className="eyebrow">Inbox state</p>
+              <h2>Inbox is empty</h2>
+              <p className="emptyCopy">
+                Inject a test email over SMTP on port 8025. The first captured message will open here with HTML, text,
+                headers, raw source and attachments.
+              </p>
+              <pre className="commandSnippet">{`swaks -s 127.0.0.1:8025 --to ${smtpExampleRecipient} --from ${smtpExampleSender}`}</pre>
+            </div>
+            <div className="heroActions">
+            </div>
+          </section>
+        )}
 
         {error ? <div className="errorBanner">{error}</div> : null}
       </main>

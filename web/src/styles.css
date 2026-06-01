@@ -28,44 +28,58 @@ input {
 
 .shell {
   display: grid;
-  grid-template-columns: minmax(300px, 360px) 1fr;
+  grid-template-columns: 320px minmax(0, 1fr);
   min-height: 100vh;
 }
 
 .sidebar {
-  padding: 24px;
+  padding: 16px;
   border-right: 1px solid rgb(255 255 255 / 8%);
   background: rgb(8 10 16 / 48%);
   backdrop-filter: blur(22px);
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 12px;
 }
 
 .contentPane {
-  padding: 24px;
-  display: grid;
-  grid-template-rows: auto auto 1fr auto;
-  gap: 18px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100vh;
+}
+
+.topToolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
 }
 
 .brand,
-.statsCard,
+.searchCard,
 .heroCard,
 .viewerCard,
-.attachmentsCard {
+.attachmentsCard,
+.statTile {
   border: 1px solid rgb(255 255 255 / 8%);
   background: rgb(255 255 255 / 4.5%);
-  border-radius: 24px;
-  box-shadow: 0 20px 60px rgb(0 0 0 / 22%);
+  border-radius: 8px;
+  box-shadow: 0 14px 40px rgb(0 0 0 / 18%);
 }
 
 .brand {
-  padding: 18px 20px;
+  padding: 14px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .brand h1,
 .heroCard h2,
+.emptyPanel h3,
 .attachmentsCard h3 {
   margin: 0;
 }
@@ -75,63 +89,88 @@ input {
   color: #f0b36f;
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  font-size: 0.75rem;
+  font-size: 0.68rem;
 }
 
-.statsCard {
-  margin-top: 16px;
-  padding: 18px 20px;
-  display: grid;
-  gap: 14px;
-}
-
-.statsCard div {
+.statsRow {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
-.statsCard span,
+.statPill {
+  min-width: 0;
+  padding: 8px 10px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 4.5%);
+  border-radius: 6px;
+}
+
+.statPill span,
 .mutedText,
 .attachmentsHeader span {
   color: rgb(248 243 234 / 70%);
 }
 
-.statsCard strong {
-  font-size: 1.1rem;
+.statPill span,
+.statPill strong {
+  line-height: 1;
+}
+
+.statPill strong {
+  font-size: 0.95rem;
+}
+
+.searchCard {
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
 }
 
 .searchField {
-  margin: 18px 0 14px;
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .searchField input {
   border: 1px solid rgb(255 255 255 / 8%);
   background: rgb(255 255 255 / 5%);
   color: inherit;
-  border-radius: 16px;
-  padding: 12px 14px;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.listMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.8rem;
+  color: rgb(248 243 234 / 62%);
 }
 
 .messageList {
   display: grid;
-  gap: 10px;
-  max-height: calc(100vh - 300px);
+  gap: 8px;
+  min-height: 0;
   overflow-y: auto;
+  padding-right: 2px;
+  align-content: start;
 }
 
 .messageItem {
   text-align: left;
   border: 1px solid rgb(255 255 255 / 5%);
   background: rgb(255 255 255 / 4%);
-  border-radius: 18px;
-  padding: 14px;
+  border-radius: 6px;
+  padding: 11px 12px;
   color: inherit;
   cursor: pointer;
   display: grid;
-  gap: 6px;
+  gap: 4px;
   transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
 }
 
@@ -146,35 +185,55 @@ input {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+  align-items: baseline;
+}
+
+.messageTop strong,
+.messageLine {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.messageTime {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  color: rgb(248 243 234 / 62%);
 }
 
 .heroCard {
-  padding: 22px 24px;
+  padding: 16px 18px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
+  gap: 12px;
+}
+
+.compactHero {
+  min-height: 0;
 }
 
 .metaGrid {
-  margin-top: 12px;
+  margin-top: 10px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 8px 16px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 6px 12px;
   color: rgb(248 243 234 / 78%);
+  font-size: 0.9rem;
 }
 
 .heroActions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .ghostButton,
 .dangerButton,
 .tab {
   border: 0;
-  border-radius: 999px;
-  padding: 10px 14px;
+  border-radius: 6px;
+  padding: 9px 13px;
   cursor: pointer;
 }
 
@@ -189,9 +248,91 @@ input {
   color: white;
 }
 
+.compactButton {
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.messageWorkspace {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.heroCopy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.detailGrid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.emptyHero {
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 4.5%);
+  border-radius: 8px;
+  box-shadow: 0 14px 40px rgb(0 0 0 / 18%);
+  padding: 18px 20px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 0;
+}
+
+.emptyHeroMain {
+  max-width: 760px;
+  display: grid;
+  gap: 10px;
+}
+
+.emptyCopy {
+  margin: 0;
+  color: rgb(248 243 234 / 72%);
+  line-height: 1.55;
+}
+
+.emptyListCard {
+  padding: 12px;
+  border: 1px dashed rgb(255 255 255 / 12%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 2.5%);
+  color: rgb(248 243 234 / 72%);
+}
+
+.emptyListCard strong,
+.emptyListCard p {
+  margin: 0;
+}
+
+.emptyListCard p {
+  margin-top: 4px;
+}
+
+.commandSnippet {
+  margin: 2px 0 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(10 13 20 / 52%);
+  color: #dce7f9;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .tabs {
   display: flex;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .tab.active {
@@ -202,47 +343,59 @@ input {
 
 .viewerCard,
 .attachmentsCard {
-  padding: 16px;
+  padding: 12px;
+}
+
+.attachmentsCard {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
 }
 
 .viewerCard {
-  min-height: 360px;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
 }
 
 .htmlFrame {
   width: 100%;
-  min-height: 500px;
+  min-height: 100%;
   border: 0;
-  border-radius: 16px;
+  border-radius: 6px;
   background: white;
 }
 
 .codeBlock {
   margin: 0;
+  min-height: 0;
+  overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: "IBM Plex Mono", monospace;
   color: #dce7f9;
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 .attachmentsHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .attachmentList {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .attachmentItem {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: 16px;
+  padding: 10px 12px;
+  border-radius: 6px;
   text-decoration: none;
   color: inherit;
   background: rgb(255 255 255 / 4%);
@@ -255,9 +408,15 @@ input {
 
 .errorBanner {
   padding: 14px 16px;
-  border-radius: 16px;
+  border-radius: 6px;
   background: rgb(245 72 74 / 16%);
   border: 1px solid rgb(245 72 74 / 35%);
+}
+
+@media (width <= 1180px) {
+  .detailGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (width <= 980px) {
@@ -276,5 +435,29 @@ input {
 
   .heroCard {
     flex-direction: column;
+  }
+
+  .emptyHero {
+    flex-direction: column;
+  }
+}
+
+@media (width <= 640px) {
+  .brand {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .statsRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .topToolbar {
+    justify-content: stretch;
+  }
+
+  .topToolbar button {
+    flex: 1 1 0;
   }
 }
