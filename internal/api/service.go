@@ -18,14 +18,26 @@ func NewService(store storage.Store, parser *parser.Service) *Service {
 }
 
 func (s *Service) ListMessages(ctx context.Context, query string) ([]models.Message, error) {
-	return s.store.ListMessages(ctx, models.MessageFilter{
+	messages, err := s.store.ListMessages(ctx, models.MessageFilter{
 		Query: query,
 		Limit: 500,
 	})
+	if err != nil {
+		return nil, err
+	}
+	for i := range messages {
+		s.parser.NormalizeMessage(&messages[i])
+	}
+	return messages, nil
 }
 
 func (s *Service) GetMessage(ctx context.Context, id int64) (models.Message, error) {
-	return s.store.GetMessage(ctx, id)
+	message, err := s.store.GetMessage(ctx, id)
+	if err != nil {
+		return models.Message{}, err
+	}
+	s.parser.NormalizeMessage(&message)
+	return message, nil
 }
 
 func (s *Service) GetRawMessage(ctx context.Context, id int64) (string, error) {

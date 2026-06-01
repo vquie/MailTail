@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -14,6 +15,8 @@ import (
 )
 
 type Service struct{}
+
+var headerWordDecoder = &mime.WordDecoder{}
 
 func NewService() *Service {
 	return &Service{}
@@ -27,14 +30,14 @@ func (s *Service) Parse(raw []byte) (models.StoredMessage, error) {
 
 	headers := make([]models.Header, 0, len(msg.Header))
 	for key, values := range msg.Header {
-		headers = append(headers, models.Header{Key: key, Value: strings.Join(values, ", ")})
+		headers = append(headers, models.Header{Key: key, Value: decodeHeaderValue(key, strings.Join(values, ", "))})
 	}
 
 	stored := models.StoredMessage{
-		HeaderFrom: msg.Header.Get("From"),
-		HeaderTo:   msg.Header.Get("To"),
-		Subject:    msg.Header.Get("Subject"),
-		MessageID:  msg.Header.Get("Message-ID"),
+		HeaderFrom: decodeHeaderValue("From", msg.Header.Get("From")),
+		HeaderTo:   decodeHeaderValue("To", msg.Header.Get("To")),
+		Subject:    decodeHeaderValue("Subject", msg.Header.Get("Subject")),
+		MessageID:  decodeHeaderValue("Message-ID", msg.Header.Get("Message-ID")),
 		Raw:        string(raw),
 		Headers:    headers,
 		Size:       len(raw),
@@ -78,7 +81,7 @@ func (s *Service) ParseHeaders(raw string) ([]models.Header, error) {
 	}
 	headers := make([]models.Header, 0, len(msg.Header))
 	for key, values := range msg.Header {
-		headers = append(headers, models.Header{Key: key, Value: strings.Join(values, ", ")})
+		headers = append(headers, models.Header{Key: key, Value: decodeHeaderValue(key, strings.Join(values, ", "))})
 	}
 	return headers, nil
 }
@@ -128,6 +131,7 @@ func (s *Service) walkMultipart(reader *multipart.Reader, stored *models.StoredM
 			if fileName == "" {
 				fileName = "attachment"
 			}
+			fileName = decodeTextHeader(fileName)
 			stored.Attachments = append(stored.Attachments, models.StoredAttachment{
 				FileName:    fileName,
 				ContentType: mediaType,
@@ -140,6 +144,21 @@ func (s *Service) walkMultipart(reader *multipart.Reader, stored *models.StoredM
 	}
 }
 
+func (s *Service) NormalizeMessage(msg *models.Message) {
+	msg.Subject = decodeHeaderValue("Subject", msg.Subject)
+	msg.HeaderFrom = decodeHeaderValue("From", msg.HeaderFrom)
+	msg.HeaderTo = decodeHeaderValue("To", msg.HeaderTo)
+	msg.MessageID = decodeHeaderValue("Message-ID", msg.MessageID)
+
+	for i := range msg.Headers {
+		msg.Headers[i].Value = decodeHeaderValue(msg.Headers[i].Key, msg.Headers[i].Value)
+	}
+
+	for i := range msg.Attachments {
+		msg.Attachments[i].FileName = decodeTextHeader(msg.Attachments[i].FileName)
+	}
+}
+
 func decodeTransferEncoding(encoding string, reader io.Reader) io.Reader {
 	switch strings.ToLower(strings.TrimSpace(encoding)) {
 	case "quoted-printable":
@@ -149,4 +168,54 @@ func decodeTransferEncoding(encoding string, reader io.Reader) io.Reader {
 	default:
 		return reader
 	}
+}
+
+func decodeHeaderValue(key, value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return value
+	}
+
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "from", "to", "cc", "bcc", "reply-to", "sender":
+		return decodeAddressHeader(value)
+	default:
+		return decodeTextHeader(value)
+	}
+}
+
+func decodeAddressHeader(value string) string {
+	parser := &mail.AddressParser{WordDecoder: headerWordDecoder}
+
+	if list, err := parser.ParseList(value); err == nil && len(list) > 0 {
+		parts := make([]string, 0, len(list))
+		for _, address := range list {
+			parts = append(parts, formatAddress(address))
+		}
+		return strings.Join(parts, ", ")
+	}
+
+	if address, err := parser.Parse(value); err == nil {
+		return formatAddress(address)
+	}
+
+	return decodeTextHeader(value)
+}
+
+func formatAddress(address *mail.Address) string {
+	if address == nil {
+		return ""
+	}
+	if address.Name == "" {
+		return address.Address
+	}
+	return fmt.Sprintf("%s <%s>", address.Name, address.Address)
+}
+
+func decodeTextHeader(value string) string {
+	decoded, err := headerWordDecoder.DecodeHeader(value)
+	if err != nil {
+		return value
+	}
+	return decoded
 }
