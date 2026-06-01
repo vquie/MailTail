@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/vitaliquiering/mailtail/internal/storage"
 )
@@ -35,8 +36,12 @@ func NewServer(addr, staticDir string, service *Service, logger *log.Logger) *Se
 	mux.HandleFunc("/", server.handleApp)
 
 	server.httpServer = &http.Server{
-		Addr:    addr,
-		Handler: loggingMiddleware(logger, corsMiddleware(mux)),
+		Addr:              addr,
+		Handler:           loggingMiddleware(logger, corsMiddleware(mux)),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 	return server
 }
@@ -223,9 +228,30 @@ func writeError(w http.ResponseWriter, status int, message string) {
 
 func loggingMiddleware(logger *log.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isNoisyPollingRequest(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		logger.Printf("%s %s", r.Method, r.URL.Path)
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isNoisyPollingRequest(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+
+	switch {
+	case r.URL.Path == "/api/stats":
+		return true
+	case r.URL.Path == "/api/messages":
+		return true
+	case strings.HasPrefix(r.URL.Path, "/api/messages/") && !strings.Contains(r.URL.Path, "/attachments/") && !strings.HasSuffix(r.URL.Path, "/raw"):
+		return true
+	default:
+		return false
+	}
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

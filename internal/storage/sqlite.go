@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 var migrationsFS embed.FS
 
 var ErrNotFound = errors.New("not found")
+var ftsTokenPattern = regexp.MustCompile(`[[:alnum:]_.@+-]+`)
 
 type Store interface {
 	CreateMessage(ctx context.Context, message models.StoredMessage) (int64, error)
@@ -42,7 +44,20 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 		return nil, err
 	}
 
-	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+	pragmas := []string{
+		"PRAGMA foreign_keys = ON",
+		"PRAGMA journal_mode = WAL",
+		"PRAGMA synchronous = NORMAL",
+		"PRAGMA busy_timeout = 5000",
+		"PRAGMA temp_store = MEMORY",
+	}
+	for _, pragma := range pragmas {
+		if _, err := db.Exec(pragma); err != nil {
+			return nil, err
+		}
+	}
+
+	if _, err := db.Exec("PRAGMA wal_autocheckpoint = 1000"); err != nil {
 		return nil, err
 	}
 
@@ -52,6 +67,10 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 	}
 	if _, err := db.Exec(string(schema)); err != nil {
 		return nil, fmt.Errorf("apply schema: %w", err)
+	}
+
+	if _, err := db.Exec(`INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')`); err != nil {
+		return nil, fmt.Errorf("rebuild message search index: %w", err)
 	}
 
 	return &SQLiteStore{db: db}, nil
@@ -138,9 +157,18 @@ func (s *SQLiteStore) ListMessages(ctx context.Context, filter models.MessageFil
 	`
 	args := make([]any, 0, 3)
 	if strings.TrimSpace(filter.Query) != "" {
-		query += ` WHERE LOWER(subject) LIKE ? OR LOWER(header_from) LIKE ? OR LOWER(header_to) LIKE ?`
-		term := "%" + strings.ToLower(strings.TrimSpace(filter.Query)) + "%"
-		args = append(args, term, term, term)
+		ftsQuery := buildFTSQuery(filter.Query)
+		if ftsQuery != "" {
+			query += `
+				JOIN messages_fts ON messages_fts.rowid = messages.id
+				WHERE messages_fts MATCH ?
+			`
+			args = append(args, ftsQuery)
+		} else {
+			query += ` WHERE LOWER(subject) LIKE ? OR LOWER(header_from) LIKE ? OR LOWER(header_to) LIKE ?`
+			term := "%" + strings.ToLower(strings.TrimSpace(filter.Query)) + "%"
+			args = append(args, term, term, term)
+		}
 	}
 	query += ` ORDER BY received_at DESC`
 	if filter.Limit > 0 {
@@ -374,4 +402,17 @@ func boolToInt(value bool) int {
 		return 1
 	}
 	return 0
+}
+
+func buildFTSQuery(input string) string {
+	tokens := ftsTokenPattern.FindAllString(strings.ToLower(input), -1)
+	if len(tokens) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		parts = append(parts, fmt.Sprintf(`"%s"*`, token))
+	}
+	return strings.Join(parts, " AND ")
 }

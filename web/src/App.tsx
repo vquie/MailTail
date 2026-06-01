@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   attachmentUrl,
   clearInbox,
@@ -24,21 +24,63 @@ export function App() {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [stats, setStats] = useState<Stats>({ messageCount: 0, totalSize: 0 });
   const [query, setQuery] = useState("");
+  const [queryInput, setQueryInput] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("html");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const queryRef = useRef(query);
+  const selectedIdRef = useRef<number | null>(selectedId);
+  const selectedMessageRef = useRef<Message | null>(selectedMessage);
 
   useEffect(() => {
-    void loadOverview(query, selectedId);
-    const timer = window.setInterval(() => {
-      void loadOverview(query, selectedId, false);
-    }, 5000);
-    return () => window.clearInterval(timer);
-  }, [query, selectedId]);
+    queryRef.current = query;
+  }, [query]);
 
-  async function loadOverview(search: string, currentId: number | null, setBusy = true) {
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setQuery(queryInput.trim());
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [queryInput]);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  useEffect(() => {
+    selectedMessageRef.current = selectedMessage;
+  }, [selectedMessage]);
+
+  useEffect(() => {
+    void loadOverview(query, {
+      preferredId: selectedIdRef.current,
+      forceDetail: true
+    });
+
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      void loadOverview(queryRef.current, {
+        preferredId: selectedIdRef.current,
+        setBusy: false
+      });
+    }, 15000);
+
+    return () => window.clearInterval(timer);
+  }, [query]);
+
+  async function loadOverview(
+    search: string,
+    options: {
+      preferredId?: number | null;
+      forceDetail?: boolean;
+      setBusy?: boolean;
+    } = {}
+  ) {
     try {
-      if (setBusy) {
+      if (options.setBusy ?? true) {
         setLoading(true);
       }
       const [messageList, currentStats] = await Promise.all([
@@ -48,10 +90,26 @@ export function App() {
       setMessages(messageList);
       setStats(currentStats);
 
-      const nextSelectedId = currentId ?? messageList[0]?.id ?? null;
+      const preferredId = options.preferredId ?? selectedIdRef.current;
+      const nextSelectedId =
+        preferredId !== null && messageList.some((message) => message.id === preferredId)
+          ? preferredId
+          : messageList[0]?.id ?? null;
+      const selectionChanged = nextSelectedId !== selectedIdRef.current;
+
       setSelectedId(nextSelectedId);
 
       if (nextSelectedId !== null) {
+        const shouldFetchDetail =
+          options.forceDetail ||
+          selectionChanged ||
+          selectedMessageRef.current?.id !== nextSelectedId;
+
+        if (!shouldFetchDetail) {
+          setError(null);
+          return;
+        }
+
         const detail = await fetchMessage(nextSelectedId);
         setSelectedMessage(detail);
       } else {
@@ -81,12 +139,14 @@ export function App() {
       return;
     }
     await deleteMessage(selectedId);
-    await loadOverview(query, null);
+    await loadOverview(queryRef.current, { preferredId: null, forceDetail: true });
   }
 
   async function handleClearInbox() {
     await clearInbox();
-    await loadOverview("", null);
+    setQueryInput("");
+    setQuery("");
+    await loadOverview("", { preferredId: null, forceDetail: true });
   }
 
   const content = useMemo(() => {
@@ -137,8 +197,8 @@ export function App() {
           <label className="searchField">
             <span>Search</span>
             <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              value={queryInput}
+              onChange={(event) => setQueryInput(event.target.value)}
               placeholder="Subject, From, To"
             />
           </label>
@@ -180,7 +240,10 @@ export function App() {
 
       <main className="contentPane">
         <div className="topToolbar">
-          <button className="ghostButton compactButton" onClick={() => void loadOverview(query, selectedId)}>
+          <button
+            className="ghostButton compactButton"
+            onClick={() => void loadOverview(queryRef.current, { preferredId: selectedIdRef.current, forceDetail: true })}
+          >
             Refresh
           </button>
           <button className="dangerButton compactButton" disabled={!hasMessages} onClick={() => void handleClearInbox()}>

@@ -32,3 +32,28 @@ CREATE INDEX IF NOT EXISTS idx_messages_subject ON messages(subject);
 CREATE INDEX IF NOT EXISTS idx_messages_header_from ON messages(header_from);
 CREATE INDEX IF NOT EXISTS idx_messages_header_to ON messages(header_to);
 CREATE INDEX IF NOT EXISTS idx_attachments_message_id ON attachments(message_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+    subject,
+    header_from,
+    header_to,
+    content='messages',
+    content_rowid='id'
+);
+
+CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+    INSERT INTO messages_fts(rowid, subject, header_from, header_to)
+    VALUES (new.id, new.subject, new.header_from, new.header_to);
+END;
+
+CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, subject, header_from, header_to)
+    VALUES ('delete', old.id, old.subject, old.header_from, old.header_to);
+END;
+
+CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, subject, header_from, header_to)
+    VALUES ('delete', old.id, old.subject, old.header_from, old.header_to);
+    INSERT INTO messages_fts(rowid, subject, header_from, header_to)
+    VALUES (new.id, new.subject, new.header_from, new.header_to);
+END;
