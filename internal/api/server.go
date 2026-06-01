@@ -22,7 +22,7 @@ type Server struct {
 	staticDir  string
 }
 
-func NewServer(addr, staticDir string, service *Service, logger *log.Logger) *Server {
+func NewServer(addr, staticDir string, service *Service, logger *log.Logger, authConfig AuthConfig) *Server {
 	server := &Server{
 		service:   service,
 		logger:    logger,
@@ -34,10 +34,11 @@ func NewServer(addr, staticDir string, service *Service, logger *log.Logger) *Se
 	mux.HandleFunc("/api/messages/", server.handleMessageByID)
 	mux.HandleFunc("/api/stats", server.handleStats)
 	mux.HandleFunc("/", server.handleApp)
+	sessionAuth := NewSessionAuth(authConfig)
 
 	server.httpServer = &http.Server{
 		Addr:              addr,
-		Handler:           loggingMiddleware(logger, corsMiddleware(mux)),
+		Handler:           sessionAuth.Middleware(loggingMiddleware(logger, corsMiddleware(mux))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

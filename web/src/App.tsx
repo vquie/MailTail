@@ -240,6 +240,9 @@ export function App() {
 
       <main className="contentPane">
         <div className="topToolbar">
+          <a className="ghostButton compactButton toolbarLink" href="/auth/logout">
+            Logout
+          </a>
           <button
             className="ghostButton compactButton"
             onClick={() => void loadOverview(queryRef.current, { preferredId: selectedIdRef.current, forceDetail: true })}
