@@ -232,7 +232,7 @@ func pruneAttempts(attempts []time.Time, now time.Time) []time.Time {
 }
 
 func setSessionCookies(w http.ResponseWriter, r *http.Request, sessionID, csrfToken string, expiresAt time.Time) {
-	secure := r.TLS != nil
+	secure := requestIsHTTPS(r)
 	maxAge := int(time.Until(expiresAt).Seconds())
 
 	http.SetCookie(w, &http.Cookie{
@@ -259,7 +259,7 @@ func setSessionCookies(w http.ResponseWriter, r *http.Request, sessionID, csrfTo
 }
 
 func clearSessionCookies(w http.ResponseWriter, r *http.Request) {
-	secure := r.TLS != nil
+	secure := requestIsHTTPS(r)
 	for _, name := range []string{sessionCookieName, csrfCookieName} {
 		http.SetCookie(w, &http.Cookie{
 			Name:     name,
@@ -272,6 +272,25 @@ func clearSessionCookies(w http.ResponseWriter, r *http.Request) {
 			Expires:  time.Unix(0, 0),
 		})
 	}
+}
+
+func requestIsHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+		return true
+	}
+
+	for _, part := range strings.Split(r.Header.Get("Forwarded"), ";") {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(strings.ToLower(part), "proto=") && strings.EqualFold(strings.Trim(part[6:], `"`), "https") {
+			return true
+		}
+	}
+
+	return false
 }
 
 func randomToken(size int) (string, error) {

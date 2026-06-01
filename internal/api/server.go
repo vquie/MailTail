@@ -22,7 +22,11 @@ type Server struct {
 	staticDir  string
 }
 
-func NewServer(addr, staticDir string, service *Service, logger *log.Logger, authConfig AuthConfig) *Server {
+type CORSConfig struct {
+	AllowedOrigins map[string]struct{}
+}
+
+func NewServer(addr, staticDir string, service *Service, logger *log.Logger, authConfig AuthConfig, corsConfig CORSConfig) *Server {
 	server := &Server{
 		service:   service,
 		logger:    logger,
@@ -38,7 +42,7 @@ func NewServer(addr, staticDir string, service *Service, logger *log.Logger, aut
 
 	server.httpServer = &http.Server{
 		Addr:              addr,
-		Handler:           sessionAuth.Middleware(loggingMiddleware(logger, corsMiddleware(mux))),
+		Handler:           sessionAuth.Middleware(loggingMiddleware(logger, corsMiddleware(mux, corsConfig))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -255,15 +259,34 @@ func isNoisyPollingRequest(r *http.Request) bool {
 	}
 }
 
-func corsMiddleware(next http.Handler) http.Handler {
+func corsMiddleware(next http.Handler, config CORSConfig) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := strings.TrimSpace(r.Header.Get("Origin"))
+		allowedOrigin := origin != "" && originAllowed(config.AllowedOrigins, origin)
+
+		if allowedOrigin {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Add("Vary", "Origin")
+		}
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
 		if r.Method == http.MethodOptions {
+			if origin != "" && !allowedOrigin {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func originAllowed(allowed map[string]struct{}, origin string) bool {
+	if len(allowed) == 0 {
+		return false
+	}
+	_, ok := allowed[origin]
+	return ok
 }

@@ -131,6 +131,117 @@ The Git tag itself must start with `v`, for example `v0.1.0`.
 - `DELETE /api/messages`
 - `GET /api/stats`
 
+### REST API authentication
+
+When `MAILTAIL_AUTH_USERNAME` and `MAILTAIL_AUTH_PASSWORD` are set, MailTail protects both the web UI and the REST API with a session-based login flow.
+
+Authentication flow:
+
+1. `GET /login` returns the login form.
+2. `POST /auth/login` accepts form-encoded `username` and `password`.
+3. On success, MailTail sets:
+   - `mailtail_session`: HTTP-only session cookie
+   - `mailtail_csrf`: CSRF token cookie used by API clients for mutating requests
+4. `POST /auth/logout` clears the session.
+
+Behavior:
+
+- unauthenticated `GET /api/...` requests return `401 {"error":"authentication required"}`
+- mutating requests without a valid `X-CSRF-Token` return `403 {"error":"invalid csrf token"}`
+- login attempts are rate-limited to 5 failed attempts per 15 minutes per client IP
+
+Example login and API usage with `curl`:
+
+```bash
+curl -i -c cookies.txt \
+  -X POST http://localhost:8080/auth/login \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data 'username=admin&password=change-me'
+```
+
+Read-only request with the stored session:
+
+```bash
+curl -b cookies.txt http://localhost:8080/api/messages
+```
+
+Mutating request with CSRF token:
+
+```bash
+csrf_token="$(awk '$6 == \"mailtail_csrf\" {print $7}' cookies.txt)"
+
+curl -i -b cookies.txt \
+  -X DELETE http://localhost:8080/api/messages \
+  -H "X-CSRF-Token: ${csrf_token}"
+```
+
+Logout:
+
+```bash
+csrf_token="$(awk '$6 == \"mailtail_csrf\" {print $7}' cookies.txt)"
+
+curl -i -b cookies.txt \
+  -X POST http://localhost:8080/auth/logout \
+  -H "X-CSRF-Token: ${csrf_token}"
+```
+
+### REST API response examples
+
+`GET /api/messages`
+
+```json
+{
+  "messages": [
+    {
+      "id": 12,
+      "subject": "Test message",
+      "mailFrom": "sender@example.test",
+      "rcptTo": ["receiver@example.test"],
+      "receivedAt": "2026-06-01T18:02:43Z",
+      "size": 259
+    }
+  ]
+}
+```
+
+`GET /api/messages/{id}`
+
+```json
+{
+  "message": {
+    "id": 12,
+    "subject": "Test message",
+    "messageId": "<abc@example.test>",
+    "mailFrom": "sender@example.test",
+    "rcptTo": ["receiver@example.test"],
+    "textBody": "Hello",
+    "htmlBody": "<p>Hello</p>",
+    "headers": [
+      { "key": "Subject", "value": "Test message" }
+    ],
+    "attachments": [],
+    "rawSize": 259
+  }
+}
+```
+
+`GET /api/stats`
+
+```json
+{
+  "messageCount": 1,
+  "totalSize": 259
+}
+```
+
+Error format:
+
+```json
+{
+  "error": "message not found"
+}
+```
+
 ## Example SMTP test
 
 ```bash
@@ -150,6 +261,7 @@ Environment variables:
 - `MAILTAIL_WEB_DIR` default: `web/dist`
 - `MAILTAIL_AUTH_USERNAME` default: empty, disables login protection for web UI and API and logs a startup warning
 - `MAILTAIL_AUTH_PASSWORD` default: empty, disables login protection for web UI and API and logs a startup warning
+- `MAILTAIL_ALLOWED_ORIGINS` default: empty, disables cross-origin browser access. Set this only if you intentionally need browser clients from another origin.
 - `MAILTAIL_ALLOWED_REMOTE_IPS` default: empty, accepts SMTP connections from all IPs and logs a startup warning. Supports IPs and CIDR ranges.
 - `MAILTAIL_ACCEPTED_RCPT_DOMAINS` default: empty, accepts recipients for all domains and logs a startup warning. Values may be exact domains or regular expressions.
 - `MAILTAIL_ACCEPTED_FROM_DOMAINS` default: empty, accepts senders for all domains and logs a startup warning. Values may be exact domains or regular expressions.
@@ -164,6 +276,8 @@ make run
 To enable login protection, set both `MAILTAIL_AUTH_USERNAME` and `MAILTAIL_AUTH_PASSWORD`. If only one is set, MailTail exits on startup.
 MailTail then serves a login form and stores an authenticated session in a secure HTTP-only cookie, so you do not need to re-enter credentials on every API request.
 This protects the web UI and REST API. SMTP remains unauthenticated in this MVP.
+When MailTail runs behind TLS termination, make sure your proxy forwards `X-Forwarded-Proto: https` or `Forwarded: proto=https` so the session cookie is marked `Secure`.
+Cross-origin browser access is off by default. If you explicitly need it, set `MAILTAIL_ALLOWED_ORIGINS` to a comma-separated allow-list such as `https://mail.example.com,https://ops.example.com`.
 To restrict SMTP access, set `MAILTAIL_ALLOWED_REMOTE_IPS` to a comma-separated list such as `127.0.0.1,10.0.0.0/8,192.168.0.0/16`.
 Recipient and sender allow-lists accept either exact domains such as `example.test` or regular expressions such as `^.+@example\\.test$` or `(^|\\.)example\\.test$`.
 

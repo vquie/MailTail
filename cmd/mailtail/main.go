@@ -27,6 +27,7 @@ func main() {
 	staticDir := getEnv("MAILTAIL_WEB_DIR", filepath.Join("web", "dist"))
 	authUsername := strings.TrimSpace(os.Getenv("MAILTAIL_AUTH_USERNAME"))
 	authPassword := os.Getenv("MAILTAIL_AUTH_PASSWORD")
+	allowedOrigins := parseCSVEnv("MAILTAIL_ALLOWED_ORIGINS")
 	acceptedRcptDomains := parseCSVEnv("MAILTAIL_ACCEPTED_RCPT_DOMAINS")
 	acceptedFromDomains := parseCSVEnv("MAILTAIL_ACCEPTED_FROM_DOMAINS")
 	allowedRemoteIPs := parseCSVEnv("MAILTAIL_ALLOWED_REMOTE_IPS")
@@ -57,6 +58,11 @@ func main() {
 	default:
 		logger.Printf("HTTP auth enabled for web UI and API")
 	}
+	if len(allowedOrigins) == 0 {
+		logger.Printf("CORS disabled for cross-origin browsers; web UI and API are same-origin by default")
+	} else {
+		logger.Printf("allowed CORS origins: %s", strings.Join(allowedOrigins, ", "))
+	}
 
 	store, err := storage.NewSQLiteStore(filepath.Join(dataDir, "mailtail.db"))
 	if err != nil {
@@ -70,6 +76,8 @@ func main() {
 		Username: authUsername,
 		Password: authPassword,
 		Realm:    "MailTail",
+	}, api.CORSConfig{
+		AllowedOrigins: normalizeExactSet(allowedOrigins),
 	})
 
 	smtpPolicy, err := smtpserver.NewDomainPolicy(acceptedRcptDomains, acceptedFromDomains, allowedRemoteIPs)
@@ -105,6 +113,22 @@ func main() {
 			logger.Fatalf("server failed: %v", err)
 		}
 	}
+}
+
+func normalizeExactSet(values []string) map[string]struct{} {
+	if len(values) == 0 {
+		return nil
+	}
+
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		set[value] = struct{}{}
+	}
+	return set
 }
 
 func getEnv(key, fallback string) string {
