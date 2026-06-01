@@ -2,8 +2,7 @@ FROM node:24-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526a
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json web/tsconfig.json web/tsconfig.app.json web/vite.config.ts web/index.html ./
 COPY web/src ./src
-RUN npm ci
-RUN npm run build
+RUN npm ci && npm run build
 
 FROM golang:1.26-alpine@sha256:91eda9776261207ea25fd06b5b7fed8d397dd2c0a283e77f2ab6e91bfa71079d AS go-build
 WORKDIR /src
@@ -24,7 +23,8 @@ RUN adduser -D -h /app mailtail
 WORKDIR /app
 COPY --from=go-build /out/mailtail /app/mailtail
 COPY --from=web-build /src/web/dist /app/web/dist
-RUN mkdir -p /data && chown -R mailtail:mailtail /app /data
+RUN mkdir -p /data \
+  && chown -R mailtail:mailtail /app /data
 USER mailtail
 EXPOSE 8025 8080
 VOLUME ["/data"]

@@ -1,0 +1,6 @@
+{
+  "rules": {
+    "selector-class-pattern": null,
+    "declaration-property-value-keyword-no-deprecated": null
+  }
+}
