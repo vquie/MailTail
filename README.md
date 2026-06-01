@@ -123,7 +123,8 @@ The Git tag itself must start with `v`, for example `v0.1.0`.
 ## REST API
 
 - `GET /api/messages`
-- `GET /api/messages?q=invoice`
+- `GET /api/messages?q=invoice&limit=25`
+- `GET /api/messages?q=invoice&cursor=<cursor>`
 - `GET /api/messages/{id}`
 - `GET /api/messages/{id}/raw`
 - `GET /api/messages/{id}/attachments/{attachmentId}`
@@ -191,6 +192,8 @@ curl -i -b cookies.txt \
 
 ```json
 {
+  "hasMore": true,
+  "nextCursor": "MjAyNi0wNi0wMVQxODowMjo0M1oufDEy",
   "messages": [
     {
       "id": 12,
@@ -203,6 +206,13 @@ curl -i -b cookies.txt \
   ]
 }
 ```
+
+Notes:
+
+- search always runs across the full inbox, not just the currently loaded page
+- pagination is cursor-based and sorted by `receivedAt DESC, id DESC`
+- the default page size is `25`
+- `limit` can be overridden per request and is capped server-side
 
 `GET /api/messages/{id}`
 

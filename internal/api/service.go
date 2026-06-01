@@ -18,18 +18,19 @@ func NewService(store storage.Store, parser *parser.Service, version string) *Se
 	return &Service{store: store, parser: parser, version: version}
 }
 
-func (s *Service) ListMessages(ctx context.Context, query string) ([]models.Message, error) {
-	messages, err := s.store.ListMessages(ctx, models.MessageFilter{
-		Query: query,
-		Limit: 500,
+func (s *Service) ListMessages(ctx context.Context, query, cursor string, limit int) (models.MessagePage, error) {
+	page, err := s.store.ListMessages(ctx, models.MessageFilter{
+		Query:  query,
+		Limit:  limit,
+		Cursor: cursor,
 	})
 	if err != nil {
-		return nil, err
+		return models.MessagePage{}, err
 	}
-	for i := range messages {
-		s.parser.NormalizeMessage(&messages[i])
+	for i := range page.Messages {
+		s.parser.NormalizeMessage(&page.Messages[i])
 	}
-	return messages, nil
+	return page, nil
 }
 
 func (s *Service) GetMessage(ctx context.Context, id int64) (models.Message, error) {

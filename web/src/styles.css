@@ -173,6 +173,11 @@ input {
   align-content: start;
 }
 
+.loadMoreButton {
+  width: 100%;
+  justify-content: center;
+}
+
 .sidebarVersion {
   margin-top: 8px;
   color: rgb(248 243 234 / 46%);

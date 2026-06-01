@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,11 +22,12 @@ import (
 var migrationsFS embed.FS
 
 var ErrNotFound = errors.New("not found")
+var ErrInvalidCursor = errors.New("invalid cursor")
 var ftsTokenPattern = regexp.MustCompile(`[[:alnum:]_.@+-]+`)
 
 type Store interface {
 	CreateMessage(ctx context.Context, message models.StoredMessage) (int64, error)
-	ListMessages(ctx context.Context, filter models.MessageFilter) ([]models.Message, error)
+	ListMessages(ctx context.Context, filter models.MessageFilter) (models.MessagePage, error)
 	GetMessage(ctx context.Context, id int64) (models.Message, error)
 	GetRawMessage(ctx context.Context, id int64) (string, error)
 	GetAttachment(ctx context.Context, messageID, attachmentID int64) (models.Attachment, []byte, error)
@@ -149,48 +152,79 @@ func (s *SQLiteStore) CreateMessage(ctx context.Context, message models.StoredMe
 	return messageID, nil
 }
 
-func (s *SQLiteStore) ListMessages(ctx context.Context, filter models.MessageFilter) ([]models.Message, error) {
+func (s *SQLiteStore) ListMessages(ctx context.Context, filter models.MessageFilter) (models.MessagePage, error) {
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 25
+	}
+
 	query := `
 		SELECT id, received_at, mail_from, rcpt_to_json, header_from, header_to, subject,
 		       message_id, helo, remote_ip, size
 		FROM messages
 	`
-	args := make([]any, 0, 3)
+	args := make([]any, 0, 6)
+	clauses := make([]string, 0, 2)
 	if strings.TrimSpace(filter.Query) != "" {
 		ftsQuery := buildFTSQuery(filter.Query)
 		if ftsQuery != "" {
 			query += `
 				JOIN messages_fts ON messages_fts.rowid = messages.id
-				WHERE messages_fts MATCH ?
 			`
+			clauses = append(clauses, `messages_fts MATCH ?`)
 			args = append(args, ftsQuery)
 		} else {
-			query += ` WHERE LOWER(subject) LIKE ? OR LOWER(header_from) LIKE ? OR LOWER(header_to) LIKE ?`
+			clauses = append(clauses, `(LOWER(messages.subject) LIKE ? OR LOWER(messages.header_from) LIKE ? OR LOWER(messages.header_to) LIKE ?)`)
 			term := "%" + strings.ToLower(strings.TrimSpace(filter.Query)) + "%"
 			args = append(args, term, term, term)
 		}
 	}
-	query += ` ORDER BY received_at DESC`
-	if filter.Limit > 0 {
-		query += ` LIMIT ?`
-		args = append(args, filter.Limit)
+
+	if filter.Cursor != "" {
+		cursorTime, cursorID, err := decodeMessageCursor(filter.Cursor)
+		if err != nil {
+			return models.MessagePage{}, fmt.Errorf("%w: %v", ErrInvalidCursor, err)
+		}
+		clauses = append(clauses, `((messages.received_at < ?) OR (messages.received_at = ? AND messages.id < ?))`)
+		args = append(args, cursorTime, cursorTime, cursorID)
 	}
+
+	if len(clauses) > 0 {
+		query += ` WHERE ` + strings.Join(clauses, ` AND `)
+	}
+	query += ` ORDER BY messages.received_at DESC, messages.id DESC LIMIT ?`
+	args = append(args, limit+1)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return models.MessagePage{}, err
 	}
 	defer rows.Close()
 
-	messages := make([]models.Message, 0)
+	messages := make([]models.Message, 0, limit)
 	for rows.Next() {
 		msg, err := scanMessageSummary(rows)
 		if err != nil {
-			return nil, err
+			return models.MessagePage{}, err
 		}
 		messages = append(messages, msg)
 	}
-	return messages, rows.Err()
+	if err := rows.Err(); err != nil {
+		return models.MessagePage{}, err
+	}
+
+	page := models.MessagePage{Messages: messages}
+	if len(messages) > limit {
+		page.HasMore = true
+		page.Messages = messages[:limit]
+		last := page.Messages[len(page.Messages)-1]
+		page.NextCursor = encodeMessageCursor(last.ReceivedAt.UTC().Format(time.RFC3339Nano), last.ID)
+	}
+	if len(page.Messages) == 0 {
+		page.Messages = []models.Message{}
+	}
+
+	return page, nil
 }
 
 func (s *SQLiteStore) GetMessage(ctx context.Context, id int64) (models.Message, error) {
@@ -415,4 +449,32 @@ func buildFTSQuery(input string) string {
 		parts = append(parts, fmt.Sprintf(`"%s"*`, token))
 	}
 	return strings.Join(parts, " AND ")
+}
+
+func encodeMessageCursor(receivedAt string, id int64) string {
+	raw := receivedAt + "|" + strconv.FormatInt(id, 10)
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+func decodeMessageCursor(cursor string) (string, int64, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return "", 0, err
+	}
+
+	parts := strings.SplitN(string(decoded), "|", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", 0, errors.New("malformed cursor")
+	}
+
+	if _, err := time.Parse(time.RFC3339Nano, parts[0]); err != nil {
+		return "", 0, err
+	}
+
+	id, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return "", 0, err
+	}
+
+	return parts[0], id, nil
 }

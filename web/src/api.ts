@@ -1,4 +1,4 @@
-import type { AppInfo, Message, Stats } from "./types";
+import type { AppInfo, Message, MessagePage, Stats } from "./types";
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const response = await fetch(input, withCSRF(init));
@@ -16,10 +16,22 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function fetchMessages(query: string): Promise<Message[]> {
-  const url = query ? `/api/messages?q=${encodeURIComponent(query)}` : "/api/messages";
-  const data = await request<{ messages: Message[] | null }>(url);
-  return data.messages ?? [];
+export async function fetchMessages(query: string, cursor = "", limit = 25): Promise<MessagePage> {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  if (query) {
+    params.set("q", query);
+  }
+  if (cursor) {
+    params.set("cursor", cursor);
+  }
+
+  const data = await request<MessagePage>(`/api/messages?${params.toString()}`);
+  return {
+    messages: data.messages ?? [],
+    nextCursor: data.nextCursor,
+    hasMore: data.hasMore ?? false
+  };
 }
 
 export async function fetchMessage(id: number): Promise<Message> {

@@ -41,3 +41,9 @@ export type Stats = {
 export type AppInfo = {
   version: string;
 };
+
+export type MessagePage = {
+  messages: Message[];
+  nextCursor?: string;
+  hasMore: boolean;
+};

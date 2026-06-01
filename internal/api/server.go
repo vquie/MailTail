@@ -26,6 +26,11 @@ type CORSConfig struct {
 	AllowedOrigins map[string]struct{}
 }
 
+const (
+	defaultMessagePageSize = 25
+	maxMessagePageSize     = 100
+)
+
 func NewServer(addr, staticDir string, service *Service, logger *log.Logger, authConfig AuthConfig, corsConfig CORSConfig) *Server {
 	server := &Server{
 		service:   service,
@@ -63,12 +68,26 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		messages, err := s.service.ListMessages(r.Context(), r.URL.Query().Get("q"))
+		limit, err := parseMessagePageSize(r)
 		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		page, err := s.service.ListMessages(
+			r.Context(),
+			r.URL.Query().Get("q"),
+			r.URL.Query().Get("cursor"),
+			limit,
+		)
+		if err != nil {
+			if errors.Is(err, storage.ErrInvalidCursor) {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"messages": messages})
+		writeJSON(w, http.StatusOK, page)
 	case http.MethodDelete:
 		if err := s.service.DeleteAllMessages(r.Context()); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
@@ -78,6 +97,25 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+func parseMessagePageSize(r *http.Request) (int, error) {
+	value := strings.TrimSpace(r.URL.Query().Get("limit"))
+	if value == "" {
+		return defaultMessagePageSize, nil
+	}
+
+	limit, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, errors.New("invalid message page size")
+	}
+	if limit <= 0 {
+		return defaultMessagePageSize, nil
+	}
+	if limit > maxMessagePageSize {
+		return maxMessagePageSize, nil
+	}
+	return limit, nil
 }
 
 func (s *Server) handleMessageByID(w http.ResponseWriter, r *http.Request) {

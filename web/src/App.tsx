@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   attachmentUrl,
-  fetchAppInfo,
   clearInbox,
   deleteMessage,
+  fetchAppInfo,
   fetchMessage,
   fetchMessages,
   fetchStats,
@@ -13,12 +13,7 @@ import type { Message, Stats } from "./types";
 
 type TabKey = "html" | "text" | "headers" | "raw";
 
-const tabs: Array<{ key: TabKey; label: string }> = [
-  { key: "html", label: "HTML" },
-  { key: "text", label: "Text" },
-  { key: "headers", label: "Headers" },
-  { key: "raw", label: "Raw" }
-];
+const defaultPageSize = 25;
 
 export function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -28,17 +23,27 @@ export function App() {
   const [version, setVersion] = useState("dev");
   const [query, setQuery] = useState("");
   const [queryInput, setQueryInput] = useState("");
+  const [nextCursor, setNextCursor] = useState("");
+  const [hasMore, setHasMore] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("html");
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const queryRef = useRef(query);
+  const messagesRef = useRef(messages);
   const selectedIdRef = useRef<number | null>(selectedId);
   const selectedMessageRef = useRef<Message | null>(selectedMessage);
+  const nextCursorRef = useRef(nextCursor);
+  const hasMoreRef = useRef(hasMore);
 
   useEffect(() => {
     queryRef.current = query;
   }, [query]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -56,13 +61,22 @@ export function App() {
   }, [selectedMessage]);
 
   useEffect(() => {
+    nextCursorRef.current = nextCursor;
+  }, [nextCursor]);
+
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
+
+  useEffect(() => {
     setAttachmentsExpanded(true);
   }, [selectedMessage?.id]);
 
   useEffect(() => {
     void loadOverview(query, {
       preferredId: selectedIdRef.current,
-      forceDetail: true
+      forceDetail: true,
+      resetList: true
     });
 
     const timer = window.setInterval(() => {
@@ -85,20 +99,26 @@ export function App() {
       preferredId?: number | null;
       forceDetail?: boolean;
       setBusy?: boolean;
+      resetList?: boolean;
     } = {}
   ) {
     try {
       if (options.setBusy ?? true) {
         setLoading(true);
       }
-      const [messageList, currentStats, appInfo] = await Promise.all([
-        fetchMessages(search),
+      const resetList = options.resetList ?? false;
+      const [page, currentStats, appInfo] = await Promise.all([
+        fetchMessages(search, "", defaultPageSize),
         fetchStats(),
         fetchAppInfo()
       ]);
+      const loadedMore = messagesRef.current.length > page.messages.length;
+      const messageList = resetList ? page.messages : mergeMessages(page.messages, messagesRef.current);
       setMessages(messageList);
       setStats(currentStats);
       setVersion(appInfo.version);
+      setNextCursor(resetList || !loadedMore ? page.nextCursor ?? "" : nextCursorRef.current);
+      setHasMore(resetList || !loadedMore ? page.hasMore : hasMoreRef.current);
 
       const preferredId = options.preferredId ?? selectedIdRef.current;
       const nextSelectedId =
@@ -133,6 +153,25 @@ export function App() {
     }
   }
 
+  async function handleLoadMore() {
+    if (!nextCursorRef.current || loadingMore) {
+      return;
+    }
+
+    try {
+      setLoadingMore(true);
+      const page = await fetchMessages(queryRef.current, nextCursorRef.current, defaultPageSize);
+      setMessages((current) => mergeMessages(current, page.messages));
+      setNextCursor(page.nextCursor ?? "");
+      setHasMore(page.hasMore);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   async function handleSelectMessage(id: number) {
     setSelectedId(id);
     try {
@@ -149,14 +188,14 @@ export function App() {
       return;
     }
     await deleteMessage(selectedId);
-    await loadOverview(queryRef.current, { preferredId: null, forceDetail: true });
+    await loadOverview(queryRef.current, { preferredId: null, forceDetail: true, resetList: true });
   }
 
   async function handleClearInbox() {
     await clearInbox();
     setQueryInput("");
     setQuery("");
-    await loadOverview("", { preferredId: null, forceDetail: true });
+    await loadOverview("", { preferredId: null, forceDetail: true, resetList: true });
   }
 
   async function handleLogout() {
@@ -244,8 +283,8 @@ export function App() {
             />
           </label>
           <div className="listMeta">
-            <span>{messages.length} visible</span>
-            <span>{selectedMessage ? `#${selectedMessage.id}` : "No selection"}</span>
+            <span>{messages.length} loaded</span>
+            <span>{hasMore ? "More available" : selectedMessage ? `#${selectedMessage.id}` : "No selection"}</span>
           </div>
         </div>
 
@@ -276,6 +315,11 @@ export function App() {
               <p>No messages captured yet.</p>
             </div>
           ) : null}
+          {hasMore ? (
+            <button className="ghostButton compactButton loadMoreButton" disabled={loadingMore} onClick={() => void handleLoadMore()}>
+              {loadingMore ? "Loading..." : "Load more"}
+            </button>
+          ) : null}
         </div>
 
         <div className="sidebarVersion">Version {version}</div>
@@ -288,7 +332,12 @@ export function App() {
           </button>
           <button
             className="ghostButton compactButton"
-            onClick={() => void loadOverview(queryRef.current, { preferredId: selectedIdRef.current, forceDetail: true })}
+            onClick={() =>
+              void loadOverview(queryRef.current, {
+                preferredId: selectedIdRef.current,
+                forceDetail: true
+              })
+            }
           >
             Refresh
           </button>
@@ -435,4 +484,17 @@ function formatBytes(size: number): string {
     return `${(size / 1024).toFixed(1)} KB`;
   }
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function mergeMessages(primary: Message[], secondary: Message[]): Message[] {
+  const merged = new Map<number, Message>();
+  for (const message of primary) {
+    merged.set(message.id, message);
+  }
+  for (const message of secondary) {
+    if (!merged.has(message.id)) {
+      merged.set(message.id, message);
+    }
+  }
+  return Array.from(merged.values());
 }

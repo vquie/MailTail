@@ -64,8 +64,15 @@ type StoredAttachment struct {
 }
 
 type MessageFilter struct {
-	Query string
-	Limit int
+	Query  string
+	Limit  int
+	Cursor string
+}
+
+type MessagePage struct {
+	Messages   []Message `json:"messages"`
+	NextCursor string    `json:"nextCursor,omitempty"`
+	HasMore    bool      `json:"hasMore"`
 }
 
 type Stats struct {
