@@ -156,11 +156,17 @@ export function App() {
               onClick={() => void handleSelectMessage(message.id)}
             >
               <div className="messageTop">
-                <strong>{message.subject || "(no subject)"}</strong>
+                <strong className="messageSubject">{message.subject || "(no subject)"}</strong>
                 <span className="messageTime">{formatTime(message.receivedAt)}</span>
               </div>
-              <span className="messageLine">{message.headerFrom || message.mailFrom}</span>
-              <span className="mutedText messageLine">{message.headerTo || message.rcptTo.join(", ")}</span>
+              <div className="messageMeta">
+                <span className="messageMetaLabel">From</span>
+                <span className="messageLine">{message.headerFrom || message.mailFrom}</span>
+              </div>
+              <div className="messageMeta">
+                <span className="messageMetaLabel">Rcpt</span>
+                <span className="mutedText messageLine">{message.headerTo || message.rcptTo.join(", ")}</span>
+              </div>
             </button>
           ))}
           {!loading && messages.length === 0 ? (
