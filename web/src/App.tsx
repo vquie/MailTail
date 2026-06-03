@@ -29,6 +29,8 @@ export function App() {
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [copiedHeaderKey, setCopiedHeaderKey] = useState<string | null>(null);
+  const [copiedPaneKey, setCopiedPaneKey] = useState<TabKey | null>(null);
   const [error, setError] = useState<string | null>(null);
   const queryRef = useRef(query);
   const messagesRef = useRef(messages);
@@ -203,6 +205,37 @@ export function App() {
     window.location.href = "/login";
   }
 
+  async function handleCopyHeaderValue(headerKey: string, value: string) {
+    try {
+      await writeClipboard(value);
+      setCopiedHeaderKey(headerKey);
+      window.setTimeout(() => {
+        setCopiedHeaderKey((current) => (current === headerKey ? null : current));
+      }, 1500);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to copy header");
+    }
+  }
+
+  async function handleCopyCurrentPane() {
+    const paneValue = currentPaneCopyValue(activeTab, selectedMessage);
+    if (!paneValue) {
+      return;
+    }
+
+    try {
+      await writeClipboard(paneValue);
+      setCopiedPaneKey(activeTab);
+      window.setTimeout(() => {
+        setCopiedPaneKey((current) => (current === activeTab ? null : current));
+      }, 1500);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to copy content");
+    }
+  }
+
   const content = useMemo(() => {
     if (!selectedMessage) {
       return {
@@ -251,6 +284,8 @@ export function App() {
   const hasAttachments = Boolean(selectedMessage?.attachments?.length);
   const smtpExampleRecipient = "test@example.test";
   const smtpExampleSender = "sender@example.test";
+  const paneCopyValue = currentPaneCopyValue(activeTab, selectedMessage);
+  const paneCopyLabel = activeTab === "headers" ? "Copy all" : "Copy all";
 
   return (
     <div className="shell">
@@ -383,6 +418,14 @@ export function App() {
                       </button>
                     ))}
                   </div>
+                  <button
+                    className="ghostButton compactButton viewerCopyButton"
+                    disabled={!paneCopyValue}
+                    onClick={() => void handleCopyCurrentPane()}
+                  >
+                    {copiedPaneKey === activeTab ? <CheckIcon /> : <CopyIcon />}
+                    <span>{copiedPaneKey === activeTab ? "Copied" : paneCopyLabel}</span>
+                  </button>
                 </div>
                 {activeTab === "html" ? (
                   <iframe
@@ -394,12 +437,27 @@ export function App() {
                 ) : activeTab === "headers" ? (
                   <div className="headersList">
                     {(selectedMessage.headers ?? []).length ? (
-                      selectedMessage.headers?.map((header, index) => (
-                        <div key={`${header.key}-${index}`} className="headerRow">
-                          <span className="headerKey">{header.key}</span>
-                          <span className="headerValue">{header.value}</span>
-                        </div>
-                      ))
+                      <>
+                        {selectedMessage.headers?.map((header, index) => {
+                          const headerCopyKey = `${header.key}-${index}`;
+                          return (
+                            <div key={headerCopyKey} className="headerRow">
+                              <span className="headerKey">{header.key}</span>
+                              <div className="headerValueGroup">
+                                <span className="headerValue">{header.value}</span>
+                                <button
+                                  className={copiedHeaderKey === headerCopyKey ? "ghostButton compactButton iconButton copied" : "ghostButton compactButton iconButton"}
+                                  aria-label={`Copy ${header.key} header`}
+                                  title={copiedHeaderKey === headerCopyKey ? "Copied" : `Copy ${header.key}`}
+                                  onClick={() => void handleCopyHeaderValue(headerCopyKey, header.value)}
+                                >
+                                  {copiedHeaderKey === headerCopyKey ? <CheckIcon /> : <CopyIcon />}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </>
                     ) : (
                       <p className="emptyState">No headers available.</p>
                     )}
@@ -497,4 +555,61 @@ function mergeMessages(primary: Message[], secondary: Message[]): Message[] {
     }
   }
   return Array.from(merged.values());
+}
+
+function currentPaneCopyValue(activeTab: TabKey, message: Message | null): string {
+  if (!message) {
+    return "";
+  }
+
+  switch (activeTab) {
+    case "html":
+      return message.htmlBody ?? "";
+    case "text":
+      return message.textBody ?? "";
+    case "headers":
+      return (message.headers ?? []).map((header) => `${header.key}: ${header.value}`).join("\n");
+    case "raw":
+      return message.raw ?? "";
+    default:
+      return "";
+  }
+}
+
+async function writeClipboard(value: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "absolute";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  try {
+    document.execCommand("copy");
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
+
+function CopyIcon() {
+  return (
+    <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="6" y="3" width="7" height="9" rx="1.5" />
+      <path d="M4.5 5H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-.5" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
+    </svg>
+  );
 }
