@@ -7,6 +7,8 @@ import (
 	"github.com/vquie/MailTail/internal/models"
 )
 
+const DefaultMailFailRulesFile = "examples/mailfail.yaml"
+
 type Manager struct {
 	mu             sync.RWMutex
 	settings       models.AppSettings
@@ -74,6 +76,9 @@ func CSVList(value string) []string {
 func normalizeSettings(settings models.AppSettings) models.AppSettings {
 	settings.AllowedOrigins = normalizeCSV(settings.AllowedOrigins)
 	settings.MailFailRulesFile = strings.TrimSpace(settings.MailFailRulesFile)
+	if settings.MailFailRulesFile == "" {
+		settings.MailFailRulesFile = DefaultMailFailRulesFile
+	}
 	settings.AllowedRemoteIPs = normalizeCSV(settings.AllowedRemoteIPs)
 	settings.AcceptedRcptDomains = normalizeCSV(settings.AcceptedRcptDomains)
 	settings.AcceptedFromDomains = normalizeCSV(settings.AcceptedFromDomains)

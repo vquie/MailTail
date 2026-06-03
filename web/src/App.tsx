@@ -17,11 +17,12 @@ import type { AppSettings, Message, Stats } from "./types";
 type TabKey = "html" | "text" | "headers" | "raw";
 
 const defaultPageSize = 25;
+const defaultMailFailRulesFile = "examples/mailfail.yaml";
 const emptySettings: AppSettings = {
   allowedOrigins: "",
   smtpLogVerbose: false,
   mailFailEnabled: false,
-  mailFailRulesFile: "",
+  mailFailRulesFile: defaultMailFailRulesFile,
   allowedRemoteIps: "",
   acceptedRcptDomains: "",
   acceptedFromDomains: ""
@@ -49,6 +50,10 @@ export function App() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
+  const [limitAllowedOrigins, setLimitAllowedOrigins] = useState(false);
+  const [limitAllowedRemoteIps, setLimitAllowedRemoteIps] = useState(false);
+  const [limitAcceptedRcptDomains, setLimitAcceptedRcptDomains] = useState(false);
+  const [limitAcceptedFromDomains, setLimitAcceptedFromDomains] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const queryRef = useRef(query);
   const messagesRef = useRef(messages);
@@ -230,7 +235,12 @@ export function App() {
       setSettingsError(null);
       setSettingsNotice(null);
       const settings = await fetchSettings();
-      setSettingsDraft(settings);
+      const normalized = normalizeSettingsDraft(settings);
+      setSettingsDraft(normalized);
+      setLimitAllowedOrigins(Boolean(normalized.allowedOrigins.trim()));
+      setLimitAllowedRemoteIps(Boolean(normalized.allowedRemoteIps.trim()));
+      setLimitAcceptedRcptDomains(Boolean(normalized.acceptedRcptDomains.trim()));
+      setLimitAcceptedFromDomains(Boolean(normalized.acceptedFromDomains.trim()));
     } catch (err) {
       setSettingsError(err instanceof Error ? err.message : "Failed to load settings");
     } finally {
@@ -241,8 +251,14 @@ export function App() {
   async function handleSaveSettings() {
     try {
       setSettingsSaving(true);
-      const saved = await updateSettings(settingsDraft);
-      setSettingsDraft(saved);
+      const saved = await updateSettings(buildSettingsPayload(settingsDraft, {
+        limitAllowedOrigins,
+        limitAllowedRemoteIps,
+        limitAcceptedRcptDomains,
+        limitAcceptedFromDomains
+      }));
+      const normalized = normalizeSettingsDraft(saved);
+      setSettingsDraft(normalized);
       setSettingsNotice("Saved. Changes are applied immediately.");
       setSettingsError(null);
     } catch (err) {
@@ -289,6 +305,13 @@ export function App() {
       [key]: value
     }));
     setSettingsNotice(null);
+  }
+
+  function handleToggleMailFail(enabled: boolean) {
+    updateSettingsField("mailFailEnabled", enabled);
+    if (enabled && !settingsDraft.mailFailRulesFile.trim()) {
+      updateSettingsField("mailFailRulesFile", defaultMailFailRulesFile);
+    }
   }
 
   const content = useMemo(() => {
@@ -607,15 +630,21 @@ export function App() {
 
               {!settingsLoading ? (
                 <div className="settingsGrid">
-                  <label className="settingsField">
+                  <div className="settingsField toggleField">
                     <span>Allowed origins</span>
-                    <textarea
-                      rows={3}
-                      value={settingsDraft.allowedOrigins}
-                      onChange={(event) => updateSettingsField("allowedOrigins", event.target.value)}
-                    />
-                    <small>MAILTAIL_ALLOWED_ORIGINS. Comma-separated origins for cross-origin browser access.</small>
-                  </label>
+                    <label className="toggleRow">
+                      <input type="checkbox" checked={limitAllowedOrigins} onChange={(event) => setLimitAllowedOrigins(event.target.checked)} />
+                      <span>Restrict cross-origin browser access</span>
+                    </label>
+                    {limitAllowedOrigins ? (
+                      <textarea
+                        rows={3}
+                        value={settingsDraft.allowedOrigins}
+                        onChange={(event) => updateSettingsField("allowedOrigins", event.target.value)}
+                      />
+                    ) : null}
+                    <small>Comma-separated origins for cross-origin browser access.</small>
+                  </div>
 
                   <div className="settingsField toggleField">
                     <span>Verbose SMTP logging</span>
@@ -627,7 +656,7 @@ export function App() {
                       />
                       <span>Enable per-command SMTP logging</span>
                     </label>
-                    <small>MAILTAIL_SMTP_LOG_VERBOSE.</small>
+                    <small>Logs each SMTP command step instead of only accepted messages and rejects.</small>
                   </div>
 
                   <div className="settingsField toggleField">
@@ -636,52 +665,72 @@ export function App() {
                       <input
                         type="checkbox"
                         checked={settingsDraft.mailFailEnabled}
-                        onChange={(event) => updateSettingsField("mailFailEnabled", event.target.checked)}
+                        onChange={(event) => handleToggleMailFail(event.target.checked)}
                       />
                       <span>Enable MailFail rule evaluation</span>
                     </label>
-                    <small>MAILTAIL_MAILFAIL_ENABLED.</small>
+                    <small>Turns MailFail rule evaluation on for incoming SMTP sessions.</small>
                   </div>
 
-                  <label className="settingsField">
-                    <span>MailFail rules file</span>
-                    <input
-                      value={settingsDraft.mailFailRulesFile}
-                      onChange={(event) => updateSettingsField("mailFailRulesFile", event.target.value)}
-                      placeholder="examples/mailfail.yaml"
-                    />
-                    <small>MAILTAIL_MAILFAIL_RULES_FILE. Required when MailFail is enabled.</small>
-                  </label>
+                  {settingsDraft.mailFailEnabled ? (
+                    <label className="settingsField">
+                      <span>MailFail rules file</span>
+                      <input
+                        value={settingsDraft.mailFailRulesFile}
+                        onChange={(event) => updateSettingsField("mailFailRulesFile", event.target.value)}
+                        placeholder={defaultMailFailRulesFile}
+                      />
+                      <small>Defaults to {defaultMailFailRulesFile} unless you override it.</small>
+                    </label>
+                  ) : null}
 
-                  <label className="settingsField">
+                  <div className="settingsField toggleField">
                     <span>Allowed remote IPs</span>
-                    <textarea
-                      rows={3}
-                      value={settingsDraft.allowedRemoteIps}
-                      onChange={(event) => updateSettingsField("allowedRemoteIps", event.target.value)}
-                    />
-                    <small>MAILTAIL_ALLOWED_REMOTE_IPS. Comma-separated IPs or CIDRs.</small>
-                  </label>
+                    <label className="toggleRow">
+                      <input type="checkbox" checked={limitAllowedRemoteIps} onChange={(event) => setLimitAllowedRemoteIps(event.target.checked)} />
+                      <span>Restrict SMTP connections to specific IPs or CIDRs</span>
+                    </label>
+                    {limitAllowedRemoteIps ? (
+                      <textarea
+                        rows={3}
+                        value={settingsDraft.allowedRemoteIps}
+                        onChange={(event) => updateSettingsField("allowedRemoteIps", event.target.value)}
+                      />
+                    ) : null}
+                    <small>Comma-separated IPs or CIDR ranges allowed to connect via SMTP.</small>
+                  </div>
 
-                  <label className="settingsField">
+                  <div className="settingsField toggleField">
                     <span>Accepted recipient domains</span>
-                    <textarea
-                      rows={3}
-                      value={settingsDraft.acceptedRcptDomains}
-                      onChange={(event) => updateSettingsField("acceptedRcptDomains", event.target.value)}
-                    />
-                    <small>MAILTAIL_ACCEPTED_RCPT_DOMAINS. Comma-separated domains or regex patterns.</small>
-                  </label>
+                    <label className="toggleRow">
+                      <input type="checkbox" checked={limitAcceptedRcptDomains} onChange={(event) => setLimitAcceptedRcptDomains(event.target.checked)} />
+                      <span>Restrict accepted recipient domains</span>
+                    </label>
+                    {limitAcceptedRcptDomains ? (
+                      <textarea
+                        rows={3}
+                        value={settingsDraft.acceptedRcptDomains}
+                        onChange={(event) => updateSettingsField("acceptedRcptDomains", event.target.value)}
+                      />
+                    ) : null}
+                    <small>Comma-separated recipient domains or regex patterns to accept.</small>
+                  </div>
 
-                  <label className="settingsField">
+                  <div className="settingsField toggleField">
                     <span>Accepted sender domains</span>
-                    <textarea
-                      rows={3}
-                      value={settingsDraft.acceptedFromDomains}
-                      onChange={(event) => updateSettingsField("acceptedFromDomains", event.target.value)}
-                    />
-                    <small>MAILTAIL_ACCEPTED_FROM_DOMAINS. Comma-separated domains or regex patterns.</small>
-                  </label>
+                    <label className="toggleRow">
+                      <input type="checkbox" checked={limitAcceptedFromDomains} onChange={(event) => setLimitAcceptedFromDomains(event.target.checked)} />
+                      <span>Restrict accepted sender domains</span>
+                    </label>
+                    {limitAcceptedFromDomains ? (
+                      <textarea
+                        rows={3}
+                        value={settingsDraft.acceptedFromDomains}
+                        onChange={(event) => updateSettingsField("acceptedFromDomains", event.target.value)}
+                      />
+                    ) : null}
+                    <small>Comma-separated sender domains or regex patterns to accept.</small>
+                  </div>
                 </div>
               ) : null}
 
@@ -752,6 +801,32 @@ function currentPaneCopyValue(activeTab: TabKey, message: Message | null): strin
     default:
       return "";
   }
+}
+
+function normalizeSettingsDraft(settings: AppSettings): AppSettings {
+  return {
+    ...settings,
+    mailFailRulesFile: settings.mailFailRulesFile.trim() || defaultMailFailRulesFile
+  };
+}
+
+function buildSettingsPayload(
+  settings: AppSettings,
+  toggles: {
+    limitAllowedOrigins: boolean;
+    limitAllowedRemoteIps: boolean;
+    limitAcceptedRcptDomains: boolean;
+    limitAcceptedFromDomains: boolean;
+  }
+): AppSettings {
+  return {
+    ...settings,
+    allowedOrigins: toggles.limitAllowedOrigins ? settings.allowedOrigins : "",
+    mailFailRulesFile: settings.mailFailEnabled ? settings.mailFailRulesFile.trim() || defaultMailFailRulesFile : defaultMailFailRulesFile,
+    allowedRemoteIps: toggles.limitAllowedRemoteIps ? settings.allowedRemoteIps : "",
+    acceptedRcptDomains: toggles.limitAcceptedRcptDomains ? settings.acceptedRcptDomains : "",
+    acceptedFromDomains: toggles.limitAcceptedFromDomains ? settings.acceptedFromDomains : ""
+  };
 }
 
 function buildEMLFileName(message: Message): string {
