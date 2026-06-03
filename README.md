@@ -400,6 +400,8 @@ Environment variables:
 
 The web UI includes a Settings panel for these runtime app settings, excluding the admin username/password values. Changes are persisted in SQLite and applied live without restarting MailTail.
 
+For the planned multi-user direction and the intended split between instance-wide settings and user-owned mail policies, see [docs/multi-user-target.md](/Users/vitaliquiering/git/MailTail/docs/multi-user-target.md).
+
 Example:
 
 ```bash
