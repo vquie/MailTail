@@ -146,14 +146,15 @@ func (a *SessionAuth) currentSession(r *http.Request) (*models.AuthSession, erro
 	if !ok {
 		return nil, nil
 	}
-	if err := a.store.DeleteExpiredAuthSessions(r.Context(), time.Now().UTC()); err != nil {
-		return nil, err
-	}
 	record, exists, err := a.store.GetAuthSession(r.Context(), sessionID)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
+		return nil, nil
+	}
+	if !record.ExpiresAt.After(time.Now().UTC()) {
+		_ = a.store.DeleteAuthSession(r.Context(), sessionID)
 		return nil, nil
 	}
 	return &record, nil

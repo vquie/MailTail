@@ -192,8 +192,8 @@ export function App() {
       const settings = await fetchSettings();
       setCurrentSettings(normalizeSettingsDraft(settings));
       setSettingsLoaded(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load settings");
+    } catch {
+      setSettingsLoaded(false);
     }
   }
 

@@ -127,24 +127,24 @@ func envAppSettings() models.AppSettings {
 
 func logSettings(logger *log.Logger, settings models.AppSettings) {
 	if strings.TrimSpace(settings.AcceptedRcptDomains) == "" {
-		logger.Printf("warning: MAILTAIL_ACCEPTED_RCPT_DOMAINS is empty, accepting RCPT TO for all domains")
+		logger.Printf("default recipient domain restrictions: none configured")
 	} else {
-		logger.Printf("accepted RCPT TO patterns: %s", settings.AcceptedRcptDomains)
+		logger.Printf("default recipient domain restrictions: %s", settings.AcceptedRcptDomains)
 	}
 	if strings.TrimSpace(settings.AcceptedFromDomains) == "" {
-		logger.Printf("warning: MAILTAIL_ACCEPTED_FROM_DOMAINS is empty, accepting MAIL FROM for all domains")
+		logger.Printf("default sender domain restrictions: none configured")
 	} else {
-		logger.Printf("accepted MAIL FROM patterns: %s", settings.AcceptedFromDomains)
+		logger.Printf("default sender domain restrictions: %s", settings.AcceptedFromDomains)
 	}
 	if strings.TrimSpace(settings.AllowedRemoteIPs) == "" {
-		logger.Printf("warning: MAILTAIL_ALLOWED_REMOTE_IPS is empty, accepting SMTP connections from all remote IPs")
+		logger.Printf("default SMTP remote IP restrictions: none configured")
 	} else {
-		logger.Printf("accepted SMTP remote IPs: %s", settings.AllowedRemoteIPs)
+		logger.Printf("default SMTP remote IP restrictions: %s", settings.AllowedRemoteIPs)
 	}
 	if strings.TrimSpace(settings.AllowedOrigins) == "" {
-		logger.Printf("CORS disabled for cross-origin browsers; web UI and API are same-origin by default")
+		logger.Printf("cross-origin browser access: disabled by default")
 	} else {
-		logger.Printf("allowed CORS origins: %s", settings.AllowedOrigins)
+		logger.Printf("cross-origin browser access allow-list: %s", settings.AllowedOrigins)
 	}
 	if settings.SMTPLogVerbose {
 		logger.Printf("verbose SMTP logging enabled")
