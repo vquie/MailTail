@@ -216,6 +216,7 @@ textarea {
   gap: 8px;
   min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding-right: 2px;
   padding-top: 4px;
   align-content: start;
@@ -541,6 +542,7 @@ textarea {
   min-height: 0;
   height: 100%;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   white-space: pre-wrap;
   word-break: break-word;
@@ -554,6 +556,7 @@ textarea {
   min-height: 0;
   height: 100%;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   display: grid;
   gap: 10px;
@@ -789,6 +792,13 @@ textarea {
     align-items: stretch;
   }
 
+  .workspaceSearchField {
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+    flex: none;
+  }
+
   .detailGrid {
     grid-template-columns: 1fr;
   }
@@ -817,12 +827,34 @@ textarea {
     height: auto;
   }
 
+  .workspaceHeader {
+    padding: 14px 14px 0;
+  }
+
+  .workspaceTopRow {
+    gap: 12px;
+  }
+
+  .topToolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .topToolbar > * {
+    justify-content: center;
+  }
+
   .messageList {
     max-height: none;
   }
 
   .heroCard {
     flex-direction: column;
+  }
+
+  .heroActions {
+    width: 100%;
   }
 
   .emptyHero {
@@ -835,9 +867,13 @@ textarea {
 }
 
 @media (width <= 640px) {
-  .statsRow {
-    flex-direction: column;
-    align-items: stretch;
+  .workspaceHeader {
+    padding: 12px 12px 0;
+  }
+
+  .sidebar,
+  .contentPane {
+    padding: 12px;
   }
 
   .workspaceTitleRow,
@@ -846,12 +882,40 @@ textarea {
     align-items: stretch;
   }
 
-  .topToolbar {
-    justify-content: stretch;
+  .workspaceTitleRow {
+    flex-direction: column;
+    gap: 12px;
   }
 
-  .topToolbar > * {
-    flex: 1 1 0;
+  .statsRow {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .statPill {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .topToolbar {
+    gap: 10px;
+  }
+
+  .heroCard {
+    padding: 14px;
+  }
+
+  .metaGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .heroActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .heroActions > * {
     justify-content: center;
   }
 
@@ -870,5 +934,9 @@ textarea {
   .viewerHeader {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .viewerCopyButton {
+    align-self: flex-end;
   }
 }
