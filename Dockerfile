@@ -4,7 +4,7 @@ COPY web/package.json web/package-lock.json web/tsconfig.json web/tsconfig.app.j
 COPY web/src ./src
 RUN npm ci && npm run build
 
-FROM golang:1.26-alpine@sha256:91eda9776261207ea25fd06b5b7fed8d397dd2c0a283e77f2ab6e91bfa71079d AS go-build
+FROM golang:1.26-alpine@sha256:f23e8b227fb4493eabe03bede4d5a32d04092da71962f1fb79b5f7d1e6c2a17f AS go-build
 WORKDIR /src
 ARG APP_VERSION=dev
 COPY go.mod go.sum ./
