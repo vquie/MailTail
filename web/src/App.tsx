@@ -396,6 +396,7 @@ export function App() {
   const smtpExampleSender = "sender@example.test";
   const paneCopyValue = currentPaneCopyValue(activeTab, selectedMessage);
   const paneCopyLabel = activeTab === "headers" ? "Copy all" : "Copy all";
+  const hasActiveSearch = query.length > 0;
 
   return (
     <div className="shell">
@@ -478,8 +479,8 @@ export function App() {
           ))}
           {!loading && messages.length === 0 ? (
             <div className="emptyListCard">
-              <strong>Inbox is empty</strong>
-              <p>No messages captured yet.</p>
+              <strong>{hasActiveSearch ? "No matching messages" : "Inbox is empty"}</strong>
+              <p>{hasActiveSearch ? `No results for "${query}".` : "No messages captured yet."}</p>
             </div>
           ) : null}
           {hasMore ? (
