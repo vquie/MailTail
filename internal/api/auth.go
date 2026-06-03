@@ -319,9 +319,13 @@ func (a *SessionAuth) serveLoginPage(w http.ResponseWriter, message string) {
 func (a *SessionAuth) serveLoginPageWithStatus(w http.ResponseWriter, message string, status int) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
+	subtitle := "Sign in to continue"
+	if realm := strings.TrimSpace(a.config.Realm); realm != "" && !strings.EqualFold(realm, "MailTail") {
+		subtitle = realm
+	}
 	_ = loginTemplate.Execute(w, map[string]string{
-		"Message": message,
-		"Realm":   a.config.Realm,
+		"Message":  message,
+		"Subtitle": subtitle,
 	})
 }
 
@@ -385,7 +389,7 @@ var loginTemplate = template.Must(template.New("login").Parse(`<!doctype html>
   <body>
     <form class="card" method="post" action="/auth/login">
       <h1>MailTail</h1>
-      <p>{{if .Realm}}{{.Realm}}{{else}}Sign in to continue{{end}}</p>
+      <p>{{.Subtitle}}</p>
       {{if .Message}}<div class="error">{{.Message}}</div>{{end}}
       <label>
         <span>Username</span>
