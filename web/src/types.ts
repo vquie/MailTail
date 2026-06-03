@@ -47,3 +47,13 @@ export type MessagePage = {
   nextCursor?: string;
   hasMore: boolean;
 };
+
+export type AppSettings = {
+  allowedOrigins: string;
+  smtpLogVerbose: boolean;
+  mailFailEnabled: boolean;
+  mailFailRulesFile: string;
+  allowedRemoteIps: string;
+  acceptedRcptDomains: string;
+  acceptedFromDomains: string;
+};

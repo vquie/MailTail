@@ -17,22 +17,22 @@ import (
 )
 
 type Server struct {
-	addr       string
-	store      storage.Store
-	parser     *parser.Service
-	policy     SMTPResponsePolicy
-	logger     *log.Logger
-	logVerbose bool
+	addr         string
+	store        storage.Store
+	parser       *parser.Service
+	policy       SMTPResponsePolicy
+	logger       *log.Logger
+	logVerboseFn func() bool
 }
 
-func NewServer(addr string, store storage.Store, parser *parser.Service, policy SMTPResponsePolicy, logger *log.Logger, logVerbose bool) *Server {
+func NewServer(addr string, store storage.Store, parser *parser.Service, policy SMTPResponsePolicy, logger *log.Logger, logVerboseFn func() bool) *Server {
 	return &Server{
-		addr:       addr,
-		store:      store,
-		parser:     parser,
-		policy:     policy,
-		logger:     logger,
-		logVerbose: logVerbose,
+		addr:         addr,
+		store:        store,
+		parser:       parser,
+		policy:       policy,
+		logger:       logger,
+		logVerboseFn: logVerboseFn,
 	}
 }
 
@@ -274,7 +274,7 @@ func (s *Server) sendLine(conn net.Conn, value string) error {
 }
 
 func (s *Server) logSMTPAction(session SessionMetadata, action, sender, recipient string, err error) {
-	if !s.logVerbose && !shouldLogSMTPAction(action, err) {
+	if !s.logVerbose() && !shouldLogSMTPAction(action, err) {
 		return
 	}
 
@@ -299,6 +299,13 @@ func (s *Server) logSMTPAction(session SessionMetadata, action, sender, recipien
 		sanitizeLogValue(action),
 		sanitizeLogValue(message),
 	)
+}
+
+func (s *Server) logVerbose() bool {
+	if s.logVerboseFn == nil {
+		return false
+	}
+	return s.logVerboseFn()
 }
 
 func shouldLogSMTPAction(action string, err error) bool {

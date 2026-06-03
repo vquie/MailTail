@@ -84,3 +84,27 @@ type Stats struct {
 type AppInfo struct {
 	Version string `json:"version"`
 }
+
+type AppSettings struct {
+	AllowedOrigins      string `json:"allowedOrigins"`
+	SMTPLogVerbose      bool   `json:"smtpLogVerbose"`
+	MailFailEnabled     bool   `json:"mailFailEnabled"`
+	MailFailRulesFile   string `json:"mailFailRulesFile"`
+	AllowedRemoteIPs    string `json:"allowedRemoteIps"`
+	AcceptedRcptDomains string `json:"acceptedRcptDomains"`
+	AcceptedFromDomains string `json:"acceptedFromDomains"`
+}
+
+type AuthSession struct {
+	SessionID string
+	Username  string
+	CSRFToken string
+	ExpiresAt time.Time
+}
+
+type GreylistState struct {
+	Key       string
+	FirstSeen time.Time
+	LastSeen  time.Time
+	Attempts  int
+}

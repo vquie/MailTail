@@ -1,12 +1,14 @@
 package smtpserver
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/vquie/MailTail/internal/models"
+	"github.com/vquie/MailTail/internal/storage"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -28,9 +30,8 @@ type MailFailRule struct {
 }
 
 type MailFailEngine struct {
-	rules          []mailFailRule
-	greylistStates map[string]greylistState
-	mu             sync.Mutex
+	rules []mailFailRule
+	store storage.Store
 }
 
 type mailFailRule struct {
@@ -46,13 +47,7 @@ type mailFailRule struct {
 	message       string
 }
 
-type greylistState struct {
-	firstSeen time.Time
-	lastSeen  time.Time
-	attempts  int
-}
-
-func LoadMailFailEngine(path string) (*MailFailEngine, error) {
+func LoadMailFailEngine(path string, store storage.Store) (*MailFailEngine, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -63,13 +58,13 @@ func LoadMailFailEngine(path string) (*MailFailEngine, error) {
 		return nil, err
 	}
 
-	return NewMailFailEngine(config)
+	return NewMailFailEngine(config, store)
 }
 
-func NewMailFailEngine(config MailFailConfig) (*MailFailEngine, error) {
+func NewMailFailEngine(config MailFailConfig, store storage.Store) (*MailFailEngine, error) {
 	engine := &MailFailEngine{
-		rules:          make([]mailFailRule, 0, len(config.Rules)),
-		greylistStates: make(map[string]greylistState),
+		rules: make([]mailFailRule, 0, len(config.Rules)),
+		store: store,
 	}
 
 	for _, rule := range config.Rules {
@@ -146,39 +141,74 @@ func (e *MailFailEngine) match(stage, mailFrom, address string) *ResponseError {
 func (e *MailFailEngine) greylistResponse(rule mailFailRule, mailFrom, address string) *ResponseError {
 	key := rule.greylistKey(mailFrom, address)
 	now := time.Now().UTC()
+	ctx := context.Background()
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	state, ok := e.greylistStates[key]
-	if ok && rule.resetAfter > 0 && now.Sub(state.lastSeen) >= rule.resetAfter {
-		ok = false
+	if e.store != nil && rule.resetAfter > 0 {
+		_ = e.store.DeleteExpiredGreylistStates(ctx, now.Add(-rule.resetAfter))
 	}
+
+	state, ok, err := e.loadGreylistState(ctx, key)
 	if !ok {
-		state = greylistState{
-			firstSeen: now,
-			lastSeen:  now,
-			attempts:  1,
+		if err != nil {
+			return &ResponseError{
+				Code:    451,
+				Message: "Temporary server error",
+			}
 		}
-		e.greylistStates[key] = state
+		state = models.GreylistState{
+			Key:       key,
+			FirstSeen: now,
+			LastSeen:  now,
+			Attempts:  1,
+		}
+		if err := e.saveGreylistState(ctx, state); err != nil {
+			return &ResponseError{
+				Code:    451,
+				Message: "Temporary server error",
+			}
+		}
 		return &ResponseError{
 			Code:    rule.code,
 			Message: rule.replyText(),
 		}
 	}
 
-	state.attempts++
-	state.lastSeen = now
-	e.greylistStates[key] = state
-
-	if state.attempts <= rule.allowAfter {
+	if rule.resetAfter > 0 && now.Sub(state.LastSeen) >= rule.resetAfter {
+		state = models.GreylistState{
+			Key:       key,
+			FirstSeen: now,
+			LastSeen:  now,
+			Attempts:  1,
+		}
+		if err := e.saveGreylistState(ctx, state); err != nil {
+			return &ResponseError{
+				Code:    451,
+				Message: "Temporary server error",
+			}
+		}
 		return &ResponseError{
 			Code:    rule.code,
 			Message: rule.replyText(),
 		}
 	}
 
-	if rule.minRetryAfter > 0 && now.Sub(state.firstSeen) < rule.minRetryAfter {
+	state.Attempts++
+	state.LastSeen = now
+	if err := e.saveGreylistState(ctx, state); err != nil {
+		return &ResponseError{
+			Code:    451,
+			Message: "Temporary server error",
+		}
+	}
+
+	if state.Attempts <= rule.allowAfter {
+		return &ResponseError{
+			Code:    rule.code,
+			Message: rule.replyText(),
+		}
+	}
+
+	if rule.minRetryAfter > 0 && now.Sub(state.FirstSeen) < rule.minRetryAfter {
 		return &ResponseError{
 			Code:    rule.code,
 			Message: rule.replyText(),
@@ -186,6 +216,20 @@ func (e *MailFailEngine) greylistResponse(rule mailFailRule, mailFrom, address s
 	}
 
 	return nil
+}
+
+func (e *MailFailEngine) loadGreylistState(ctx context.Context, key string) (models.GreylistState, bool, error) {
+	if e.store == nil {
+		return models.GreylistState{}, false, nil
+	}
+	return e.store.GetGreylistState(ctx, key)
+}
+
+func (e *MailFailEngine) saveGreylistState(ctx context.Context, state models.GreylistState) error {
+	if e.store == nil {
+		return nil
+	}
+	return e.store.SaveGreylistState(ctx, state)
 }
 
 func compileMailFailRule(rule MailFailRule) (mailFailRule, error) {

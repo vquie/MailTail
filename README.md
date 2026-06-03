@@ -128,6 +128,8 @@ The Git tag itself must start with `v`, for example `v0.1.0`.
 - `GET /api/messages/{id}`
 - `GET /api/messages/{id}/raw`
 - `GET /api/messages/{id}/attachments/{attachmentId}`
+- `GET /api/settings`
+- `PUT /api/settings`
 - `DELETE /api/messages/{id}`
 - `DELETE /api/messages`
 - `GET /api/stats`
@@ -241,6 +243,22 @@ Notes:
 {
   "messageCount": 1,
   "totalSize": 259
+}
+```
+
+`GET /api/settings`
+
+```json
+{
+  "settings": {
+    "allowedOrigins": "https://mailtail.example.com",
+    "smtpLogVerbose": false,
+    "mailFailEnabled": true,
+    "mailFailRulesFile": "examples/mailfail.yaml",
+    "allowedRemoteIps": "127.0.0.1,::1",
+    "acceptedRcptDomains": "example.test,internal.test",
+    "acceptedFromDomains": "sender.test"
+  }
 }
 ```
 
@@ -379,6 +397,8 @@ Environment variables:
 - `MAILTAIL_ALLOWED_REMOTE_IPS` default: empty, accepts SMTP connections from all IPs and logs a startup warning. Supports IPs and CIDR ranges.
 - `MAILTAIL_ACCEPTED_RCPT_DOMAINS` default: empty, accepts recipients for all domains and logs a startup warning. Values may be exact domains or regular expressions.
 - `MAILTAIL_ACCEPTED_FROM_DOMAINS` default: empty, accepts senders for all domains and logs a startup warning. Values may be exact domains or regular expressions.
+
+The web UI includes a Settings panel for these runtime app settings, excluding the admin username/password values. Changes are persisted in SQLite and applied live without restarting MailTail.
 
 Example:
 

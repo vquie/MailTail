@@ -8,8 +8,10 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/vquie/MailTail/internal/models"
+	"github.com/vquie/MailTail/internal/storage"
 )
 
 const (
@@ -24,24 +26,12 @@ type AuthConfig struct {
 }
 
 type SessionAuth struct {
-	config       AuthConfig
-	sessions     map[string]sessionRecord
-	loginLimiter map[string][]time.Time
-	mu           sync.Mutex
+	config AuthConfig
+	store  storage.Store
 }
 
-type sessionRecord struct {
-	Username  string
-	CSRFToken string
-	ExpiresAt time.Time
-}
-
-func NewSessionAuth(config AuthConfig) *SessionAuth {
-	return &SessionAuth{
-		config:       config,
-		sessions:     make(map[string]sessionRecord),
-		loginLimiter: make(map[string][]time.Time),
-	}
+func NewSessionAuth(config AuthConfig, store storage.Store) *SessionAuth {
+	return &SessionAuth{config: config, store: store}
 }
 
 func (c AuthConfig) Enabled() bool {
@@ -66,13 +56,17 @@ func (a *SessionAuth) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		record, ok := a.currentSession(r)
-		if !ok {
+		record, err := a.currentSession(r)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load session")
+			return
+		}
+		if record == nil {
 			a.rejectUnauthorized(w, r)
 			return
 		}
 
-		if requiresCSRFFProtection(r.Method) && !a.validCSRF(r, record) {
+		if requiresCSRFFProtection(r.Method) && !a.validCSRF(r, *record) {
 			writeError(w, http.StatusForbidden, "invalid csrf token")
 			return
 		}
@@ -82,13 +76,18 @@ func (a *SessionAuth) Middleware(next http.Handler) http.Handler {
 }
 
 func (a *SessionAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
-	if a.loginLimited(r) {
+	limited, err := a.loginLimited(r)
+	if err != nil {
+		http.Error(w, "Failed to process login", http.StatusInternalServerError)
+		return
+	}
+	if limited {
 		a.serveLoginPageWithStatus(w, "Too many login attempts. Please wait and try again.", http.StatusTooManyRequests)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		a.recordLoginAttempt(r)
+		_ = a.recordLoginAttempt(r)
 		a.serveLoginPage(w, "Invalid login request.")
 		return
 	}
@@ -96,12 +95,15 @@ func (a *SessionAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
 	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
 	if !a.credentialsMatch(username, password) {
-		a.recordLoginAttempt(r)
+		_ = a.recordLoginAttempt(r)
 		a.serveLoginPage(w, "Invalid username or password.")
 		return
 	}
 
-	a.clearLoginAttempts(r)
+	if err := a.clearLoginAttempts(r); err != nil {
+		http.Error(w, "Failed to process login", http.StatusInternalServerError)
+		return
+	}
 
 	sessionID, err := randomToken(32)
 	if err != nil {
@@ -115,13 +117,15 @@ func (a *SessionAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	expiresAt := time.Now().Add(24 * time.Hour).UTC()
 
-	a.mu.Lock()
-	a.sessions[sessionID] = sessionRecord{
+	if err := a.store.CreateAuthSession(r.Context(), models.AuthSession{
+		SessionID: sessionID,
 		Username:  a.config.Username,
 		CSRFToken: csrfToken,
 		ExpiresAt: expiresAt,
+	}); err != nil {
+		http.Error(w, "Failed to create session", http.StatusInternalServerError)
+		return
 	}
-	a.mu.Unlock()
 
 	setSessionCookies(w, r, sessionID, csrfToken, expiresAt)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -130,33 +134,29 @@ func (a *SessionAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
 func (a *SessionAuth) handleLogout(w http.ResponseWriter, r *http.Request) {
 	sessionID, ok := a.sessionIDFromRequest(r)
 	if ok {
-		a.mu.Lock()
-		delete(a.sessions, sessionID)
-		a.mu.Unlock()
+		_ = a.store.DeleteAuthSession(r.Context(), sessionID)
 	}
 
 	clearSessionCookies(w, r)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-func (a *SessionAuth) currentSession(r *http.Request) (sessionRecord, bool) {
+func (a *SessionAuth) currentSession(r *http.Request) (*models.AuthSession, error) {
 	sessionID, ok := a.sessionIDFromRequest(r)
 	if !ok {
-		return sessionRecord{}, false
+		return nil, nil
 	}
-
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	record, exists := a.sessions[sessionID]
+	if err := a.store.DeleteExpiredAuthSessions(r.Context(), time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	record, exists, err := a.store.GetAuthSession(r.Context(), sessionID)
+	if err != nil {
+		return nil, err
+	}
 	if !exists {
-		return sessionRecord{}, false
+		return nil, nil
 	}
-	if time.Now().UTC().After(record.ExpiresAt) {
-		delete(a.sessions, sessionID)
-		return sessionRecord{}, false
-	}
-	return record, true
+	return &record, nil
 }
 
 func (a *SessionAuth) sessionIDFromRequest(r *http.Request) (string, bool) {
@@ -173,7 +173,7 @@ func (a *SessionAuth) credentialsMatch(username, password string) bool {
 	return usernameMatch && passwordMatch
 }
 
-func (a *SessionAuth) validCSRF(r *http.Request, record sessionRecord) bool {
+func (a *SessionAuth) validCSRF(r *http.Request, record models.AuthSession) bool {
 	headerToken := strings.TrimSpace(r.Header.Get("X-CSRF-Token"))
 	if headerToken == "" {
 		return false
@@ -190,45 +190,31 @@ func (a *SessionAuth) rejectUnauthorized(w http.ResponseWriter, r *http.Request)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-func (a *SessionAuth) loginLimited(r *http.Request) bool {
+func (a *SessionAuth) loginLimited(r *http.Request) (bool, error) {
 	key := clientIP(r)
 	now := time.Now()
-
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	attempts := pruneAttempts(a.loginLimiter[key], now)
-	a.loginLimiter[key] = attempts
-	return len(attempts) >= 5
-}
-
-func (a *SessionAuth) recordLoginAttempt(r *http.Request) {
-	key := clientIP(r)
-	now := time.Now()
-
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	attempts := pruneAttempts(a.loginLimiter[key], now)
-	a.loginLimiter[key] = append(attempts, now)
-}
-
-func (a *SessionAuth) clearLoginAttempts(r *http.Request) {
-	key := clientIP(r)
-	a.mu.Lock()
-	delete(a.loginLimiter, key)
-	a.mu.Unlock()
-}
-
-func pruneAttempts(attempts []time.Time, now time.Time) []time.Time {
-	cutoff := now.Add(-15 * time.Minute)
-	kept := attempts[:0]
-	for _, attempt := range attempts {
-		if attempt.After(cutoff) {
-			kept = append(kept, attempt)
-		}
+	if err := a.store.DeleteExpiredLoginAttempts(r.Context(), now.Add(-15*time.Minute)); err != nil {
+		return false, err
 	}
-	return kept
+	count, err := a.store.CountLoginAttemptsSince(r.Context(), key, now.Add(-15*time.Minute))
+	if err != nil {
+		return false, err
+	}
+	return count >= 5, nil
+}
+
+func (a *SessionAuth) recordLoginAttempt(r *http.Request) error {
+	key := clientIP(r)
+	now := time.Now().UTC()
+	if err := a.store.DeleteExpiredLoginAttempts(r.Context(), now.Add(-15*time.Minute)); err != nil {
+		return err
+	}
+	return a.store.RecordLoginAttempt(r.Context(), key, now)
+}
+
+func (a *SessionAuth) clearLoginAttempts(r *http.Request) error {
+	key := clientIP(r)
+	return a.store.ClearLoginAttempts(r.Context(), key)
 }
 
 func setSessionCookies(w http.ResponseWriter, r *http.Request, sessionID, csrfToken string, expiresAt time.Time) {

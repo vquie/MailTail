@@ -1,4 +1,4 @@
-import type { AppInfo, Message, MessagePage, Stats } from "./types";
+import type { AppInfo, AppSettings, Message, MessagePage, Stats } from "./types";
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const response = await fetch(input, withCSRF(init));
@@ -45,6 +45,20 @@ export async function fetchStats(): Promise<Stats> {
 
 export async function fetchAppInfo(): Promise<AppInfo> {
   return request<AppInfo>("/api/app");
+}
+
+export async function fetchSettings(): Promise<AppSettings> {
+  const data = await request<{ settings: AppSettings }>("/api/settings");
+  return data.settings;
+}
+
+export async function updateSettings(settings: AppSettings): Promise<AppSettings> {
+  const data = await request<{ settings: AppSettings }>("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ settings })
+  });
+  return data.settings;
 }
 
 export async function deleteMessage(id: number): Promise<void> {

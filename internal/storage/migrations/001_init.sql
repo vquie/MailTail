@@ -57,3 +57,35 @@ CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
     INSERT INTO messages_fts(rowid, subject, header_from, header_to)
     VALUES (new.id, new.subject, new.header_from, new.header_to);
 END;
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    session_id TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    csrf_token TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at ON auth_sessions(expires_at);
+
+CREATE TABLE IF NOT EXISTS auth_login_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_key TEXT NOT NULL,
+    attempted_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_login_attempts_key_time ON auth_login_attempts(client_key, attempted_at);
+
+CREATE TABLE IF NOT EXISTS greylist_states (
+    state_key TEXT PRIMARY KEY,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    attempts INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_greylist_states_last_seen ON greylist_states(last_seen);

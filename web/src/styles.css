@@ -19,7 +19,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -581,8 +582,120 @@ input {
   border: 1px solid rgb(245 72 74 / 35%);
 }
 
+.settingsOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgb(6 8 12 / 52%);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.settingsPanel {
+  width: min(920px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: linear-gradient(160deg, rgb(24 29 42 / 96%), rgb(17 19 26 / 96%));
+  border-radius: 8px;
+  box-shadow: 0 18px 60px rgb(0 0 0 / 32%);
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.settingsPanelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.settingsLead,
+.settingsField small {
+  margin: 0;
+  color: rgb(248 243 234 / 70%);
+  line-height: 1.5;
+}
+
+.settingsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.settingsField {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 4%);
+}
+
+.settingsField > span {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.settingsField input,
+.settingsField textarea {
+  width: 100%;
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 5%);
+  color: inherit;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.settingsField textarea {
+  resize: vertical;
+  min-height: 84px;
+}
+
+.toggleField {
+  align-content: start;
+}
+
+.toggleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #dce7f9;
+}
+
+.toggleRow input {
+  width: 16px;
+  height: 16px;
+}
+
+.settingsActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settingsNotice {
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: rgb(240 179 111 / 12%);
+  border: 1px solid rgb(240 179 111 / 24%);
+  color: #f6c88f;
+}
+
+.settingsBanner {
+  margin: 0;
+}
+
 @media (width <= 1180px) {
   .detailGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .settingsGrid {
     grid-template-columns: 1fr;
   }
 }
@@ -607,6 +720,10 @@ input {
 
   .emptyHero {
     flex-direction: column;
+  }
+
+  .settingsOverlay {
+    padding: 12px;
   }
 }
 

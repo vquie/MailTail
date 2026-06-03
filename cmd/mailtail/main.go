@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/vquie/MailTail/internal/api"
+	"github.com/vquie/MailTail/internal/models"
 	"github.com/vquie/MailTail/internal/parser"
+	"github.com/vquie/MailTail/internal/runtimeconfig"
 	"github.com/vquie/MailTail/internal/smtpserver"
 	"github.com/vquie/MailTail/internal/storage"
 )
@@ -23,39 +25,17 @@ var version = "dev"
 func main() {
 	logger := log.New(os.Stdout, "mailtail ", log.LstdFlags|log.Lmsgprefix)
 
+	authUsername := strings.TrimSpace(os.Getenv("MAILTAIL_AUTH_USERNAME"))
+	authPassword := os.Getenv("MAILTAIL_AUTH_PASSWORD")
 	dataDir := getEnv("MAILTAIL_DATA_DIR", "data")
 	httpAddr := getEnv("MAILTAIL_HTTP_ADDR", ":8080")
 	smtpAddr := getEnv("MAILTAIL_SMTP_ADDR", ":8025")
 	staticDir := getEnv("MAILTAIL_WEB_DIR", filepath.Join("web", "dist"))
-	authUsername := strings.TrimSpace(os.Getenv("MAILTAIL_AUTH_USERNAME"))
-	authPassword := os.Getenv("MAILTAIL_AUTH_PASSWORD")
-	allowedOrigins := parseCSVEnv("MAILTAIL_ALLOWED_ORIGINS")
-	smtpLogVerbose := strings.EqualFold(strings.TrimSpace(os.Getenv("MAILTAIL_SMTP_LOG_VERBOSE")), "true")
-	mailFailEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("MAILTAIL_MAILFAIL_ENABLED")), "true")
-	mailFailRulesFile := strings.TrimSpace(os.Getenv("MAILTAIL_MAILFAIL_RULES_FILE"))
-	acceptedRcptDomains := parseCSVEnv("MAILTAIL_ACCEPTED_RCPT_DOMAINS")
-	acceptedFromDomains := parseCSVEnv("MAILTAIL_ACCEPTED_FROM_DOMAINS")
-	allowedRemoteIPs := parseCSVEnv("MAILTAIL_ALLOWED_REMOTE_IPS")
 
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		logger.Fatalf("create data dir: %v", err)
 	}
 	logger.Printf("version: %s", version)
-	if len(acceptedRcptDomains) == 0 {
-		logger.Printf("warning: MAILTAIL_ACCEPTED_RCPT_DOMAINS is empty, accepting RCPT TO for all domains")
-	} else {
-		logger.Printf("accepted RCPT TO patterns: %s", strings.Join(acceptedRcptDomains, ", "))
-	}
-	if len(acceptedFromDomains) == 0 {
-		logger.Printf("warning: MAILTAIL_ACCEPTED_FROM_DOMAINS is empty, accepting MAIL FROM for all domains")
-	} else {
-		logger.Printf("accepted MAIL FROM patterns: %s", strings.Join(acceptedFromDomains, ", "))
-	}
-	if len(allowedRemoteIPs) == 0 {
-		logger.Printf("warning: MAILTAIL_ALLOWED_REMOTE_IPS is empty, accepting SMTP connections from all remote IPs")
-	} else {
-		logger.Printf("accepted SMTP remote IPs: %s", strings.Join(allowedRemoteIPs, ", "))
-	}
 	switch {
 	case authUsername == "" && authPassword == "":
 		logger.Printf("warning: HTTP auth is disabled, set MAILTAIL_AUTH_USERNAME and MAILTAIL_AUTH_PASSWORD to protect the web UI and API")
@@ -64,53 +44,36 @@ func main() {
 	default:
 		logger.Printf("HTTP auth enabled for web UI and API")
 	}
-	if len(allowedOrigins) == 0 {
-		logger.Printf("CORS disabled for cross-origin browsers; web UI and API are same-origin by default")
-	} else {
-		logger.Printf("allowed CORS origins: %s", strings.Join(allowedOrigins, ", "))
-	}
-	if smtpLogVerbose {
-		logger.Printf("verbose SMTP logging enabled")
-	}
-
-	var mailFailEngine *smtpserver.MailFailEngine
-	switch {
-	case !mailFailEnabled && mailFailRulesFile != "":
-		logger.Printf("mailfail disabled; ignoring MAILTAIL_MAILFAIL_RULES_FILE=%s", mailFailRulesFile)
-	case mailFailEnabled && mailFailRulesFile == "":
-		logger.Fatal("invalid mailfail config: MAILTAIL_MAILFAIL_ENABLED=true requires MAILTAIL_MAILFAIL_RULES_FILE")
-	case mailFailEnabled:
-		engine, err := smtpserver.LoadMailFailEngine(mailFailRulesFile)
-		if err != nil {
-			logger.Fatalf("load mailfail rules: %v", err)
-		}
-		mailFailEngine = engine
-		logger.Printf("mailfail enabled with %d rule(s) from %s", engine.RuleCount(), mailFailRulesFile)
-	default:
-		logger.Printf("mailfail disabled")
-	}
-
 	store, err := storage.NewSQLiteStore(filepath.Join(dataDir, "mailtail.db"))
 	if err != nil {
 		logger.Fatalf("open storage: %v", err)
 	}
 	defer store.Close()
 
+	settings := envAppSettings()
+	if savedSettings, ok, err := store.LoadAppSettings(context.Background()); err != nil {
+		logger.Fatalf("load app settings: %v", err)
+	} else if ok {
+		settings = savedSettings
+		logger.Printf("loaded app settings from database")
+	}
+	logSettings(logger, settings)
+
 	parseSvc := parser.NewService()
-	apiSvc := api.NewService(store, parseSvc, version)
-	httpServer := api.NewServer(httpAddr, staticDir, apiSvc, logger, api.AuthConfig{
+	runtime := runtimeconfig.New(settings)
+	smtpPolicy, err := smtpserver.NewDomainPolicy(smtpserver.DomainPolicyConfigFromSettings(settings), store)
+	if err != nil {
+		logger.Fatalf("invalid smtp policy config: %v", err)
+	}
+	apiSvc := api.NewService(store, parseSvc, version, runtime, smtpPolicy)
+	httpServer := api.NewServer(httpAddr, staticDir, apiSvc, logger, store, api.AuthConfig{
 		Username: authUsername,
 		Password: authPassword,
 		Realm:    "MailTail",
 	}, api.CORSConfig{
-		AllowedOrigins: normalizeExactSet(allowedOrigins),
+		AllowedOrigins: runtime.AllowedOrigins,
 	})
-
-	smtpPolicy, err := smtpserver.NewDomainPolicy(acceptedRcptDomains, acceptedFromDomains, allowedRemoteIPs, mailFailEngine)
-	if err != nil {
-		logger.Fatalf("invalid smtp policy config: %v", err)
-	}
-	smtpServer := smtpserver.NewServer(smtpAddr, store, parseSvc, smtpPolicy, logger, smtpLogVerbose)
+	smtpServer := smtpserver.NewServer(smtpAddr, store, parseSvc, smtpPolicy, logger, runtime.SMTPLogVerbose)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -141,22 +104,6 @@ func main() {
 	}
 }
 
-func normalizeExactSet(values []string) map[string]struct{} {
-	if len(values) == 0 {
-		return nil
-	}
-
-	set := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		set[value] = struct{}{}
-	}
-	return set
-}
-
 func getEnv(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -164,20 +111,45 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func parseCSVEnv(key string) []string {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return nil
+func envAppSettings() models.AppSettings {
+	return models.AppSettings{
+		AllowedOrigins:      strings.TrimSpace(os.Getenv("MAILTAIL_ALLOWED_ORIGINS")),
+		SMTPLogVerbose:      strings.EqualFold(strings.TrimSpace(os.Getenv("MAILTAIL_SMTP_LOG_VERBOSE")), "true"),
+		MailFailEnabled:     strings.EqualFold(strings.TrimSpace(os.Getenv("MAILTAIL_MAILFAIL_ENABLED")), "true"),
+		MailFailRulesFile:   strings.TrimSpace(os.Getenv("MAILTAIL_MAILFAIL_RULES_FILE")),
+		AllowedRemoteIPs:    strings.TrimSpace(os.Getenv("MAILTAIL_ALLOWED_REMOTE_IPS")),
+		AcceptedRcptDomains: strings.TrimSpace(os.Getenv("MAILTAIL_ACCEPTED_RCPT_DOMAINS")),
+		AcceptedFromDomains: strings.TrimSpace(os.Getenv("MAILTAIL_ACCEPTED_FROM_DOMAINS")),
 	}
+}
 
-	parts := strings.Split(value, ",")
-	values := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		values = append(values, part)
+func logSettings(logger *log.Logger, settings models.AppSettings) {
+	if strings.TrimSpace(settings.AcceptedRcptDomains) == "" {
+		logger.Printf("warning: MAILTAIL_ACCEPTED_RCPT_DOMAINS is empty, accepting RCPT TO for all domains")
+	} else {
+		logger.Printf("accepted RCPT TO patterns: %s", settings.AcceptedRcptDomains)
 	}
-	return values
+	if strings.TrimSpace(settings.AcceptedFromDomains) == "" {
+		logger.Printf("warning: MAILTAIL_ACCEPTED_FROM_DOMAINS is empty, accepting MAIL FROM for all domains")
+	} else {
+		logger.Printf("accepted MAIL FROM patterns: %s", settings.AcceptedFromDomains)
+	}
+	if strings.TrimSpace(settings.AllowedRemoteIPs) == "" {
+		logger.Printf("warning: MAILTAIL_ALLOWED_REMOTE_IPS is empty, accepting SMTP connections from all remote IPs")
+	} else {
+		logger.Printf("accepted SMTP remote IPs: %s", settings.AllowedRemoteIPs)
+	}
+	if strings.TrimSpace(settings.AllowedOrigins) == "" {
+		logger.Printf("CORS disabled for cross-origin browsers; web UI and API are same-origin by default")
+	} else {
+		logger.Printf("allowed CORS origins: %s", settings.AllowedOrigins)
+	}
+	if settings.SMTPLogVerbose {
+		logger.Printf("verbose SMTP logging enabled")
+	}
+	if settings.MailFailEnabled {
+		logger.Printf("mailfail enabled with rules file %s", settings.MailFailRulesFile)
+	} else {
+		logger.Printf("mailfail disabled")
+	}
 }

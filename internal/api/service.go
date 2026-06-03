@@ -5,6 +5,8 @@ import (
 
 	"github.com/vquie/MailTail/internal/models"
 	"github.com/vquie/MailTail/internal/parser"
+	"github.com/vquie/MailTail/internal/runtimeconfig"
+	"github.com/vquie/MailTail/internal/smtpserver"
 	"github.com/vquie/MailTail/internal/storage"
 )
 
@@ -12,10 +14,12 @@ type Service struct {
 	store   storage.Store
 	parser  *parser.Service
 	version string
+	runtime *runtimeconfig.Manager
+	policy  *smtpserver.DomainPolicy
 }
 
-func NewService(store storage.Store, parser *parser.Service, version string) *Service {
-	return &Service{store: store, parser: parser, version: version}
+func NewService(store storage.Store, parser *parser.Service, version string, runtime *runtimeconfig.Manager, policy *smtpserver.DomainPolicy) *Service {
+	return &Service{store: store, parser: parser, version: version, runtime: runtime, policy: policy}
 }
 
 func (s *Service) ListMessages(ctx context.Context, query, cursor string, limit int) (models.MessagePage, error) {
@@ -64,4 +68,33 @@ func (s *Service) Stats(ctx context.Context) (models.Stats, error) {
 
 func (s *Service) AppInfo() models.AppInfo {
 	return models.AppInfo{Version: s.version}
+}
+
+func (s *Service) Settings() models.AppSettings {
+	if s.runtime == nil {
+		return models.AppSettings{}
+	}
+	return s.runtime.Settings()
+}
+
+func (s *Service) UpdateSettings(ctx context.Context, settings models.AppSettings) (models.AppSettings, error) {
+	config := smtpserver.DomainPolicyConfigFromSettings(settings)
+	if _, err := smtpserver.NewDomainPolicy(config, nil); err != nil {
+		return models.AppSettings{}, err
+	}
+
+	if err := s.store.SaveAppSettings(ctx, settings); err != nil {
+		return models.AppSettings{}, err
+	}
+
+	if s.policy != nil {
+		if err := s.policy.ApplyConfig(config); err != nil {
+			return models.AppSettings{}, err
+		}
+	}
+	if s.runtime != nil {
+		s.runtime.Apply(settings)
+		return s.runtime.Settings(), nil
+	}
+	return settings, nil
 }

@@ -6,15 +6,26 @@ import {
   fetchAppInfo,
   fetchMessage,
   fetchMessages,
+  fetchSettings,
   fetchStats,
   rawMessageUrl,
-  logout
+  logout,
+  updateSettings
 } from "./api";
-import type { Message, Stats } from "./types";
+import type { AppSettings, Message, Stats } from "./types";
 
 type TabKey = "html" | "text" | "headers" | "raw";
 
 const defaultPageSize = 25;
+const emptySettings: AppSettings = {
+  allowedOrigins: "",
+  smtpLogVerbose: false,
+  mailFailEnabled: false,
+  mailFailRulesFile: "",
+  allowedRemoteIps: "",
+  acceptedRcptDomains: "",
+  acceptedFromDomains: ""
+};
 
 export function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -32,6 +43,12 @@ export function App() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [copiedHeaderKey, setCopiedHeaderKey] = useState<string | null>(null);
   const [copiedPaneKey, setCopiedPaneKey] = useState<TabKey | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsDraft, setSettingsDraft] = useState<AppSettings>(emptySettings);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const queryRef = useRef(query);
   const messagesRef = useRef(messages);
@@ -206,6 +223,35 @@ export function App() {
     window.location.href = "/login";
   }
 
+  async function openSettingsPanel() {
+    try {
+      setSettingsOpen(true);
+      setSettingsLoading(true);
+      setSettingsError(null);
+      setSettingsNotice(null);
+      const settings = await fetchSettings();
+      setSettingsDraft(settings);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : "Failed to load settings");
+    } finally {
+      setSettingsLoading(false);
+    }
+  }
+
+  async function handleSaveSettings() {
+    try {
+      setSettingsSaving(true);
+      const saved = await updateSettings(settingsDraft);
+      setSettingsDraft(saved);
+      setSettingsNotice("Saved. Changes are applied immediately.");
+      setSettingsError(null);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : "Failed to save settings");
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
   async function handleCopyHeaderValue(headerKey: string, value: string) {
     try {
       await writeClipboard(value);
@@ -235,6 +281,14 @@ export function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to copy content");
     }
+  }
+
+  function updateSettingsField<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
+    setSettingsDraft((current) => ({
+      ...current,
+      [key]: value
+    }));
+    setSettingsNotice(null);
   }
 
   const content = useMemo(() => {
@@ -363,6 +417,9 @@ export function App() {
 
       <main className="contentPane">
         <div className="topToolbar">
+          <button className="ghostButton compactButton" onClick={() => void openSettingsPanel()}>
+            Settings
+          </button>
           <button className="ghostButton compactButton" onClick={() => void handleLogout()}>
             Logout
           </button>
@@ -526,6 +583,119 @@ export function App() {
         )}
 
         {error ? <div className="errorBanner">{error}</div> : null}
+
+        {settingsOpen ? (
+          <div className="settingsOverlay" onClick={() => setSettingsOpen(false)}>
+            <section className="settingsPanel" onClick={(event) => event.stopPropagation()}>
+              <div className="settingsPanelHeader">
+                <div>
+                  <p className="eyebrow">Runtime settings</p>
+                  <h2>Settings</h2>
+                </div>
+                <button className="ghostButton compactButton" onClick={() => setSettingsOpen(false)}>
+                  Close
+                </button>
+              </div>
+
+              <p className="settingsLead">
+                These settings are persisted in SQLite and applied live without a restart.
+              </p>
+
+              {settingsLoading ? <p className="emptyState">Loading settings...</p> : null}
+              {settingsError ? <div className="errorBanner settingsBanner">{settingsError}</div> : null}
+              {settingsNotice ? <div className="settingsNotice">{settingsNotice}</div> : null}
+
+              {!settingsLoading ? (
+                <div className="settingsGrid">
+                  <label className="settingsField">
+                    <span>Allowed origins</span>
+                    <textarea
+                      rows={3}
+                      value={settingsDraft.allowedOrigins}
+                      onChange={(event) => updateSettingsField("allowedOrigins", event.target.value)}
+                    />
+                    <small>MAILTAIL_ALLOWED_ORIGINS. Comma-separated origins for cross-origin browser access.</small>
+                  </label>
+
+                  <div className="settingsField toggleField">
+                    <span>Verbose SMTP logging</span>
+                    <label className="toggleRow">
+                      <input
+                        type="checkbox"
+                        checked={settingsDraft.smtpLogVerbose}
+                        onChange={(event) => updateSettingsField("smtpLogVerbose", event.target.checked)}
+                      />
+                      <span>Enable per-command SMTP logging</span>
+                    </label>
+                    <small>MAILTAIL_SMTP_LOG_VERBOSE.</small>
+                  </div>
+
+                  <div className="settingsField toggleField">
+                    <span>MailFail enabled</span>
+                    <label className="toggleRow">
+                      <input
+                        type="checkbox"
+                        checked={settingsDraft.mailFailEnabled}
+                        onChange={(event) => updateSettingsField("mailFailEnabled", event.target.checked)}
+                      />
+                      <span>Enable MailFail rule evaluation</span>
+                    </label>
+                    <small>MAILTAIL_MAILFAIL_ENABLED.</small>
+                  </div>
+
+                  <label className="settingsField">
+                    <span>MailFail rules file</span>
+                    <input
+                      value={settingsDraft.mailFailRulesFile}
+                      onChange={(event) => updateSettingsField("mailFailRulesFile", event.target.value)}
+                      placeholder="examples/mailfail.yaml"
+                    />
+                    <small>MAILTAIL_MAILFAIL_RULES_FILE. Required when MailFail is enabled.</small>
+                  </label>
+
+                  <label className="settingsField">
+                    <span>Allowed remote IPs</span>
+                    <textarea
+                      rows={3}
+                      value={settingsDraft.allowedRemoteIps}
+                      onChange={(event) => updateSettingsField("allowedRemoteIps", event.target.value)}
+                    />
+                    <small>MAILTAIL_ALLOWED_REMOTE_IPS. Comma-separated IPs or CIDRs.</small>
+                  </label>
+
+                  <label className="settingsField">
+                    <span>Accepted recipient domains</span>
+                    <textarea
+                      rows={3}
+                      value={settingsDraft.acceptedRcptDomains}
+                      onChange={(event) => updateSettingsField("acceptedRcptDomains", event.target.value)}
+                    />
+                    <small>MAILTAIL_ACCEPTED_RCPT_DOMAINS. Comma-separated domains or regex patterns.</small>
+                  </label>
+
+                  <label className="settingsField">
+                    <span>Accepted sender domains</span>
+                    <textarea
+                      rows={3}
+                      value={settingsDraft.acceptedFromDomains}
+                      onChange={(event) => updateSettingsField("acceptedFromDomains", event.target.value)}
+                    />
+                    <small>MAILTAIL_ACCEPTED_FROM_DOMAINS. Comma-separated domains or regex patterns.</small>
+                  </label>
+                </div>
+              ) : null}
+
+              <div className="settingsActions">
+                <button className="ghostButton compactButton" onClick={() => setSettingsOpen(false)}>
+                  Cancel
+                </button>
+                <button className="dangerButton compactButton" disabled={settingsLoading || settingsSaving} onClick={() => void handleSaveSettings()}>
+                  {settingsSaving ? "Saving..." : "Save settings"}
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
       </main>
     </div>
   );

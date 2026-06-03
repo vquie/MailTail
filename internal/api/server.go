@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vquie/MailTail/internal/models"
 	"github.com/vquie/MailTail/internal/storage"
 )
 
@@ -23,7 +24,7 @@ type Server struct {
 }
 
 type CORSConfig struct {
-	AllowedOrigins map[string]struct{}
+	AllowedOrigins func() map[string]struct{}
 }
 
 const (
@@ -31,7 +32,7 @@ const (
 	maxMessagePageSize     = 100
 )
 
-func NewServer(addr, staticDir string, service *Service, logger *log.Logger, authConfig AuthConfig, corsConfig CORSConfig) *Server {
+func NewServer(addr, staticDir string, service *Service, logger *log.Logger, store storage.Store, authConfig AuthConfig, corsConfig CORSConfig) *Server {
 	server := &Server{
 		service:   service,
 		logger:    logger,
@@ -40,11 +41,12 @@ func NewServer(addr, staticDir string, service *Service, logger *log.Logger, aut
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/app", server.handleAppInfo)
+	mux.HandleFunc("/api/settings", server.handleSettings)
 	mux.HandleFunc("/api/messages", server.handleMessages)
 	mux.HandleFunc("/api/messages/", server.handleMessageByID)
 	mux.HandleFunc("/api/stats", server.handleStats)
 	mux.HandleFunc("/", server.handleApp)
-	sessionAuth := NewSessionAuth(authConfig)
+	sessionAuth := NewSessionAuth(authConfig, store)
 
 	server.httpServer = &http.Server{
 		Addr:              addr,
@@ -244,6 +246,30 @@ func (s *Server) handleAppInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.service.AppInfo())
 }
 
+func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, map[string]any{"settings": s.service.Settings()})
+	case http.MethodPut:
+		var payload struct {
+			Settings models.AppSettings `json:"settings"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid settings payload")
+			return
+		}
+
+		settings, err := s.service.UpdateSettings(r.Context(), payload.Settings)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
 func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		w.WriteHeader(http.StatusNotFound)
@@ -297,6 +323,8 @@ func isNoisyPollingRequest(r *http.Request) bool {
 	switch {
 	case r.URL.Path == "/api/app":
 		return true
+	case r.URL.Path == "/api/settings":
+		return true
 	case r.URL.Path == "/api/stats":
 		return true
 	case r.URL.Path == "/api/messages":
@@ -311,7 +339,11 @@ func isNoisyPollingRequest(r *http.Request) bool {
 func corsMiddleware(next http.Handler, config CORSConfig) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := strings.TrimSpace(r.Header.Get("Origin"))
-		allowedOrigin := origin != "" && originAllowed(config.AllowedOrigins, origin)
+		allowedOrigins := map[string]struct{}(nil)
+		if config.AllowedOrigins != nil {
+			allowedOrigins = config.AllowedOrigins()
+		}
+		allowedOrigin := origin != "" && originAllowed(allowedOrigins, origin)
 
 		if allowedOrigin {
 			w.Header().Set("Access-Control-Allow-Origin", origin)

@@ -28,6 +28,20 @@ var ftsTokenPattern = regexp.MustCompile(`[[:alnum:]_.@+-]+`)
 type Store interface {
 	CreateMessage(ctx context.Context, message models.StoredMessage) (int64, error)
 	ListMessages(ctx context.Context, filter models.MessageFilter) (models.MessagePage, error)
+	LoadAppSettings(ctx context.Context) (models.AppSettings, bool, error)
+	SaveAppSettings(ctx context.Context, settings models.AppSettings) error
+	CreateAuthSession(ctx context.Context, session models.AuthSession) error
+	GetAuthSession(ctx context.Context, sessionID string) (models.AuthSession, bool, error)
+	DeleteAuthSession(ctx context.Context, sessionID string) error
+	DeleteExpiredAuthSessions(ctx context.Context, before time.Time) error
+	CountLoginAttemptsSince(ctx context.Context, clientKey string, since time.Time) (int, error)
+	RecordLoginAttempt(ctx context.Context, clientKey string, at time.Time) error
+	ClearLoginAttempts(ctx context.Context, clientKey string) error
+	DeleteExpiredLoginAttempts(ctx context.Context, before time.Time) error
+	GetGreylistState(ctx context.Context, key string) (models.GreylistState, bool, error)
+	SaveGreylistState(ctx context.Context, state models.GreylistState) error
+	DeleteGreylistState(ctx context.Context, key string) error
+	DeleteExpiredGreylistStates(ctx context.Context, before time.Time) error
 	GetMessage(ctx context.Context, id int64) (models.Message, error)
 	GetRawMessage(ctx context.Context, id int64) (string, error)
 	GetAttachment(ctx context.Context, messageID, attachmentID int64) (models.Attachment, []byte, error)
@@ -150,6 +164,160 @@ func (s *SQLiteStore) CreateMessage(ctx context.Context, message models.StoredMe
 		return 0, err
 	}
 	return messageID, nil
+}
+
+func (s *SQLiteStore) LoadAppSettings(ctx context.Context) (models.AppSettings, bool, error) {
+	var payload string
+	err := s.db.QueryRowContext(ctx, `SELECT value_json FROM app_settings WHERE key = ?`, "runtime").Scan(&payload)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return models.AppSettings{}, false, nil
+		}
+		return models.AppSettings{}, false, err
+	}
+
+	var settings models.AppSettings
+	if err := json.Unmarshal([]byte(payload), &settings); err != nil {
+		return models.AppSettings{}, false, err
+	}
+	return settings, true, nil
+}
+
+func (s *SQLiteStore) SaveAppSettings(ctx context.Context, settings models.AppSettings) error {
+	payload, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO app_settings (key, value_json, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET
+			value_json = excluded.value_json,
+			updated_at = excluded.updated_at
+	`, "runtime", string(payload), time.Now().UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *SQLiteStore) CreateAuthSession(ctx context.Context, session models.AuthSession) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO auth_sessions (session_id, username, csrf_token, expires_at)
+		VALUES (?, ?, ?, ?)
+	`, session.SessionID, session.Username, session.CSRFToken, session.ExpiresAt.UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *SQLiteStore) GetAuthSession(ctx context.Context, sessionID string) (models.AuthSession, bool, error) {
+	var session models.AuthSession
+	var expiresAt string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT session_id, username, csrf_token, expires_at
+		FROM auth_sessions
+		WHERE session_id = ?
+	`, sessionID).Scan(&session.SessionID, &session.Username, &session.CSRFToken, &expiresAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return models.AuthSession{}, false, nil
+		}
+		return models.AuthSession{}, false, err
+	}
+
+	parsed, err := time.Parse(time.RFC3339Nano, expiresAt)
+	if err != nil {
+		return models.AuthSession{}, false, err
+	}
+	session.ExpiresAt = parsed
+	return session, true, nil
+}
+
+func (s *SQLiteStore) DeleteAuthSession(ctx context.Context, sessionID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM auth_sessions WHERE session_id = ?`, sessionID)
+	return err
+}
+
+func (s *SQLiteStore) DeleteExpiredAuthSessions(ctx context.Context, before time.Time) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM auth_sessions WHERE expires_at <= ?`, before.UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *SQLiteStore) CountLoginAttemptsSince(ctx context.Context, clientKey string, since time.Time) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM auth_login_attempts
+		WHERE client_key = ? AND attempted_at > ?
+	`, clientKey, since.UTC().Format(time.RFC3339Nano)).Scan(&count)
+	return count, err
+}
+
+func (s *SQLiteStore) RecordLoginAttempt(ctx context.Context, clientKey string, at time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO auth_login_attempts (client_key, attempted_at)
+		VALUES (?, ?)
+	`, clientKey, at.UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *SQLiteStore) ClearLoginAttempts(ctx context.Context, clientKey string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM auth_login_attempts WHERE client_key = ?`, clientKey)
+	return err
+}
+
+func (s *SQLiteStore) DeleteExpiredLoginAttempts(ctx context.Context, before time.Time) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM auth_login_attempts WHERE attempted_at <= ?`, before.UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *SQLiteStore) GetGreylistState(ctx context.Context, key string) (models.GreylistState, bool, error) {
+	var (
+		state     models.GreylistState
+		firstSeen string
+		lastSeen  string
+	)
+	err := s.db.QueryRowContext(ctx, `
+		SELECT state_key, first_seen, last_seen, attempts
+		FROM greylist_states
+		WHERE state_key = ?
+	`, key).Scan(&state.Key, &firstSeen, &lastSeen, &state.Attempts)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return models.GreylistState{}, false, nil
+		}
+		return models.GreylistState{}, false, err
+	}
+
+	var parseErr error
+	state.FirstSeen, parseErr = time.Parse(time.RFC3339Nano, firstSeen)
+	if parseErr != nil {
+		return models.GreylistState{}, false, parseErr
+	}
+	state.LastSeen, parseErr = time.Parse(time.RFC3339Nano, lastSeen)
+	if parseErr != nil {
+		return models.GreylistState{}, false, parseErr
+	}
+	return state, true, nil
+}
+
+func (s *SQLiteStore) SaveGreylistState(ctx context.Context, state models.GreylistState) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO greylist_states (state_key, first_seen, last_seen, attempts)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(state_key) DO UPDATE SET
+			first_seen = excluded.first_seen,
+			last_seen = excluded.last_seen,
+			attempts = excluded.attempts
+	`, state.Key, state.FirstSeen.UTC().Format(time.RFC3339Nano), state.LastSeen.UTC().Format(time.RFC3339Nano), state.Attempts)
+	return err
+}
+
+func (s *SQLiteStore) DeleteGreylistState(ctx context.Context, key string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM greylist_states WHERE state_key = ?`, key)
+	return err
+}
+
+func (s *SQLiteStore) DeleteExpiredGreylistStates(ctx context.Context, before time.Time) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM greylist_states WHERE last_seen <= ?`, before.UTC().Format(time.RFC3339Nano))
+	return err
 }
 
 func (s *SQLiteStore) ListMessages(ctx context.Context, filter models.MessageFilter) (models.MessagePage, error) {
