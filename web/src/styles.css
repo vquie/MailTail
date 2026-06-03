@@ -672,6 +672,17 @@ textarea {
   height: 16px;
 }
 
+.settingsInlineField {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #dce7f9;
+}
+
+.settingsInlineField input {
+  width: 92px;
+}
+
 .settingsActions {
   display: flex;
   justify-content: flex-end;

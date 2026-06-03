@@ -90,6 +90,8 @@ func main() {
 		errCh <- smtpServer.Start(ctx)
 	}()
 
+	go runMessageRetentionWorker(ctx, logger, store, runtime)
+
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -151,5 +153,41 @@ func logSettings(logger *log.Logger, settings models.AppSettings) {
 		logger.Printf("mailfail enabled with rules file %s", settings.MailFailRulesFile)
 	} else {
 		logger.Printf("mailfail disabled")
+	}
+	if settings.AutoDeleteAfterDays > 0 {
+		logger.Printf("message auto-delete enabled after %d day(s)", settings.AutoDeleteAfterDays)
+	}
+}
+
+func runMessageRetentionWorker(ctx context.Context, logger *log.Logger, store storage.Store, runtime *runtimeconfig.Manager) {
+	runRetentionPass := func() {
+		days := runtime.AutoDeleteAfterDays()
+		if days <= 0 {
+			return
+		}
+
+		before := time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour)
+		deleted, err := store.DeleteMessagesOlderThan(context.Background(), before)
+		if err != nil {
+			logger.Printf("message retention failed: %v", err)
+			return
+		}
+		if deleted > 0 {
+			logger.Printf("message retention deleted %d message(s) older than %d day(s)", deleted, days)
+		}
+	}
+
+	runRetentionPass()
+
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			runRetentionPass()
+		}
 	}
 }

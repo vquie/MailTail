@@ -18,6 +18,7 @@ type TabKey = "html" | "text" | "headers" | "raw";
 
 const defaultPageSize = 25;
 const defaultMailFailRulesFile = "examples/mailfail.yaml";
+const defaultAutoDeleteDays = 30;
 const emptySettings: AppSettings = {
   allowedOrigins: "",
   smtpLogVerbose: false,
@@ -25,7 +26,8 @@ const emptySettings: AppSettings = {
   mailFailRulesFile: defaultMailFailRulesFile,
   allowedRemoteIps: "",
   acceptedRcptDomains: "",
-  acceptedFromDomains: ""
+  acceptedFromDomains: "",
+  autoDeleteAfterDays: 0
 };
 
 export function App() {
@@ -54,6 +56,7 @@ export function App() {
   const [limitAllowedRemoteIps, setLimitAllowedRemoteIps] = useState(false);
   const [limitAcceptedRcptDomains, setLimitAcceptedRcptDomains] = useState(false);
   const [limitAcceptedFromDomains, setLimitAcceptedFromDomains] = useState(false);
+  const [autoDeleteEnabled, setAutoDeleteEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const queryRef = useRef(query);
   const messagesRef = useRef(messages);
@@ -241,6 +244,7 @@ export function App() {
       setLimitAllowedRemoteIps(Boolean(normalized.allowedRemoteIps.trim()));
       setLimitAcceptedRcptDomains(Boolean(normalized.acceptedRcptDomains.trim()));
       setLimitAcceptedFromDomains(Boolean(normalized.acceptedFromDomains.trim()));
+      setAutoDeleteEnabled(normalized.autoDeleteAfterDays > 0);
     } catch (err) {
       setSettingsError(err instanceof Error ? err.message : "Failed to load settings");
     } finally {
@@ -255,7 +259,8 @@ export function App() {
         limitAllowedOrigins,
         limitAllowedRemoteIps,
         limitAcceptedRcptDomains,
-        limitAcceptedFromDomains
+        limitAcceptedFromDomains,
+        autoDeleteEnabled
       }));
       const normalized = normalizeSettingsDraft(saved);
       setSettingsDraft(normalized);
@@ -311,6 +316,13 @@ export function App() {
     updateSettingsField("mailFailEnabled", enabled);
     if (enabled && !settingsDraft.mailFailRulesFile.trim()) {
       updateSettingsField("mailFailRulesFile", defaultMailFailRulesFile);
+    }
+  }
+
+  function handleToggleAutoDelete(enabled: boolean) {
+    setAutoDeleteEnabled(enabled);
+    if (enabled && settingsDraft.autoDeleteAfterDays <= 0) {
+      updateSettingsField("autoDeleteAfterDays", defaultAutoDeleteDays);
     }
   }
 
@@ -731,6 +743,33 @@ export function App() {
                     ) : null}
                     <small>Comma-separated sender domains or regex patterns to accept.</small>
                   </div>
+
+                  <div className="settingsField toggleField">
+                    <span>Automatic message deletion</span>
+                    <label className="toggleRow">
+                      <input type="checkbox" checked={autoDeleteEnabled} onChange={(event) => handleToggleAutoDelete(event.target.checked)} />
+                      <span>Automatically delete old messages</span>
+                    </label>
+                    {autoDeleteEnabled ? (
+                      <label className="settingsInlineField">
+                        <span>Delete after</span>
+                        <input
+                          type="number"
+                          min={1}
+                          step={1}
+                          value={settingsDraft.autoDeleteAfterDays > 0 ? settingsDraft.autoDeleteAfterDays : defaultAutoDeleteDays}
+                          onChange={(event) =>
+                            updateSettingsField(
+                              "autoDeleteAfterDays",
+                              Math.max(1, Number.parseInt(event.target.value || String(defaultAutoDeleteDays), 10))
+                            )
+                          }
+                        />
+                        <span>days</span>
+                      </label>
+                    ) : null}
+                    <small>Deletes messages after the configured number of days.</small>
+                  </div>
                 </div>
               ) : null}
 
@@ -806,7 +845,8 @@ function currentPaneCopyValue(activeTab: TabKey, message: Message | null): strin
 function normalizeSettingsDraft(settings: AppSettings): AppSettings {
   return {
     ...settings,
-    mailFailRulesFile: settings.mailFailRulesFile.trim() || defaultMailFailRulesFile
+    mailFailRulesFile: settings.mailFailRulesFile.trim() || defaultMailFailRulesFile,
+    autoDeleteAfterDays: settings.autoDeleteAfterDays > 0 ? settings.autoDeleteAfterDays : 0
   };
 }
 
@@ -817,6 +857,7 @@ function buildSettingsPayload(
     limitAllowedRemoteIps: boolean;
     limitAcceptedRcptDomains: boolean;
     limitAcceptedFromDomains: boolean;
+    autoDeleteEnabled: boolean;
   }
 ): AppSettings {
   return {
@@ -825,7 +866,8 @@ function buildSettingsPayload(
     mailFailRulesFile: settings.mailFailEnabled ? settings.mailFailRulesFile.trim() || defaultMailFailRulesFile : defaultMailFailRulesFile,
     allowedRemoteIps: toggles.limitAllowedRemoteIps ? settings.allowedRemoteIps : "",
     acceptedRcptDomains: toggles.limitAcceptedRcptDomains ? settings.acceptedRcptDomains : "",
-    acceptedFromDomains: toggles.limitAcceptedFromDomains ? settings.acceptedFromDomains : ""
+    acceptedFromDomains: toggles.limitAcceptedFromDomains ? settings.acceptedFromDomains : "",
+    autoDeleteAfterDays: toggles.autoDeleteEnabled ? Math.max(1, settings.autoDeleteAfterDays || defaultAutoDeleteDays) : 0
   };
 }
 

@@ -78,6 +78,9 @@ func (s *Service) Settings() models.AppSettings {
 }
 
 func (s *Service) UpdateSettings(ctx context.Context, settings models.AppSettings) (models.AppSettings, error) {
+	if settings.AutoDeleteAfterDays < 0 {
+		settings.AutoDeleteAfterDays = 0
+	}
 	config := smtpserver.DomainPolicyConfigFromSettings(settings)
 	if _, err := smtpserver.NewDomainPolicy(config, nil); err != nil {
 		return models.AppSettings{}, err

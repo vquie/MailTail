@@ -95,12 +95,14 @@ Suggested additions:
 
 - `owner_user_id`
 - optional `mail_profile_id`
+- optional `expires_at`
 
 That allows:
 
 - user-scoped inboxes
 - access control in the UI and API
 - future filtering and quotas
+- retention cleanup without per-user workers
 
 ### auth_sessions
 
@@ -196,6 +198,32 @@ That means:
 - a user edits their own policy settings
 - admins may optionally switch context to manage another user
 - the inbox view only shows messages owned by the current user or tenant
+
+## Retention And Cleanup
+
+Automatic message deletion should not evolve into one background worker per user.
+
+The intended direction is:
+
+- a single cleanup worker per MailTail process
+- messages carry their own computed retention timestamp, e.g. `expires_at`
+- retention is derived from the owning user or mail profile policy at ingest time
+- cleanup deletes expired messages in small batches
+
+Recommended shape:
+
+- add `expires_at` to `messages`
+- index `expires_at`
+- run one central cleanup worker for all users
+- delete with batched queries, for example `LIMIT 500` per pass
+
+That avoids:
+
+- scanning all users every cycle
+- spawning per-user workers
+- large delete spikes on busy systems
+
+This should become the preferred model once retention is fully user-scoped.
 
 ## Current Compatibility Guidance
 

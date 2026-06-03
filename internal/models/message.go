@@ -93,6 +93,7 @@ type AppSettings struct {
 	AllowedRemoteIPs    string `json:"allowedRemoteIps"`
 	AcceptedRcptDomains string `json:"acceptedRcptDomains"`
 	AcceptedFromDomains string `json:"acceptedFromDomains"`
+	AutoDeleteAfterDays int    `json:"autoDeleteAfterDays"`
 }
 
 type AuthSession struct {

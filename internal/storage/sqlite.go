@@ -30,6 +30,7 @@ type Store interface {
 	ListMessages(ctx context.Context, filter models.MessageFilter) (models.MessagePage, error)
 	LoadAppSettings(ctx context.Context) (models.AppSettings, bool, error)
 	SaveAppSettings(ctx context.Context, settings models.AppSettings) error
+	DeleteMessagesOlderThan(ctx context.Context, before time.Time) (int64, error)
 	CreateAuthSession(ctx context.Context, session models.AuthSession) error
 	GetAuthSession(ctx context.Context, sessionID string) (models.AuthSession, bool, error)
 	DeleteAuthSession(ctx context.Context, sessionID string) error
@@ -197,6 +198,18 @@ func (s *SQLiteStore) SaveAppSettings(ctx context.Context, settings models.AppSe
 			updated_at = excluded.updated_at
 	`, "runtime", string(payload), time.Now().UTC().Format(time.RFC3339Nano))
 	return err
+}
+
+func (s *SQLiteStore) DeleteMessagesOlderThan(ctx context.Context, before time.Time) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM messages WHERE received_at < ?`, before.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return rows, nil
 }
 
 func (s *SQLiteStore) CreateAuthSession(ctx context.Context, session models.AuthSession) error {

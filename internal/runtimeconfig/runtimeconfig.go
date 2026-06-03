@@ -8,6 +8,7 @@ import (
 )
 
 const DefaultMailFailRulesFile = "examples/mailfail.yaml"
+const DefaultAutoDeleteDays = 30
 
 type Manager struct {
 	mu             sync.RWMutex
@@ -56,6 +57,12 @@ func (m *Manager) SMTPLogVerbose() bool {
 	return m.settings.SMTPLogVerbose
 }
 
+func (m *Manager) AutoDeleteAfterDays() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.settings.AutoDeleteAfterDays
+}
+
 func CSVList(value string) []string {
 	if strings.TrimSpace(value) == "" {
 		return nil
@@ -82,6 +89,9 @@ func normalizeSettings(settings models.AppSettings) models.AppSettings {
 	settings.AllowedRemoteIPs = normalizeCSV(settings.AllowedRemoteIPs)
 	settings.AcceptedRcptDomains = normalizeCSV(settings.AcceptedRcptDomains)
 	settings.AcceptedFromDomains = normalizeCSV(settings.AcceptedFromDomains)
+	if settings.AutoDeleteAfterDays < 0 {
+		settings.AutoDeleteAfterDays = 0
+	}
 	return settings
 }
 

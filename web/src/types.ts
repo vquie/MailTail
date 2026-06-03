@@ -56,4 +56,5 @@ export type AppSettings = {
   allowedRemoteIps: string;
   acceptedRcptDomains: string;
   acceptedFromDomains: string;
+  autoDeleteAfterDays: number;
 };
