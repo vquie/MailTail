@@ -32,22 +32,28 @@ textarea {
 .shell {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "header header"
+    "sidebar content";
   min-height: 100vh;
   height: 100vh;
 }
 
 .sidebar {
+  grid-area: sidebar;
   padding: 16px;
   border-right: 1px solid rgb(255 255 255 / 8%);
   background: rgb(8 10 16 / 48%);
   backdrop-filter: blur(22px);
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 12px;
   min-height: 0;
 }
 
 .contentPane {
+  grid-area: content;
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -57,11 +63,50 @@ textarea {
   overflow: hidden;
 }
 
+.workspaceHeader {
+  grid-area: header;
+  padding: 16px 16px 0;
+}
+
+.workspaceHeaderCard {
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 4.5%);
+  border-radius: 8px;
+  box-shadow: 0 14px 40px rgb(0 0 0 / 18%);
+  padding: 12px 14px;
+}
+
+.workspaceTopRow,
+.workspaceTitleRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.workspaceTitle {
+  min-width: 0;
+}
+
+.workspaceTitle h1 {
+  margin: 0;
+}
+
+.workspaceSearchField {
+  min-width: min(320px, 100%);
+  flex: 1 1 320px;
+  max-width: 440px;
+}
+
 .topToolbar {
   display: flex;
   justify-content: flex-end;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+  flex-wrap: wrap;
+  align-content: start;
+  max-width: 100%;
 }
 
 .brand,
@@ -171,7 +216,12 @@ textarea {
   min-height: 0;
   overflow-y: auto;
   padding-right: 2px;
+  padding-top: 4px;
   align-content: start;
+}
+
+.sidebarListMeta {
+  padding: 0 2px;
 }
 
 .loadMoreButton {
@@ -284,7 +334,6 @@ textarea {
   padding: 16px 18px;
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 12px;
 }
 
@@ -728,6 +777,11 @@ textarea {
 }
 
 @media (width <= 1180px) {
+  .workspaceTopRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .detailGrid {
     grid-template-columns: 1fr;
   }
@@ -740,11 +794,20 @@ textarea {
 @media (width <= 980px) {
   .shell {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "header"
+      "sidebar"
+      "content";
+    height: auto;
   }
 
   .sidebar {
     border-right: 0;
     border-bottom: 1px solid rgb(255 255 255 / 8%);
+  }
+
+  .contentPane {
+    height: auto;
   }
 
   .messageList {
@@ -765,13 +828,14 @@ textarea {
 }
 
 @media (width <= 640px) {
-  .brand {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .statsRow {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspaceTitleRow,
+  .workspaceTopRow,
+  .topToolbar {
     align-items: stretch;
   }
 
@@ -779,8 +843,9 @@ textarea {
     justify-content: stretch;
   }
 
-  .topToolbar button {
+  .topToolbar > * {
     flex: 1 1 0;
+    justify-content: center;
   }
 
   .headerRow {

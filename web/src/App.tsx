@@ -399,40 +399,76 @@ export function App() {
 
   return (
     <div className="shell">
+      <header className="workspaceHeader">
+        <div className="workspaceHeaderCard">
+          <div className="workspaceTopRow">
+            <div className="workspaceTitleRow">
+              <div className="workspaceTitle">
+                <p className="eyebrow">SMTP Test Inbox</p>
+                <h1>MailTail</h1>
+              </div>
+              <div className="statsRow">
+                <div className="statPill">
+                  <span>Messages</span>
+                  <strong>{stats.messageCount}</strong>
+                </div>
+                <div className="statPill">
+                  <span>Size</span>
+                  <strong>{formatBytes(stats.totalSize)}</strong>
+                </div>
+              </div>
+            </div>
+
+            <label className="searchField workspaceSearchField">
+              <input
+                aria-label="Search subject, from, to"
+                value={queryInput}
+                onChange={(event) => setQueryInput(event.target.value)}
+                placeholder="Search subject, from, to"
+              />
+            </label>
+
+            <div className="topToolbar">
+              <button className="ghostButton compactButton" onClick={() => void openSettingsPanel()}>
+                Settings
+              </button>
+              <button className="ghostButton compactButton" onClick={() => void handleLogout()}>
+                Logout
+              </button>
+              <button
+                className="ghostButton compactButton"
+                onClick={() =>
+                  void loadOverview(queryRef.current, {
+                    preferredId: selectedIdRef.current,
+                    forceDetail: true
+                  })
+                }
+              >
+                Refresh
+              </button>
+              {selectedMessage ? (
+                <a
+                  className="ghostButton compactButton toolbarLink"
+                  href={rawMessageUrl(selectedMessage.id)}
+                  download={buildEMLFileName(selectedMessage)}
+                >
+                  Download EML
+                </a>
+              ) : null}
+              {selectedMessage ? (
+                <button className="ghostButton compactButton" onClick={() => void handleDeleteCurrent()}>
+                  Delete message
+                </button>
+              ) : null}
+              <button className="dangerButton compactButton" disabled={!hasMessages} onClick={() => void handleClearInbox()}>
+                Clear all messages
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
       <aside className="sidebar">
-        <div className="brand">
-          <div>
-            <p className="eyebrow">SMTP Test Inbox</p>
-            <h1>MailTail</h1>
-          </div>
-        </div>
-
-        <div className="statsRow">
-          <div className="statPill">
-            <span>Messages</span>
-            <strong>{stats.messageCount}</strong>
-          </div>
-          <div className="statPill">
-            <span>Size</span>
-            <strong>{formatBytes(stats.totalSize)}</strong>
-          </div>
-        </div>
-
-        <div className="searchCard">
-          <label className="searchField">
-            <span>Search</span>
-            <input
-              value={queryInput}
-              onChange={(event) => setQueryInput(event.target.value)}
-              placeholder="Subject, From, To"
-            />
-          </label>
-          <div className="listMeta">
-            <span>{messages.length} loaded</span>
-            <span>{hasMore ? "More available" : selectedMessage ? `#${selectedMessage.id}` : "No selection"}</span>
-          </div>
-        </div>
-
         <div className="messageList">
           {messages.map((message) => (
             <button
@@ -467,6 +503,11 @@ export function App() {
           ) : null}
         </div>
 
+        <div className="listMeta sidebarListMeta">
+          <span>{messages.length} loaded</span>
+          <span>{hasMore ? "More available" : selectedMessage ? `#${selectedMessage.id}` : "No selection"}</span>
+        </div>
+
         <div className="sidebarFooter">
           {settingsLoaded && currentSettings.mailFailEnabled ? (
             <div className="sidebarNotice">
@@ -479,29 +520,6 @@ export function App() {
       </aside>
 
       <main className="contentPane">
-        <div className="topToolbar">
-          <button className="ghostButton compactButton" onClick={() => void openSettingsPanel()}>
-            Settings
-          </button>
-          <button className="ghostButton compactButton" onClick={() => void handleLogout()}>
-            Logout
-          </button>
-          <button
-            className="ghostButton compactButton"
-            onClick={() =>
-              void loadOverview(queryRef.current, {
-                preferredId: selectedIdRef.current,
-                forceDetail: true
-              })
-            }
-          >
-            Refresh
-          </button>
-          <button className="dangerButton compactButton" disabled={!hasMessages} onClick={() => void handleClearInbox()}>
-            Clear all messages
-          </button>
-        </div>
-
         {selectedMessage ? (
           <section className="messageWorkspace">
             <div className="heroCard compactHero">
@@ -516,19 +534,6 @@ export function App() {
                   <span>HELO: {selectedMessage.helo || "-"}</span>
                   <span>Remote IP: {selectedMessage.remoteIp || "-"}</span>
                 </div>
-              </div>
-
-              <div className="heroActions">
-                <a
-                  className="ghostButton compactButton toolbarLink"
-                  href={rawMessageUrl(selectedMessage.id)}
-                  download={buildEMLFileName(selectedMessage)}
-                >
-                  Download EML
-                </a>
-                <button className="ghostButton compactButton" onClick={() => void handleDeleteCurrent()}>
-                  Delete message
-                </button>
               </div>
             </div>
 
