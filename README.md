@@ -382,23 +382,31 @@ If `minRetryAfter` is set, retries that arrive too early continue to receive the
 
 ## Configuration
 
-Environment variables:
+Bootstrap environment variables:
 
 - `MAILTAIL_DATA_DIR` default: `data`
 - `MAILTAIL_HTTP_ADDR` default: `:8080`
 - `MAILTAIL_SMTP_ADDR` default: `:8025`
-- `MAILTAIL_SMTP_LOG_VERBOSE` default: `false`, logs only accepted messages and rejects/errors. Set to `true` for per-command SMTP tracing.
 - `MAILTAIL_WEB_DIR` default: `web/dist`
 - `MAILTAIL_AUTH_USERNAME` default: empty, disables login protection for web UI and API and logs a startup warning
 - `MAILTAIL_AUTH_PASSWORD` default: empty, disables login protection for web UI and API and logs a startup warning
+
+Runtime settings:
+
+- The web UI includes a Settings panel for MailFail, SMTP logging, origin restrictions, SMTP IP restrictions, sender/recipient restrictions, and automatic message deletion.
+- These settings are persisted in SQLite and applied live without restarting MailTail.
+- The related environment variables are still supported as bootstrap values for the first start or for instances without saved runtime settings yet.
+- Once runtime settings have been saved in the UI, the database values take precedence over the environment.
+
+The runtime-setting bootstrap variables are:
+
 - `MAILTAIL_ALLOWED_ORIGINS` default: empty, disables cross-origin browser access. Set this only if you intentionally need browser clients from another origin.
+- `MAILTAIL_SMTP_LOG_VERBOSE` default: `false`, logs only accepted messages and rejects/errors. Set to `true` for per-command SMTP tracing.
 - `MAILTAIL_MAILFAIL_ENABLED` default: `false`
 - `MAILTAIL_MAILFAIL_RULES_FILE` default: `examples/mailfail.yaml`
 - `MAILTAIL_ALLOWED_REMOTE_IPS` default: empty, accepts SMTP connections from all IPs and logs a startup warning. Supports IPs and CIDR ranges.
 - `MAILTAIL_ACCEPTED_RCPT_DOMAINS` default: empty, accepts recipients for all domains and logs a startup warning. Values may be exact domains or regular expressions.
 - `MAILTAIL_ACCEPTED_FROM_DOMAINS` default: empty, accepts senders for all domains and logs a startup warning. Values may be exact domains or regular expressions.
-
-The web UI includes a Settings panel for these runtime app settings, excluding the admin username/password values. Changes are persisted in SQLite and applied live without restarting MailTail.
 
 For the planned multi-user direction and the intended split between instance-wide settings and user-owned mail policies, see [docs/multi-user-target.md](/Users/vitaliquiering/git/MailTail/docs/multi-user-target.md).
 
