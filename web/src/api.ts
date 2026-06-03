@@ -70,7 +70,14 @@ export async function clearInbox(): Promise<void> {
 }
 
 export async function logout(): Promise<void> {
-  await request<void>("/auth/logout", { method: "POST" });
+  const response = await fetch("/auth/logout", withCSRF({ method: "POST" }));
+  if (!response.ok) {
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
+    throw new Error(`Logout failed with status ${response.status}`);
+  }
 }
 
 export function attachmentUrl(messageId: number, attachmentId: number): string {
