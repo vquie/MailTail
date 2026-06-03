@@ -35,7 +35,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [stats, setStats] = useState<Stats>({ messageCount: 0, totalSize: 0 });
-  const [version, setVersion] = useState("dev");
+  const [version, setVersion] = useState("");
   const [currentSettings, setCurrentSettings] = useState<AppSettings>(emptySettings);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [query, setQuery] = useState("");
@@ -502,7 +502,7 @@ export function App() {
               <span>MailFail enabled for this user</span>
             </div>
           ) : null}
-          <div className="sidebarVersion">Version {version}</div>
+          <div className="sidebarVersion">{version ? `Version ${version}` : "\u00A0"}</div>
         </div>
       </aside>
 
