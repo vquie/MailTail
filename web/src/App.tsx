@@ -7,6 +7,7 @@ import {
   fetchMessage,
   fetchMessages,
   fetchStats,
+  rawMessageUrl,
   logout
 } from "./api";
 import type { Message, Stats } from "./types";
@@ -398,6 +399,13 @@ export function App() {
               </div>
 
               <div className="heroActions">
+                <a
+                  className="ghostButton compactButton toolbarLink"
+                  href={rawMessageUrl(selectedMessage.id)}
+                  download={buildEMLFileName(selectedMessage)}
+                >
+                  Download EML
+                </a>
                 <button className="ghostButton compactButton" onClick={() => void handleDeleteCurrent()}>
                   Delete message
                 </button>
@@ -574,6 +582,27 @@ function currentPaneCopyValue(activeTab: TabKey, message: Message | null): strin
     default:
       return "";
   }
+}
+
+function buildEMLFileName(message: Message): string {
+  const subject = sanitizeFileName(message.subject || "message");
+  const stamp = new Date(message.receivedAt).toISOString().replace(/:/g, "-");
+  return `${subject}-${stamp}.eml`;
+}
+
+function sanitizeFileName(value: string): string {
+  const normalized = value
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  if (!normalized) {
+    return "message";
+  }
+
+  return normalized.slice(0, 80);
 }
 
 async function writeClipboard(value: string): Promise<void> {

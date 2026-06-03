@@ -63,6 +63,10 @@ export function attachmentUrl(messageId: number, attachmentId: number): string {
   return `/api/messages/${messageId}/attachments/${attachmentId}`;
 }
 
+export function rawMessageUrl(messageId: number): string {
+  return `/api/messages/${messageId}/raw`;
+}
+
 function withCSRF(init?: RequestInit): RequestInit | undefined {
   if (!init?.method || ["GET", "HEAD", "OPTIONS"].includes(init.method.toUpperCase())) {
     return init;
