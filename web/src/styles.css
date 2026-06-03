@@ -809,6 +809,15 @@ textarea {
 }
 
 @media (width <= 980px) {
+  body {
+    overflow: auto;
+  }
+
+  #root {
+    height: auto;
+    min-height: 100vh;
+  }
+
   .shell {
     grid-template-columns: 1fr;
     grid-template-areas:
@@ -816,6 +825,7 @@ textarea {
       "sidebar"
       "content";
     height: auto;
+    min-height: 100vh;
   }
 
   .sidebar {
