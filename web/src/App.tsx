@@ -36,6 +36,8 @@ export function App() {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [stats, setStats] = useState<Stats>({ messageCount: 0, totalSize: 0 });
   const [version, setVersion] = useState("dev");
+  const [currentSettings, setCurrentSettings] = useState<AppSettings>(emptySettings);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [queryInput, setQueryInput] = useState("");
   const [nextCursor, setNextCursor] = useState("");
@@ -95,6 +97,10 @@ export function App() {
   useEffect(() => {
     hasMoreRef.current = hasMore;
   }, [hasMore]);
+
+  useEffect(() => {
+    void loadCurrentSettings();
+  }, []);
 
   useEffect(() => {
     setAttachmentsExpanded(true);
@@ -181,6 +187,16 @@ export function App() {
     }
   }
 
+  async function loadCurrentSettings() {
+    try {
+      const settings = await fetchSettings();
+      setCurrentSettings(normalizeSettingsDraft(settings));
+      setSettingsLoaded(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load settings");
+    }
+  }
+
   async function handleLoadMore() {
     if (!nextCursorRef.current || loadingMore) {
       return;
@@ -240,6 +256,8 @@ export function App() {
       const settings = await fetchSettings();
       const normalized = normalizeSettingsDraft(settings);
       setSettingsDraft(normalized);
+      setCurrentSettings(normalized);
+      setSettingsLoaded(true);
       setLimitAllowedOrigins(Boolean(normalized.allowedOrigins.trim()));
       setLimitAllowedRemoteIps(Boolean(normalized.allowedRemoteIps.trim()));
       setLimitAcceptedRcptDomains(Boolean(normalized.acceptedRcptDomains.trim()));
@@ -264,6 +282,8 @@ export function App() {
       }));
       const normalized = normalizeSettingsDraft(saved);
       setSettingsDraft(normalized);
+      setCurrentSettings(normalized);
+      setSettingsLoaded(true);
       setSettingsNotice("Saved. Changes are applied immediately.");
       setSettingsError(null);
     } catch (err) {
@@ -447,7 +467,15 @@ export function App() {
           ) : null}
         </div>
 
-        <div className="sidebarVersion">Version {version}</div>
+        <div className="sidebarFooter">
+          {settingsLoaded && currentSettings.mailFailEnabled ? (
+            <div className="sidebarNotice">
+              <span className="statusDot" aria-hidden="true" />
+              <span>MailFail enabled for this user</span>
+            </div>
+          ) : null}
+          <div className="sidebarVersion">Version {version}</div>
+        </div>
       </aside>
 
       <main className="contentPane">

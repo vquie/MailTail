@@ -393,7 +393,7 @@ Environment variables:
 - `MAILTAIL_AUTH_PASSWORD` default: empty, disables login protection for web UI and API and logs a startup warning
 - `MAILTAIL_ALLOWED_ORIGINS` default: empty, disables cross-origin browser access. Set this only if you intentionally need browser clients from another origin.
 - `MAILTAIL_MAILFAIL_ENABLED` default: `false`
-- `MAILTAIL_MAILFAIL_RULES_FILE` default: empty. Required when MailFail is enabled.
+- `MAILTAIL_MAILFAIL_RULES_FILE` default: `examples/mailfail.yaml`
 - `MAILTAIL_ALLOWED_REMOTE_IPS` default: empty, accepts SMTP connections from all IPs and logs a startup warning. Supports IPs and CIDR ranges.
 - `MAILTAIL_ACCEPTED_RCPT_DOMAINS` default: empty, accepts recipients for all domains and logs a startup warning. Values may be exact domains or regular expressions.
 - `MAILTAIL_ACCEPTED_FROM_DOMAINS` default: empty, accepts senders for all domains and logs a startup warning. Values may be exact domains or regular expressions.
