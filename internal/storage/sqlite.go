@@ -340,8 +340,9 @@ func (s *SQLiteStore) ListMessages(ctx context.Context, filter models.MessageFil
 	}
 
 	query := `
-		SELECT id, received_at, mail_from, rcpt_to_json, header_from, header_to, subject,
-		       message_id, helo, remote_ip, size
+		SELECT messages.id, messages.received_at, messages.mail_from, messages.rcpt_to_json,
+		       messages.header_from, messages.header_to, messages.subject,
+		       messages.message_id, messages.helo, messages.remote_ip, messages.size
 		FROM messages
 	`
 	args := make([]any, 0, 6)
