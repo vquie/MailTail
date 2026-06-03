@@ -429,12 +429,6 @@ export function App() {
             </label>
 
             <div className="topToolbar">
-              <button className="ghostButton compactButton" onClick={() => void openSettingsPanel()}>
-                Settings
-              </button>
-              <button className="ghostButton compactButton" onClick={() => void handleLogout()}>
-                Logout
-              </button>
               <button
                 className="ghostButton compactButton"
                 onClick={() =>
@@ -446,22 +440,14 @@ export function App() {
               >
                 Refresh
               </button>
-              {selectedMessage ? (
-                <a
-                  className="ghostButton compactButton toolbarLink"
-                  href={rawMessageUrl(selectedMessage.id)}
-                  download={buildEMLFileName(selectedMessage)}
-                >
-                  Download EML
-                </a>
-              ) : null}
-              {selectedMessage ? (
-                <button className="ghostButton compactButton" onClick={() => void handleDeleteCurrent()}>
-                  Delete message
-                </button>
-              ) : null}
+              <button className="ghostButton compactButton" onClick={() => void openSettingsPanel()}>
+                Settings
+              </button>
               <button className="dangerButton compactButton" disabled={!hasMessages} onClick={() => void handleClearInbox()}>
                 Clear all messages
+              </button>
+              <button className="ghostButton compactButton" onClick={() => void handleLogout()}>
+                Logout
               </button>
             </div>
           </div>
@@ -534,6 +520,19 @@ export function App() {
                   <span>HELO: {selectedMessage.helo || "-"}</span>
                   <span>Remote IP: {selectedMessage.remoteIp || "-"}</span>
                 </div>
+              </div>
+
+              <div className="heroActions">
+                <a
+                  className="ghostButton compactButton toolbarLink"
+                  href={rawMessageUrl(selectedMessage.id)}
+                  download={buildEMLFileName(selectedMessage)}
+                >
+                  Download EML
+                </a>
+                <button className="ghostButton compactButton" onClick={() => void handleDeleteCurrent()}>
+                  Delete message
+                </button>
               </div>
             </div>
 

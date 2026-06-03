@@ -94,9 +94,9 @@ textarea {
 }
 
 .workspaceSearchField {
-  min-width: min(320px, 100%);
-  flex: 1 1 320px;
-  max-width: 440px;
+  min-width: min(420px, 100%);
+  flex: 1 1 420px;
+  max-width: 560px;
 }
 
 .topToolbar {
@@ -107,6 +107,7 @@ textarea {
   flex-wrap: wrap;
   align-content: start;
   max-width: 100%;
+  flex: 1 1 auto;
 }
 
 .brand,
@@ -334,6 +335,7 @@ textarea {
   padding: 16px 18px;
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 12px;
 }
 
