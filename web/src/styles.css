@@ -59,7 +59,7 @@ textarea {
   flex-direction: column;
   gap: 12px;
   min-height: 0;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -219,6 +219,7 @@ textarea {
   padding-right: 2px;
   padding-top: 4px;
   align-content: start;
+  overscroll-behavior: contain;
 }
 
 .sidebarListMeta {
@@ -521,6 +522,7 @@ textarea {
   grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
   overflow: hidden;
+  min-height: 0;
 }
 
 .htmlFrame {
@@ -531,6 +533,7 @@ textarea {
   border-radius: 6px;
   background: white;
   display: block;
+  overscroll-behavior: contain;
 }
 
 .codeBlock {
@@ -538,6 +541,7 @@ textarea {
   min-height: 0;
   height: 100%;
   overflow: auto;
+  overscroll-behavior: contain;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: "IBM Plex Mono", monospace;
@@ -550,6 +554,7 @@ textarea {
   min-height: 0;
   height: 100%;
   overflow: auto;
+  overscroll-behavior: contain;
   display: grid;
   gap: 10px;
   align-content: start;
