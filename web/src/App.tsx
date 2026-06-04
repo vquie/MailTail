@@ -773,7 +773,7 @@ export function App() {
   const hasActiveSearch = query.length > 0;
 
   return (
-    <div className="shell">
+    <div className={settingsOpen ? "shell settingsMode" : "shell"}>
       <header className="workspaceHeader">
         <div className="workspaceHeaderCard">
           <div className="workspaceTopRow">
@@ -880,8 +880,8 @@ export function App() {
         </div>
       </aside>
 
-      <main className="contentPane">
-        {selectedMessage ? (
+      <main className={settingsOpen ? "contentPane settingsPagePane" : "contentPane"}>
+        {!settingsOpen && selectedMessage ? (
           <section className="messageWorkspace">
             <div className="heroCard compactHero">
               <div className="heroCopy">
@@ -1008,7 +1008,7 @@ export function App() {
               ) : null}
             </div>
           </section>
-        ) : (
+        ) : !settingsOpen ? (
           <section className="emptyHero">
             <div className="emptyHeroMain">
               <p className="eyebrow">Inbox state</p>
@@ -1022,12 +1022,12 @@ export function App() {
             <div className="heroActions">
             </div>
           </section>
-        )}
+        ) : null}
 
-        {error ? <div className="errorBanner">{error}</div> : null}
+        {!settingsOpen && error ? <div className="errorBanner">{error}</div> : null}
 
         {settingsOpen ? (
-          <div className="settingsOverlay" onClick={() => setSettingsOpen(false)}>
+          <div className="settingsOverlay settingsPageOverlay" onClick={() => setSettingsOpen(false)}>
             <section className="settingsPanel" onClick={(event) => event.stopPropagation()}>
               <div className="settingsPanelHeader">
                 <div>

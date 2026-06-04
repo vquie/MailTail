@@ -41,6 +41,17 @@ select {
   height: 100vh;
 }
 
+.shell.settingsMode {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "header"
+    "content";
+}
+
+.shell.settingsMode .sidebar {
+  display: none;
+}
+
 .sidebar {
   grid-area: sidebar;
   padding: 16px;
@@ -62,6 +73,10 @@ select {
   min-height: 0;
   height: 100%;
   overflow: hidden;
+}
+
+.settingsPagePane {
+  overflow: auto;
 }
 
 .workspaceHeader {
@@ -681,6 +696,16 @@ select {
   padding: 24px;
 }
 
+.settingsPageOverlay {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  background: none;
+  backdrop-filter: none;
+  display: block;
+  padding: 0;
+}
+
 .nestedOverlay {
   z-index: 30;
   background: rgb(4 6 10 / 58%);
@@ -699,6 +724,13 @@ select {
   padding: 18px;
   display: grid;
   gap: 16px;
+}
+
+.settingsPageOverlay .settingsPanel {
+  width: 100%;
+  max-height: none;
+  overflow: visible;
+  box-shadow: none;
 }
 
 .settingsPanelHeader {
