@@ -795,7 +795,6 @@ export function App() {
                             <div key={headerCopyKey} className="headerRow">
                               <span className="headerKey">{header.key}</span>
                               <div className="headerValueGroup">
-                                <span className="headerValue">{header.value}</span>
                                 <button
                                   className={copiedHeaderKey === headerCopyKey ? "ghostButton compactButton iconButton copied" : "ghostButton compactButton iconButton"}
                                   aria-label={`Copy ${header.key} header`}
@@ -804,6 +803,7 @@ export function App() {
                                 >
                                   {copiedHeaderKey === headerCopyKey ? <CheckIcon /> : <CopyIcon />}
                                 </button>
+                                <span className="headerValue">{header.value}</span>
                               </div>
                             </div>
                           );

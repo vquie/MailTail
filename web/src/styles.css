@@ -588,7 +588,8 @@ textarea {
 }
 
 .headerValueGroup {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   justify-self: start;
   max-width: 100%;
   gap: 8px;
