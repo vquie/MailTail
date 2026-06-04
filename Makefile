@@ -16,13 +16,11 @@ DOCKER_CONTAINER ?= mailtail
 DOCKER_VOLUME ?= mailtail-data
 HTTP_PORT ?= 8080
 SMTP_PORT ?= 8025
-MAILFAIL_RULES_CONTAINER_PATH ?= /app/mailfail.yaml
 MEGALINTER_IMAGE ?= oxsecurity/megalinter:v9
 MEGALINTER_WORKDIR := /tmp/lint
 MEGALINTER_COMMON_ENV := -e DEFAULT_WORKSPACE=$(MEGALINTER_WORKDIR) -e GITHUB_ACTIONS=false -e REPORT_OUTPUT_FOLDER=none -e SKIP_CLI_LINT_MODES=project
 MEGALINTER_COMMON_ARGS := --rm -v $(CURDIR):$(MEGALINTER_WORKDIR)
 DOCKER_ENV_FILE = $(if $(wildcard $(ENV_FILE)),--env-file $(ENV_FILE),)
-MAILFAIL_RULES_MOUNT = $(if $(strip $(MAILTAIL_MAILFAIL_RULES_FILE)),-v $(abspath $(MAILTAIL_MAILFAIL_RULES_FILE)):$(MAILFAIL_RULES_CONTAINER_PATH):ro,)
 
 ifneq ($(wildcard $(ENV_FILE)),)
 include $(ENV_FILE)
@@ -36,7 +34,7 @@ help:
 	@printf "%s\n" \
 		"Available targets:" \
 		"  make run           Run MailTail with .env-aware local config" \
-		"  make docker-run    Run MailTail as a Docker container with .env-aware config and optional MailFail rule mount" \
+		"  make docker-run    Run MailTail as a Docker container with .env-aware config" \
 		"  make setup         Create local cache and data directories" \
 		"  make install       Install frontend dependencies" \
 		"  make tidy          Sync Go modules" \
@@ -91,7 +89,6 @@ run: build-web
 	MAILTAIL_ADMIN_PASSWORD="$(MAILTAIL_ADMIN_PASSWORD)" \
 	MAILTAIL_ALLOWED_ORIGINS="$(MAILTAIL_ALLOWED_ORIGINS)" \
 	MAILTAIL_MAILFAIL_ENABLED="$(MAILTAIL_MAILFAIL_ENABLED)" \
-	MAILTAIL_MAILFAIL_RULES_FILE="$(MAILTAIL_MAILFAIL_RULES_FILE)" \
 	MAILTAIL_ALLOWED_REMOTE_IPS="$(MAILTAIL_ALLOWED_REMOTE_IPS)" \
 	MAILTAIL_ACCEPTED_RCPT_DOMAINS="$(MAILTAIL_ACCEPTED_RCPT_DOMAINS)" \
 	MAILTAIL_ACCEPTED_FROM_DOMAINS="$(MAILTAIL_ACCEPTED_FROM_DOMAINS)" \
@@ -113,13 +110,11 @@ docker-run: docker-build
 		-p $(SMTP_PORT):8025 \
 		-p $(HTTP_PORT):8080 \
 		-v $(DOCKER_VOLUME):/data \
-		$(MAILFAIL_RULES_MOUNT) \
 		$(DOCKER_ENV_FILE) \
 		-e MAILTAIL_ADMIN_USERNAME="$(MAILTAIL_ADMIN_USERNAME)" \
 		-e MAILTAIL_ADMIN_PASSWORD="$(MAILTAIL_ADMIN_PASSWORD)" \
 		-e MAILTAIL_ALLOWED_ORIGINS="$(MAILTAIL_ALLOWED_ORIGINS)" \
 		-e MAILTAIL_MAILFAIL_ENABLED="$(MAILTAIL_MAILFAIL_ENABLED)" \
-		-e MAILTAIL_MAILFAIL_RULES_FILE="$(if $(strip $(MAILTAIL_MAILFAIL_RULES_FILE)),$(MAILFAIL_RULES_CONTAINER_PATH),)" \
 		-e MAILTAIL_ALLOWED_REMOTE_IPS="$(MAILTAIL_ALLOWED_REMOTE_IPS)" \
 		-e MAILTAIL_ACCEPTED_RCPT_DOMAINS="$(MAILTAIL_ACCEPTED_RCPT_DOMAINS)" \
 		-e MAILTAIL_ACCEPTED_FROM_DOMAINS="$(MAILTAIL_ACCEPTED_FROM_DOMAINS)" \

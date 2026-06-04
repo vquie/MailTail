@@ -48,7 +48,7 @@ type DomainPolicyConfig struct {
 	AcceptedFromDomains []string
 	AllowedRemoteCIDRs  []string
 	MailFailEnabled     bool
-	MailFailRulesFile   string
+	MailFailRules       []models.MailFailRule
 }
 
 type domainPolicyState struct {
@@ -65,7 +65,7 @@ func DomainPolicyConfigFromSettings(settings models.AppSettings) DomainPolicyCon
 		AcceptedFromDomains: csvList(settings.AcceptedFromDomains),
 		AllowedRemoteCIDRs:  csvList(settings.AllowedRemoteIPs),
 		MailFailEnabled:     settings.MailFailEnabled,
-		MailFailRulesFile:   strings.TrimSpace(settings.MailFailRulesFile),
+		MailFailRules:       settings.MailFailRules,
 	}
 }
 
@@ -113,12 +113,12 @@ func buildDomainPolicyState(userID int64, config DomainPolicyConfig, store stora
 	var mailFail *MailFailEngine
 	switch {
 	case !config.MailFailEnabled:
-	case strings.TrimSpace(config.MailFailRulesFile) == "":
-		return domainPolicyState{}, fmt.Errorf("MAILTAIL_MAILFAIL_ENABLED=true requires MAILTAIL_MAILFAIL_RULES_FILE")
+	case len(config.MailFailRules) == 0:
+		return domainPolicyState{}, fmt.Errorf("MAILTAIL_MAILFAIL_ENABLED=true requires at least one MailFail rule")
 	default:
-		engine, err := LoadMailFailEngine(strings.TrimSpace(config.MailFailRulesFile), store)
+		engine, err := NewMailFailEngine(config.MailFailRules, store)
 		if err != nil {
-			return domainPolicyState{}, fmt.Errorf("load mailfail rules: %w", err)
+			return domainPolicyState{}, fmt.Errorf("invalid mailfail rules: %w", err)
 		}
 		mailFail = engine
 	}
@@ -262,7 +262,7 @@ func (p *DomainPolicy) policyUsers() ([]domainPolicyState, error) {
 }
 
 func adminMailboxEnabled(settings models.AppSettings) bool {
-	return (settings.MailFailEnabled && strings.TrimSpace(settings.MailFailRulesFile) != "") ||
+	return (settings.MailFailEnabled && len(settings.MailFailRules) > 0) ||
 		strings.TrimSpace(settings.AllowedRemoteIPs) != "" ||
 		strings.TrimSpace(settings.AcceptedRcptDomains) != "" ||
 		strings.TrimSpace(settings.AcceptedFromDomains) != "" ||

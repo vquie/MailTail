@@ -3,31 +3,12 @@ package smtpserver
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/vquie/MailTail/internal/models"
 	"github.com/vquie/MailTail/internal/storage"
-	"go.yaml.in/yaml/v3"
 )
-
-type MailFailConfig struct {
-	Rules []MailFailRule `yaml:"rules"`
-}
-
-type MailFailRule struct {
-	Name          string `yaml:"name"`
-	Trigger       string `yaml:"trigger"`
-	Stage         string `yaml:"stage"`
-	Action        string `yaml:"action"`
-	AllowAfter    int    `yaml:"allowAfter"`
-	MinRetryAfter string `yaml:"minRetryAfter"`
-	ResetAfter    string `yaml:"resetAfter"`
-	Code          int    `yaml:"code"`
-	EnhancedCode  string `yaml:"enhancedCode"`
-	Message       string `yaml:"message"`
-}
 
 type MailFailEngine struct {
 	rules []mailFailRule
@@ -47,27 +28,13 @@ type mailFailRule struct {
 	message       string
 }
 
-func LoadMailFailEngine(path string, store storage.Store) (*MailFailEngine, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var config MailFailConfig
-	if err := yaml.Unmarshal(content, &config); err != nil {
-		return nil, err
-	}
-
-	return NewMailFailEngine(config, store)
-}
-
-func NewMailFailEngine(config MailFailConfig, store storage.Store) (*MailFailEngine, error) {
+func NewMailFailEngine(rules []models.MailFailRule, store storage.Store) (*MailFailEngine, error) {
 	engine := &MailFailEngine{
-		rules: make([]mailFailRule, 0, len(config.Rules)),
+		rules: make([]mailFailRule, 0, len(rules)),
 		store: store,
 	}
 
-	for _, rule := range config.Rules {
+	for _, rule := range rules {
 		compiled, err := compileMailFailRule(rule)
 		if err != nil {
 			return nil, err
@@ -150,10 +117,7 @@ func (e *MailFailEngine) greylistResponse(rule mailFailRule, mailFrom, address s
 	state, ok, err := e.loadGreylistState(ctx, key)
 	if !ok {
 		if err != nil {
-			return &ResponseError{
-				Code:    451,
-				Message: "Temporary server error",
-			}
+			return &ResponseError{Code: 451, Message: "Temporary server error"}
 		}
 		state = models.GreylistState{
 			Key:       key,
@@ -162,15 +126,9 @@ func (e *MailFailEngine) greylistResponse(rule mailFailRule, mailFrom, address s
 			Attempts:  1,
 		}
 		if err := e.saveGreylistState(ctx, state); err != nil {
-			return &ResponseError{
-				Code:    451,
-				Message: "Temporary server error",
-			}
+			return &ResponseError{Code: 451, Message: "Temporary server error"}
 		}
-		return &ResponseError{
-			Code:    rule.code,
-			Message: rule.replyText(),
-		}
+		return &ResponseError{Code: rule.code, Message: rule.replyText()}
 	}
 
 	if rule.resetAfter > 0 && now.Sub(state.LastSeen) >= rule.resetAfter {
@@ -181,38 +139,23 @@ func (e *MailFailEngine) greylistResponse(rule mailFailRule, mailFrom, address s
 			Attempts:  1,
 		}
 		if err := e.saveGreylistState(ctx, state); err != nil {
-			return &ResponseError{
-				Code:    451,
-				Message: "Temporary server error",
-			}
+			return &ResponseError{Code: 451, Message: "Temporary server error"}
 		}
-		return &ResponseError{
-			Code:    rule.code,
-			Message: rule.replyText(),
-		}
+		return &ResponseError{Code: rule.code, Message: rule.replyText()}
 	}
 
 	state.Attempts++
 	state.LastSeen = now
 	if err := e.saveGreylistState(ctx, state); err != nil {
-		return &ResponseError{
-			Code:    451,
-			Message: "Temporary server error",
-		}
+		return &ResponseError{Code: 451, Message: "Temporary server error"}
 	}
 
 	if state.Attempts <= rule.allowAfter {
-		return &ResponseError{
-			Code:    rule.code,
-			Message: rule.replyText(),
-		}
+		return &ResponseError{Code: rule.code, Message: rule.replyText()}
 	}
 
 	if rule.minRetryAfter > 0 && now.Sub(state.FirstSeen) < rule.minRetryAfter {
-		return &ResponseError{
-			Code:    rule.code,
-			Message: rule.replyText(),
-		}
+		return &ResponseError{Code: rule.code, Message: rule.replyText()}
 	}
 
 	return nil
@@ -232,7 +175,7 @@ func (e *MailFailEngine) saveGreylistState(ctx context.Context, state models.Gre
 	return e.store.SaveGreylistState(ctx, state)
 }
 
-func compileMailFailRule(rule MailFailRule) (mailFailRule, error) {
+func compileMailFailRule(rule models.MailFailRule) (mailFailRule, error) {
 	compiled := mailFailRule{
 		name:         strings.TrimSpace(rule.Name),
 		trigger:      strings.ToLower(strings.TrimSpace(rule.Trigger)),
@@ -259,8 +202,7 @@ func compileMailFailRule(rule MailFailRule) (mailFailRule, error) {
 		compiled.action = "reject"
 	}
 	switch compiled.action {
-	case "reject":
-	case "greylist":
+	case "reject", "greylist":
 	default:
 		return mailFailRule{}, fmt.Errorf("mailfail rule %q has unsupported action %q", compiled.name, rule.Action)
 	}
@@ -274,7 +216,7 @@ func compileMailFailRule(rule MailFailRule) (mailFailRule, error) {
 		if compiled.stage != "rcpt" && compiled.stage != "data" {
 			return mailFailRule{}, fmt.Errorf("mailfail rule %q uses action greylist but stage %q is unsupported", compiled.name, rule.Stage)
 		}
-		if compiled.code < 400 || compiled.code > 499 {
+		if compiled.code < 400 || compiled.code >= 500 {
 			return mailFailRule{}, fmt.Errorf("mailfail rule %q uses action greylist but code %d is not temporary", compiled.name, rule.Code)
 		}
 		if compiled.allowAfter <= 0 {
@@ -306,38 +248,27 @@ func (r mailFailRule) replyText() string {
 }
 
 func (r mailFailRule) greylistKey(mailFrom, address string) string {
-	return strings.Join([]string{
-		r.stage,
-		r.trigger,
-		strings.ToLower(strings.TrimSpace(mailFrom)),
-		strings.ToLower(strings.TrimSpace(address)),
-	}, "|")
+	return strings.ToLower(strings.Join([]string{r.trigger, r.stage, strings.TrimSpace(mailFrom), strings.TrimSpace(address)}, "|"))
 }
 
-func parseOptionalDuration(raw string) (time.Duration, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
+func parseOptionalDuration(value string) (time.Duration, error) {
+	if strings.TrimSpace(value) == "" {
 		return 0, nil
 	}
-	return time.ParseDuration(raw)
+	return time.ParseDuration(value)
 }
 
 func extractLocalPart(address string) (string, bool) {
-	address = strings.ToLower(strings.TrimSpace(address))
-	if address == "" {
-		return "", false
-	}
-
-	at := strings.LastIndex(address, "@")
+	address = strings.TrimSpace(address)
+	at := strings.Index(address, "@")
 	if at <= 0 {
 		return "", false
 	}
-
-	return address[:at], true
+	return strings.ToLower(address[:at]), true
 }
 
 func plusAddressSegments(localPart string) []string {
-	parts := strings.Split(localPart, "+")
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(localPart)), "+")
 	segments := make([]string, 0, len(parts))
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
@@ -349,9 +280,13 @@ func plusAddressSegments(localPart string) []string {
 	return segments
 }
 
-func containsExactSegment(segments []string, trigger string) bool {
+func containsExactSegment(segments []string, needle string) bool {
+	needle = strings.ToLower(strings.TrimSpace(needle))
+	if needle == "" {
+		return false
+	}
 	for _, segment := range segments {
-		if segment == trigger {
+		if segment == needle {
 			return true
 		}
 	}

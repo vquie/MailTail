@@ -42,6 +42,19 @@ export type AppInfo = {
   version: string;
 };
 
+export type MailFailRule = {
+  name: string;
+  trigger: string;
+  stage: "mailfrom" | "rcpt" | "data";
+  action: "reject" | "greylist";
+  allowAfter: number;
+  minRetryAfter: string;
+  resetAfter: string;
+  code: number;
+  enhancedCode: string;
+  message: string;
+};
+
 export type MessagePage = {
   messages: Message[];
   nextCursor?: string;
@@ -52,7 +65,7 @@ export type AppSettings = {
   allowedOrigins: string;
   smtpLogVerbose: boolean;
   mailFailEnabled: boolean;
-  mailFailRulesFile: string;
+  mailFailRules: MailFailRule[];
   allowedRemoteIps: string;
   acceptedRcptDomains: string;
   acceptedFromDomains: string;

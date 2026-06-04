@@ -254,7 +254,20 @@ Notes:
     "allowedOrigins": "https://mailtail.example.com",
     "smtpLogVerbose": false,
     "mailFailEnabled": true,
-    "mailFailRulesFile": "examples/mailfail.yaml",
+    "mailFailRules": [
+      {
+        "name": "greylist",
+        "trigger": "mf-greylist",
+        "stage": "rcpt",
+        "action": "greylist",
+        "allowAfter": 1,
+        "minRetryAfter": "5m",
+        "resetAfter": "1h",
+        "code": 451,
+        "enhancedCode": "4.7.1",
+        "message": "Try again later"
+      }
+    ],
     "allowedRemoteIps": "127.0.0.1,::1",
     "acceptedRcptDomains": "example.test,internal.test",
     "acceptedFromDomains": "sender.test"
@@ -283,33 +296,12 @@ curl --url smtp://localhost:8025 \
 
 MailTail can optionally simulate SMTP failures based on the localpart of the sender or recipient address.
 
-MailFail is disabled by default and requires:
+MailFail is disabled by default. Rules are now managed directly in the web UI and stored in SQLite per user.
 
-- `MAILTAIL_MAILFAIL_ENABLED=true`
-- `MAILTAIL_MAILFAIL_RULES_FILE=/path/to/mailfail.yaml`
+Enable MailFail in the relevant user settings, then either:
 
-With the provided Makefile you can keep a local path in `.env`, for example:
-
-```env
-MAILTAIL_MAILFAIL_ENABLED=true
-MAILTAIL_MAILFAIL_RULES_FILE=examples/mailfail.yaml
-```
-
-Then:
-
-```bash
-make run
-```
-
-or:
-
-```bash
-make docker-run
-```
-
-`make docker-run` mounts the configured rules file read-only into the container automatically and rewrites the container-side path for MailTail.
-
-Rules are loaded from YAML. See [examples/mailfail.yaml](/Users/vitaliquiering/git/MailTail/examples/mailfail.yaml).
+- import the built-in example template
+- or create rules manually in the MailFail rules overlay
 
 Example:
 
@@ -403,7 +395,7 @@ The runtime-setting bootstrap variables are:
 - `MAILTAIL_ALLOWED_ORIGINS` default: empty, disables cross-origin browser access. Set this only if you intentionally need browser clients from another origin.
 - `MAILTAIL_SMTP_LOG_VERBOSE` default: `false`, logs only accepted messages and rejects/errors. Set to `true` for per-command SMTP tracing.
 - `MAILTAIL_MAILFAIL_ENABLED` default: `false`
-- `MAILTAIL_MAILFAIL_RULES_FILE` default: `examples/mailfail.yaml`
+- MailFail rules are stored in SQLite and edited in the UI.
 - `MAILTAIL_ALLOWED_REMOTE_IPS` default: empty, accepts SMTP connections from all IPs and logs a startup warning. Supports IPs and CIDR ranges.
 - `MAILTAIL_ACCEPTED_RCPT_DOMAINS` default: empty, accepts recipients for all domains and logs a startup warning. Values may be exact domains or regular expressions.
 - `MAILTAIL_ACCEPTED_FROM_DOMAINS` default: empty, accepts senders for all domains and logs a startup warning. Values may be exact domains or regular expressions.

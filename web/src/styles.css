@@ -20,7 +20,8 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -733,7 +734,8 @@ textarea {
 }
 
 .settingsField input,
-.settingsField textarea {
+.settingsField textarea,
+.settingsField select {
   width: 100%;
   border: 1px solid rgb(255 255 255 / 8%);
   background: rgb(255 255 255 / 5%);
@@ -745,6 +747,10 @@ textarea {
 .settingsField textarea {
   resize: vertical;
   min-height: 84px;
+}
+
+.settingsField select {
+  appearance: none;
 }
 
 .toggleField {
@@ -778,6 +784,13 @@ textarea {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.settingsCardActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .settingsNotice {
@@ -854,6 +867,23 @@ textarea {
   line-height: 1.45;
 }
 
+.ruleSummaryList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ruleChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 6%);
+  color: rgb(248 243 234 / 82%);
+  font-size: 0.8rem;
+}
+
 .adminSectionHeader {
   display: flex;
   justify-content: space-between;
@@ -895,6 +925,24 @@ textarea {
   gap: 16px;
 }
 
+.mailFailManagerDialog {
+  width: min(980px, 100%);
+}
+
+.mailFailManagerLayout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.mailFailRulesListCard {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.mailFailMessageField {
+  grid-column: 1 / -1;
+}
+
 .createUserGrid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -926,6 +974,7 @@ textarea {
 
   .platformSettingsRow,
   .adminUserLayout,
+  .mailFailManagerLayout,
   .createUserGrid,
   .adminMailboxGrid {
     grid-template-columns: 1fr;

@@ -24,7 +24,6 @@ RUN adduser -D -h /app mailtail
 WORKDIR /app
 COPY --from=go-build /out/mailtail /app/mailtail
 COPY --from=web-build /src/web/dist /app/web/dist
-COPY examples /app/examples
 RUN mkdir -p /data \
   && chown -R mailtail:mailtail /app /data
 USER mailtail

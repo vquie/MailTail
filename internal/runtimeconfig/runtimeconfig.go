@@ -7,7 +7,6 @@ import (
 	"github.com/vquie/MailTail/internal/models"
 )
 
-const DefaultMailFailRulesFile = "examples/mailfail.yaml"
 const DefaultAutoDeleteDays = 30
 
 type Manager struct {
@@ -88,10 +87,7 @@ func NormalizeUserSettings(settings models.AppSettings) models.AppSettings {
 
 func normalizeSettings(settings models.AppSettings) models.AppSettings {
 	settings.AllowedOrigins = normalizeCSV(settings.AllowedOrigins)
-	settings.MailFailRulesFile = strings.TrimSpace(settings.MailFailRulesFile)
-	if settings.MailFailRulesFile == "" {
-		settings.MailFailRulesFile = DefaultMailFailRulesFile
-	}
+	settings.MailFailRules = normalizeMailFailRules(settings.MailFailRules)
 	settings.AllowedRemoteIPs = normalizeCSV(settings.AllowedRemoteIPs)
 	settings.AcceptedRcptDomains = normalizeCSV(settings.AcceptedRcptDomains)
 	settings.AcceptedFromDomains = normalizeCSV(settings.AcceptedFromDomains)
@@ -116,4 +112,27 @@ func csvToSet(value string) map[string]struct{} {
 		set[entry] = struct{}{}
 	}
 	return set
+}
+
+func normalizeMailFailRules(rules []models.MailFailRule) []models.MailFailRule {
+	if len(rules) == 0 {
+		return nil
+	}
+
+	normalized := make([]models.MailFailRule, 0, len(rules))
+	for _, rule := range rules {
+		normalized = append(normalized, models.MailFailRule{
+			Name:          strings.TrimSpace(rule.Name),
+			Trigger:       strings.TrimSpace(rule.Trigger),
+			Stage:         strings.TrimSpace(rule.Stage),
+			Action:        strings.TrimSpace(rule.Action),
+			AllowAfter:    rule.AllowAfter,
+			MinRetryAfter: strings.TrimSpace(rule.MinRetryAfter),
+			ResetAfter:    strings.TrimSpace(rule.ResetAfter),
+			Code:          rule.Code,
+			EnhancedCode:  strings.TrimSpace(rule.EnhancedCode),
+			Message:       strings.TrimSpace(rule.Message),
+		})
+	}
+	return normalized
 }

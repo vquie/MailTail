@@ -94,11 +94,24 @@ type AppSettings struct {
 	AllowedOrigins      string `json:"allowedOrigins"`
 	SMTPLogVerbose      bool   `json:"smtpLogVerbose"`
 	MailFailEnabled     bool   `json:"mailFailEnabled"`
-	MailFailRulesFile   string `json:"mailFailRulesFile"`
+	MailFailRules       []MailFailRule `json:"mailFailRules,omitempty"`
 	AllowedRemoteIPs    string `json:"allowedRemoteIps"`
 	AcceptedRcptDomains string `json:"acceptedRcptDomains"`
 	AcceptedFromDomains string `json:"acceptedFromDomains"`
 	AutoDeleteAfterDays int    `json:"autoDeleteAfterDays"`
+}
+
+type MailFailRule struct {
+	Name          string `json:"name"`
+	Trigger       string `json:"trigger"`
+	Stage         string `json:"stage"`
+	Action        string `json:"action"`
+	AllowAfter    int    `json:"allowAfter,omitempty"`
+	MinRetryAfter string `json:"minRetryAfter,omitempty"`
+	ResetAfter    string `json:"resetAfter,omitempty"`
+	Code          int    `json:"code"`
+	EnhancedCode  string `json:"enhancedCode,omitempty"`
+	Message       string `json:"message"`
 }
 
 type User struct {

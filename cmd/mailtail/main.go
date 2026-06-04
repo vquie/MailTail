@@ -39,6 +39,12 @@ func main() {
 	httpAddr := getEnv("MAILTAIL_HTTP_ADDR", ":8080")
 	smtpAddr := getEnv("MAILTAIL_SMTP_ADDR", ":8025")
 	staticDir := getEnv("MAILTAIL_WEB_DIR", filepath.Join("web", "dist"))
+	if strings.TrimSpace(os.Getenv("MAILTAIL_MAILFAIL_ENABLED")) != "" {
+		logger.Printf("warning: MAILTAIL_MAILFAIL_ENABLED is deprecated and ignored; enable MailFail per user in the UI")
+	}
+	if strings.TrimSpace(os.Getenv("MAILTAIL_MAILFAIL_RULES_FILE")) != "" {
+		logger.Printf("warning: MAILTAIL_MAILFAIL_RULES_FILE is deprecated and ignored; configure MailFail rules in the UI")
+	}
 
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		logger.Fatalf("create data dir: %v", err)
@@ -62,9 +68,10 @@ func main() {
 	if savedSettings, ok, err := store.LoadAppSettings(context.Background()); err != nil {
 		logger.Fatalf("load app settings: %v", err)
 	} else if ok {
-		settings = savedSettings
+		settings = sanitizeBootstrapSettings(savedSettings)
 		logger.Printf("loaded app settings from database")
 	}
+	settings = sanitizeBootstrapSettings(settings)
 	logSettings(logger, settings)
 
 	parseSvc := parser.NewService()
@@ -125,12 +132,16 @@ func envAppSettings() models.AppSettings {
 	return models.AppSettings{
 		AllowedOrigins:      strings.TrimSpace(os.Getenv("MAILTAIL_ALLOWED_ORIGINS")),
 		SMTPLogVerbose:      strings.EqualFold(strings.TrimSpace(os.Getenv("MAILTAIL_SMTP_LOG_VERBOSE")), "true"),
-		MailFailEnabled:     strings.EqualFold(strings.TrimSpace(os.Getenv("MAILTAIL_MAILFAIL_ENABLED")), "true"),
-		MailFailRulesFile:   strings.TrimSpace(os.Getenv("MAILTAIL_MAILFAIL_RULES_FILE")),
 		AllowedRemoteIPs:    strings.TrimSpace(os.Getenv("MAILTAIL_ALLOWED_REMOTE_IPS")),
 		AcceptedRcptDomains: strings.TrimSpace(os.Getenv("MAILTAIL_ACCEPTED_RCPT_DOMAINS")),
 		AcceptedFromDomains: strings.TrimSpace(os.Getenv("MAILTAIL_ACCEPTED_FROM_DOMAINS")),
 	}
+}
+
+func sanitizeBootstrapSettings(settings models.AppSettings) models.AppSettings {
+	settings.MailFailEnabled = false
+	settings.MailFailRules = nil
+	return settings
 }
 
 func logSettings(logger *log.Logger, settings models.AppSettings) {
@@ -156,11 +167,6 @@ func logSettings(logger *log.Logger, settings models.AppSettings) {
 	}
 	if settings.SMTPLogVerbose {
 		logger.Printf("verbose SMTP logging enabled")
-	}
-	if settings.MailFailEnabled {
-		logger.Printf("mailfail enabled with rules file %s", settings.MailFailRulesFile)
-	} else {
-		logger.Printf("mailfail disabled")
 	}
 	if settings.AutoDeleteAfterDays > 0 {
 		logger.Printf("message auto-delete enabled after %d day(s)", settings.AutoDeleteAfterDays)
