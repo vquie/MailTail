@@ -684,6 +684,8 @@ select {
 .nestedOverlay {
   z-index: 30;
   background: rgb(4 6 10 / 58%);
+  align-items: flex-start;
+  overflow: auto;
 }
 
 .settingsPanel {
@@ -916,6 +918,8 @@ select {
 
 .createUserDialog {
   width: min(620px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
   border: 1px solid rgb(255 255 255 / 8%);
   background: linear-gradient(160deg, rgb(24 29 42 / 98%), rgb(17 19 26 / 98%));
   border-radius: 8px;
@@ -927,6 +931,7 @@ select {
 
 .mailFailManagerDialog {
   width: min(980px, 100%);
+  align-self: flex-start;
 }
 
 .mailFailManagerLayout {
