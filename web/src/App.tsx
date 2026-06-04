@@ -573,7 +573,7 @@ export function App() {
       };
     }
     return {
-      html: selectedMessage.htmlBody || "<p>No HTML part available.</p>",
+      html: prepareHtmlPreview(selectedMessage.htmlBody || "<p>No HTML part available.</p>"),
       text: selectedMessage.textBody || "No text part available.",
       raw: selectedMessage.raw || ""
     };
@@ -1536,6 +1536,27 @@ function buildEMLFileName(message: Message): string {
   const subject = sanitizeFileName(message.subject || "message");
   const stamp = new Date(message.receivedAt).toISOString().replace(/:/g, "-");
   return `${subject}-${stamp}.eml`;
+}
+
+function prepareHtmlPreview(html: string): string {
+  const previewHead = [
+    '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
+    "<style>",
+    "html, body { margin: 0; padding: 0; max-width: 100%; overflow-x: auto; -webkit-text-size-adjust: 100%; }",
+    "img, video, iframe { max-width: 100% !important; height: auto !important; }",
+    "table { max-width: 100% !important; }",
+    "</style>"
+  ].join("");
+
+  if (/<head[\s>]/i.test(html)) {
+    return html.replace(/<head([^>]*)>/i, `<head$1>${previewHead}`);
+  }
+
+  if (/<html[\s>]/i.test(html)) {
+    return html.replace(/<html([^>]*)>/i, `<html$1><head>${previewHead}</head>`);
+  }
+
+  return `<!doctype html><html><head>${previewHead}</head><body>${html}</body></html>`;
 }
 
 function sanitizeFileName(value: string): string {
