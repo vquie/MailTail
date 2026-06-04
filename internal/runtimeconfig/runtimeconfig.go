@@ -80,6 +80,12 @@ func CSVList(value string) []string {
 	return values
 }
 
+func NormalizeUserSettings(settings models.AppSettings) models.AppSettings {
+	settings.AllowedOrigins = ""
+	settings.SMTPLogVerbose = false
+	return normalizeSettings(settings)
+}
+
 func normalizeSettings(settings models.AppSettings) models.AppSettings {
 	settings.AllowedOrigins = normalizeCSV(settings.AllowedOrigins)
 	settings.MailFailRulesFile = strings.TrimSpace(settings.MailFailRulesFile)

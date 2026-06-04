@@ -25,8 +25,16 @@ var version = "dev"
 func main() {
 	logger := log.New(os.Stdout, "mailtail ", log.LstdFlags|log.Lmsgprefix)
 
-	authUsername := strings.TrimSpace(os.Getenv("MAILTAIL_AUTH_USERNAME"))
-	authPassword := os.Getenv("MAILTAIL_AUTH_PASSWORD")
+	authUsername := strings.TrimSpace(os.Getenv("MAILTAIL_ADMIN_USERNAME"))
+	authPassword := os.Getenv("MAILTAIL_ADMIN_PASSWORD")
+	if authUsername == "" && strings.TrimSpace(os.Getenv("MAILTAIL_AUTH_USERNAME")) != "" {
+		authUsername = strings.TrimSpace(os.Getenv("MAILTAIL_AUTH_USERNAME"))
+		logger.Printf("warning: MAILTAIL_AUTH_USERNAME is deprecated, use MAILTAIL_ADMIN_USERNAME")
+	}
+	if authPassword == "" && os.Getenv("MAILTAIL_AUTH_PASSWORD") != "" {
+		authPassword = os.Getenv("MAILTAIL_AUTH_PASSWORD")
+		logger.Printf("warning: MAILTAIL_AUTH_PASSWORD is deprecated, use MAILTAIL_ADMIN_PASSWORD")
+	}
 	dataDir := getEnv("MAILTAIL_DATA_DIR", "data")
 	httpAddr := getEnv("MAILTAIL_HTTP_ADDR", ":8080")
 	smtpAddr := getEnv("MAILTAIL_SMTP_ADDR", ":8025")
@@ -38,9 +46,9 @@ func main() {
 	logger.Printf("version: %s", version)
 	switch {
 	case authUsername == "" && authPassword == "":
-		logger.Printf("warning: HTTP auth is disabled, set MAILTAIL_AUTH_USERNAME and MAILTAIL_AUTH_PASSWORD to protect the web UI and API")
+		logger.Printf("warning: HTTP auth is disabled, set MAILTAIL_ADMIN_USERNAME and MAILTAIL_ADMIN_PASSWORD to protect the web UI and API")
 	case authUsername == "" || authPassword == "":
-		logger.Fatal("invalid auth config: MAILTAIL_AUTH_USERNAME and MAILTAIL_AUTH_PASSWORD must either both be set or both be empty")
+		logger.Fatal("invalid auth config: MAILTAIL_ADMIN_USERNAME and MAILTAIL_ADMIN_PASSWORD must either both be set or both be empty")
 	default:
 		logger.Printf("HTTP auth enabled for web UI and API")
 	}
@@ -161,19 +169,14 @@ func logSettings(logger *log.Logger, settings models.AppSettings) {
 
 func runMessageRetentionWorker(ctx context.Context, logger *log.Logger, store storage.Store, runtime *runtimeconfig.Manager) {
 	runRetentionPass := func() {
-		days := runtime.AutoDeleteAfterDays()
-		if days <= 0 {
-			return
-		}
-
-		before := time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour)
-		deleted, err := store.DeleteMessagesOlderThan(context.Background(), before)
+		before := time.Now().UTC()
+		deleted, err := store.DeleteExpiredMessages(context.Background(), before)
 		if err != nil {
 			logger.Printf("message retention failed: %v", err)
 			return
 		}
 		if deleted > 0 {
-			logger.Printf("message retention deleted %d message(s) older than %d day(s)", deleted, days)
+			logger.Printf("message retention deleted %d expired message(s)", deleted)
 		}
 	}
 

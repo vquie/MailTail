@@ -1,4 +1,4 @@
-import type { AppInfo, AppSettings, Message, MessagePage, Stats } from "./types";
+import type { AppInfo, AppSettings, Message, MessagePage, SessionInfo, Stats, User } from "./types";
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const response = await fetch(input, withCSRF(init));
@@ -47,6 +47,11 @@ export async function fetchAppInfo(): Promise<AppInfo> {
   return request<AppInfo>("/api/app");
 }
 
+export async function fetchSession(): Promise<SessionInfo> {
+  const data = await request<{ session: SessionInfo }>("/api/session");
+  return data.session;
+}
+
 export async function fetchSettings(): Promise<AppSettings> {
   const data = await request<{ settings: AppSettings }>("/api/settings");
   return data.settings;
@@ -61,12 +66,56 @@ export async function updateSettings(settings: AppSettings): Promise<AppSettings
   return data.settings;
 }
 
+export async function fetchAdminMailboxSettings(): Promise<AppSettings> {
+  const data = await request<{ settings: AppSettings }>("/api/admin/mailbox-settings");
+  return data.settings;
+}
+
+export async function updateAdminMailboxSettings(settings: AppSettings): Promise<AppSettings> {
+  const data = await request<{ settings: AppSettings }>("/api/admin/mailbox-settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ settings })
+  });
+  return data.settings;
+}
+
 export async function deleteMessage(id: number): Promise<void> {
   await request<void>(`/api/messages/${id}`, { method: "DELETE" });
 }
 
 export async function clearInbox(): Promise<void> {
   await request<void>("/api/messages", { method: "DELETE" });
+}
+
+export async function fetchUsers(): Promise<User[]> {
+  const data = await request<{ users: User[] }>("/api/admin/users");
+  return data.users ?? [];
+}
+
+export async function createUser(payload: { username: string; password: string; settings: AppSettings }): Promise<User> {
+  const data = await request<{ user: User }>("/api/admin/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return data.user;
+}
+
+export async function updateUser(
+  id: number,
+  payload: { username: string; password: string; settings: AppSettings }
+): Promise<User> {
+  const data = await request<{ user: User }>(`/api/admin/users/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return data.user;
+}
+
+export async function deleteUser(id: number): Promise<void> {
+  await request<void>(`/api/admin/users/${id}`, { method: "DELETE" });
 }
 
 export async function logout(): Promise<void> {

@@ -679,6 +679,11 @@ textarea {
   padding: 24px;
 }
 
+.nestedOverlay {
+  z-index: 30;
+  background: rgb(4 6 10 / 58%);
+}
+
 .settingsPanel {
   width: min(920px, 100%);
   max-height: calc(100vh - 48px);
@@ -782,6 +787,106 @@ textarea {
   color: #f6c88f;
 }
 
+.adminSettingsLayout {
+  display: grid;
+  gap: 14px;
+}
+
+.adminMailboxGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.platformSettingsCard {
+  gap: 12px;
+}
+
+.platformSettingsRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.7fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.platformSettingsActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.nestedSettingsField {
+  padding: 12px;
+}
+
+.platformToggleCard {
+  min-height: 100%;
+  align-content: start;
+}
+
+.adminUserLayout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.adminUsersCard {
+  min-height: 100%;
+  align-content: start;
+}
+
+.adminEditorCard {
+  gap: 12px;
+}
+
+.adminEditorEmpty {
+  min-height: 220px;
+  display: grid;
+  align-content: center;
+}
+
+.adminEditorLead {
+  margin: 4px 0 0;
+  color: rgb(248 243 234 / 68%);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.adminSectionHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.adminUserList {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.adminUserItem {
+  width: 100%;
+}
+
+.adminEditorGrid {
+  align-content: start;
+}
+
+.createUserDialog {
+  width: min(620px, 100%);
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: linear-gradient(160deg, rgb(24 29 42 / 98%), rgb(17 19 26 / 98%));
+  border-radius: 8px;
+  box-shadow: 0 18px 60px rgb(0 0 0 / 36%);
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.createUserGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .settingsBanner {
   margin: 0;
 }
@@ -804,6 +909,13 @@ textarea {
   }
 
   .settingsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .platformSettingsRow,
+  .adminUserLayout,
+  .createUserGrid,
+  .adminMailboxGrid {
     grid-template-columns: 1fr;
   }
 }

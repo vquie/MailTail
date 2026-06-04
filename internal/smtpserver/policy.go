@@ -1,6 +1,7 @@
 package smtpserver
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"regexp"
@@ -12,17 +13,18 @@ import (
 )
 
 type SMTPResponsePolicy interface {
-	OnConnect(session SessionMetadata) *ResponseError
-	OnMailFrom(session SessionMetadata, from string) *ResponseError
-	OnRcptTo(session SessionMetadata, recipient string) *ResponseError
-	OnData(session SessionMetadata) *ResponseError
+	OnConnect(session *SessionMetadata) *ResponseError
+	OnMailFrom(session *SessionMetadata, from string) *ResponseError
+	OnRcptTo(session *SessionMetadata, recipient string) *ResponseError
+	OnData(session *SessionMetadata) *ResponseError
 }
 
 type SessionMetadata struct {
-	Helo     string
-	RemoteIP string
-	MailFrom string
-	RcptTo   []string
+	Helo        string
+	RemoteIP    string
+	MailFrom    string
+	RcptTo      []string
+	OwnerUserID int64
 }
 
 type ResponseError struct {
@@ -35,9 +37,10 @@ func (e *ResponseError) Error() string {
 }
 
 type DomainPolicy struct {
-	mu    sync.RWMutex
-	state domainPolicyState
-	store storage.Store
+	mu      sync.RWMutex
+	state   domainPolicyState
+	store   storage.Store
+	engines map[string]*MailFailEngine
 }
 
 type DomainPolicyConfig struct {
@@ -49,6 +52,7 @@ type DomainPolicyConfig struct {
 }
 
 type domainPolicyState struct {
+	userID               int64
 	acceptedRcptDomains *addressMatcher
 	acceptedFromDomains *addressMatcher
 	allowedRemoteNets   []*net.IPNet
@@ -66,16 +70,16 @@ func DomainPolicyConfigFromSettings(settings models.AppSettings) DomainPolicyCon
 }
 
 func NewDomainPolicy(config DomainPolicyConfig, store storage.Store) (*DomainPolicy, error) {
-	state, err := buildDomainPolicyState(config, store)
+	state, err := buildDomainPolicyState(0, config, store)
 	if err != nil {
 		return nil, err
 	}
 
-	return &DomainPolicy{state: state, store: store}, nil
+	return &DomainPolicy{state: state, store: store, engines: make(map[string]*MailFailEngine)}, nil
 }
 
 func (p *DomainPolicy) ApplyConfig(config DomainPolicyConfig) error {
-	state, err := buildDomainPolicyState(config, p.store)
+	state, err := buildDomainPolicyState(0, config, p.store)
 	if err != nil {
 		return err
 	}
@@ -86,7 +90,11 @@ func (p *DomainPolicy) ApplyConfig(config DomainPolicyConfig) error {
 	return nil
 }
 
-func buildDomainPolicyState(config DomainPolicyConfig, store storage.Store) (domainPolicyState, error) {
+func BuildUserPolicyState(userID int64, settings models.AppSettings, store storage.Store) (domainPolicyState, error) {
+	return buildDomainPolicyState(userID, DomainPolicyConfigFromSettings(settings), store)
+}
+
+func buildDomainPolicyState(userID int64, config DomainPolicyConfig, store storage.Store) (domainPolicyState, error) {
 	allowedRemoteNets, err := parseAllowedRemoteCIDRs(config.AllowedRemoteCIDRs)
 	if err != nil {
 		return domainPolicyState{}, err
@@ -116,6 +124,7 @@ func buildDomainPolicyState(config DomainPolicyConfig, store storage.Store) (dom
 	}
 
 	return domainPolicyState{
+		userID:               userID,
 		acceptedRcptDomains: rcptMatcher,
 		acceptedFromDomains: fromMatcher,
 		allowedRemoteNets:   allowedRemoteNets,
@@ -123,70 +132,96 @@ func buildDomainPolicyState(config DomainPolicyConfig, store storage.Store) (dom
 	}, nil
 }
 
-func (p *DomainPolicy) OnConnect(session SessionMetadata) *ResponseError {
-	state := p.snapshot()
-	if len(state.allowedRemoteNets) == 0 {
+func (p *DomainPolicy) OnConnect(session *SessionMetadata) *ResponseError {
+	if session == nil {
+		return nil
+	}
+	users, err := p.policyUsers()
+	if err != nil {
+		return &ResponseError{Code: 451, Message: "Temporary policy lookup failure"}
+	}
+	if len(users) > 0 {
+		return nil
+	}
+	return connectAllowed(p.snapshot(), *session)
+}
+
+func (p *DomainPolicy) OnMailFrom(session *SessionMetadata, from string) *ResponseError {
+	if session == nil {
+		return nil
+	}
+	session.MailFrom = from
+	return nil
+}
+
+func (p *DomainPolicy) OnRcptTo(session *SessionMetadata, recipient string) *ResponseError {
+	if session == nil {
 		return nil
 	}
 
-	ip := net.ParseIP(strings.TrimSpace(session.RemoteIP))
-	if ip == nil {
-		return &ResponseError{
-			Code:    554,
-			Message: "Connection not allowed",
+	users, err := p.policyUsers()
+	if err != nil {
+		return &ResponseError{Code: 451, Message: "Temporary policy lookup failure"}
+	}
+
+	candidates := make([]domainPolicyState, 0)
+	for _, user := range users {
+		if matchesUserPolicy(user, *session, recipient) {
+			candidates = append(candidates, user)
 		}
 	}
 
-	for _, network := range state.allowedRemoteNets {
-		if network.Contains(ip) {
+	switch len(candidates) {
+	case 0:
+		if len(users) > 0 {
+			return &ResponseError{Code: 550, Message: "Recipient not allowed"}
+		}
+		state := p.snapshot()
+		if response := defaultRcptResponse(state, *session, recipient); response != nil {
+			return response
+		}
+		session.OwnerUserID = 0
+		return nil
+	case 1:
+		if session.OwnerUserID != 0 && session.OwnerUserID != candidates[0].userID {
+			return &ResponseError{Code: 550, Message: "Recipient belongs to a different user"}
+		}
+		if candidates[0].mailFail != nil {
+			if response := candidates[0].mailFail.MatchRcpt(session.MailFrom, recipient); response != nil {
+				return response
+			}
+		}
+		session.OwnerUserID = candidates[0].userID
+		return nil
+	default:
+		return &ResponseError{Code: 550, Message: "Recipient is ambiguous for configured users"}
+	}
+}
+
+func (p *DomainPolicy) OnData(session *SessionMetadata) *ResponseError {
+	if session == nil {
+		return nil
+	}
+	if session.OwnerUserID == 0 {
+		state := p.snapshot()
+		if state.mailFail == nil {
 			return nil
 		}
+		return state.mailFail.MatchData(session.MailFrom, session.RcptTo)
 	}
 
-	return &ResponseError{
-		Code:    554,
-		Message: "Connection not allowed",
+	users, err := p.policyUsers()
+	if err != nil {
+		return &ResponseError{Code: 451, Message: "Temporary policy lookup failure"}
 	}
-}
-
-func (p *DomainPolicy) OnMailFrom(_ SessionMetadata, from string) *ResponseError {
-	state := p.snapshot()
-	if response := state.mailFail.MatchMailFrom(from); response != nil {
-		return response
-	}
-	if state.acceptedFromDomains.Empty() {
-		return nil
-	}
-	if !state.acceptedFromDomains.Match(from) {
-		return &ResponseError{
-			Code:    550,
-			Message: "Sender domain not allowed",
+	for _, user := range users {
+		if user.userID != session.OwnerUserID {
+			continue
 		}
-	}
-	return nil
-}
-
-func (p *DomainPolicy) OnRcptTo(session SessionMetadata, recipient string) *ResponseError {
-	state := p.snapshot()
-	if response := state.mailFail.MatchRcpt(session.MailFrom, recipient); response != nil {
-		return response
-	}
-	if state.acceptedRcptDomains.Empty() {
-		return nil
-	}
-	if !state.acceptedRcptDomains.Match(recipient) {
-		return &ResponseError{
-			Code:    550,
-			Message: "Recipient domain not allowed",
+		if user.mailFail == nil {
+			return nil
 		}
-	}
-	return nil
-}
-
-func (p *DomainPolicy) OnData(session SessionMetadata) *ResponseError {
-	state := p.snapshot()
-	if response := state.mailFail.MatchData(session.MailFrom, session.RcptTo); response != nil {
-		return response
+		return user.mailFail.MatchData(session.MailFrom, session.RcptTo)
 	}
 	return nil
 }
@@ -195,6 +230,100 @@ func (p *DomainPolicy) snapshot() domainPolicyState {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.state
+}
+
+func (p *DomainPolicy) policyUsers() ([]domainPolicyState, error) {
+	if p.store == nil {
+		return nil, nil
+	}
+	ctx := context.Background()
+	users, err := p.store.ListUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	policies := make([]domainPolicyState, 0, len(users)+1)
+	if adminSettings, ok, err := p.store.LoadAdminMailboxSettings(ctx); err != nil {
+		return nil, err
+	} else if ok && adminMailboxEnabled(adminSettings) {
+		state, err := BuildUserPolicyState(0, adminSettings, p.store)
+		if err != nil {
+			return nil, err
+		}
+		policies = append(policies, state)
+	}
+	for _, user := range users {
+		state, err := p.userState(user)
+		if err != nil {
+			return nil, err
+		}
+		policies = append(policies, state)
+	}
+	return policies, nil
+}
+
+func adminMailboxEnabled(settings models.AppSettings) bool {
+	return (settings.MailFailEnabled && strings.TrimSpace(settings.MailFailRulesFile) != "") ||
+		strings.TrimSpace(settings.AllowedRemoteIPs) != "" ||
+		strings.TrimSpace(settings.AcceptedRcptDomains) != "" ||
+		strings.TrimSpace(settings.AcceptedFromDomains) != "" ||
+		settings.AutoDeleteAfterDays > 0
+}
+
+func (p *DomainPolicy) userState(user models.User) (domainPolicyState, error) {
+	config := DomainPolicyConfigFromSettings(user.Settings)
+	state, err := buildDomainPolicyState(user.ID, config, p.store)
+	if err != nil {
+		return domainPolicyState{}, err
+	}
+	return state, nil
+}
+
+func connectAllowed(state domainPolicyState, session SessionMetadata) *ResponseError {
+	if len(state.allowedRemoteNets) == 0 {
+		return nil
+	}
+
+	ip := net.ParseIP(strings.TrimSpace(session.RemoteIP))
+	if ip == nil {
+		return &ResponseError{Code: 554, Message: "Connection not allowed"}
+	}
+	for _, network := range state.allowedRemoteNets {
+		if network.Contains(ip) {
+			return nil
+		}
+	}
+	return &ResponseError{Code: 554, Message: "Connection not allowed"}
+}
+
+func matchesUserPolicy(state domainPolicyState, session SessionMetadata, recipient string) bool {
+	if connectAllowed(state, session) != nil {
+		return false
+	}
+	if !state.acceptedFromDomains.Empty() && !state.acceptedFromDomains.Match(session.MailFrom) {
+		return false
+	}
+	if !state.acceptedRcptDomains.Empty() && !state.acceptedRcptDomains.Match(recipient) {
+		return false
+	}
+	return true
+}
+
+func defaultRcptResponse(state domainPolicyState, session SessionMetadata, recipient string) *ResponseError {
+	if response := connectAllowed(state, session); response != nil {
+		return response
+	}
+	if state.mailFail != nil {
+		if response := state.mailFail.MatchRcpt(session.MailFrom, recipient); response != nil {
+			return response
+		}
+	}
+	if !state.acceptedFromDomains.Empty() && !state.acceptedFromDomains.Match(session.MailFrom) {
+		return &ResponseError{Code: 550, Message: "Sender domain not allowed"}
+	}
+	if !state.acceptedRcptDomains.Empty() && !state.acceptedRcptDomains.Match(recipient) {
+		return &ResponseError{Code: 550, Message: "Recipient domain not allowed"}
+	}
+	return nil
 }
 
 type addressMatcher struct {

@@ -67,7 +67,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 
 	remoteIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
 	session := SessionMetadata{RemoteIP: remoteIP}
-	if response := s.policy.OnConnect(session); response != nil {
+	if response := s.policy.OnConnect(&session); response != nil {
 		s.logSMTPAction(session, "connect-rejected", "", "", response)
 		_ = s.sendStatus(conn, response.Code, response.Message)
 		return
@@ -106,13 +106,13 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 				_ = s.sendStatus(conn, 501, "Syntax: MAIL FROM:<address>")
 				continue
 			}
-			if response := s.policy.OnMailFrom(session, from); response != nil {
+			if response := s.policy.OnMailFrom(&session, from); response != nil {
 				s.logSMTPAction(session, "mailfrom-rejected", from, "", response)
 				_ = s.sendStatus(conn, response.Code, response.Message)
 				continue
 			}
-			session.MailFrom = from
 			session.RcptTo = nil
+			session.OwnerUserID = 0
 			s.logSMTPAction(session, "mailfrom-accepted", from, "", nil)
 			if err := s.sendStatus(conn, 250, "Sender OK"); err != nil {
 				return
@@ -124,7 +124,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 				_ = s.sendStatus(conn, 501, "Syntax: RCPT TO:<address>")
 				continue
 			}
-			if response := s.policy.OnRcptTo(session, recipient); response != nil {
+			if response := s.policy.OnRcptTo(&session, recipient); response != nil {
 				s.logSMTPAction(session, "rcpt-rejected", "", recipient, response)
 				_ = s.sendStatus(conn, response.Code, response.Message)
 				continue
@@ -140,7 +140,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 				_ = s.sendStatus(conn, 503, "Need MAIL FROM and RCPT TO first")
 				continue
 			}
-			if response := s.policy.OnData(session); response != nil {
+			if response := s.policy.OnData(&session); response != nil {
 				s.logSMTPAction(session, "data-rejected", "", "", response)
 				_ = s.sendStatus(conn, response.Code, response.Message)
 				continue
@@ -205,6 +205,27 @@ func (s *Server) persistMessage(ctx context.Context, session SessionMetadata, ra
 	}
 	if parsed.Subject == "" {
 		parsed.Subject = "(no subject)"
+	}
+	parsed.OwnerUserID = session.OwnerUserID
+	switch {
+	case session.OwnerUserID > 0:
+		settings, ok, err := s.store.LoadUserSettings(ctx, session.OwnerUserID)
+		if err != nil {
+			return err
+		}
+		if ok && settings.AutoDeleteAfterDays > 0 {
+			expiresAt := parsed.ReceivedAt.Add(time.Duration(settings.AutoDeleteAfterDays) * 24 * time.Hour)
+			parsed.ExpiresAt = &expiresAt
+		}
+	case session.OwnerUserID == 0:
+		settings, ok, err := s.store.LoadAdminMailboxSettings(ctx)
+		if err != nil {
+			return err
+		}
+		if ok && settings.AutoDeleteAfterDays > 0 {
+			expiresAt := parsed.ReceivedAt.Add(time.Duration(settings.AutoDeleteAfterDays) * 24 * time.Hour)
+			parsed.ExpiresAt = &expiresAt
+		}
 	}
 	if _, err := s.store.CreateMessage(ctx, parsed); err != nil {
 		s.logger.Printf("message create failed: %v", err)

@@ -136,7 +136,7 @@ The Git tag itself must start with `v`, for example `v0.1.0`.
 
 ### REST API authentication
 
-When `MAILTAIL_AUTH_USERNAME` and `MAILTAIL_AUTH_PASSWORD` are set, MailTail protects both the web UI and the REST API with a session-based login flow.
+When `MAILTAIL_ADMIN_USERNAME` and `MAILTAIL_ADMIN_PASSWORD` are set, MailTail protects both the web UI and the REST API with a session-based login flow.
 
 Authentication flow:
 
@@ -388,8 +388,8 @@ Bootstrap environment variables:
 - `MAILTAIL_HTTP_ADDR` default: `:8080`
 - `MAILTAIL_SMTP_ADDR` default: `:8025`
 - `MAILTAIL_WEB_DIR` default: `web/dist`
-- `MAILTAIL_AUTH_USERNAME` default: empty, disables login protection for web UI and API and logs a startup warning
-- `MAILTAIL_AUTH_PASSWORD` default: empty, disables login protection for web UI and API and logs a startup warning
+- `MAILTAIL_ADMIN_USERNAME` default: empty, disables login protection for web UI and API and logs a startup warning
+- `MAILTAIL_ADMIN_PASSWORD` default: empty, disables login protection for web UI and API and logs a startup warning
 
 Runtime settings:
 
@@ -417,7 +417,7 @@ cp .env.example .env
 make run
 ```
 
-To enable login protection, set both `MAILTAIL_AUTH_USERNAME` and `MAILTAIL_AUTH_PASSWORD`. If only one is set, MailTail exits on startup.
+To enable login protection, set both `MAILTAIL_ADMIN_USERNAME` and `MAILTAIL_ADMIN_PASSWORD`. If only one is set, MailTail exits on startup.
 MailTail then serves a login form and stores an authenticated session in a secure HTTP-only cookie, so you do not need to re-enter credentials on every API request.
 This protects the web UI and REST API. SMTP remains unauthenticated in this MVP.
 When MailTail runs behind TLS termination, make sure your proxy forwards `X-Forwarded-Proto: https` or `Forwarded: proto=https` so the session cookie is marked `Secure`.

@@ -30,7 +30,19 @@ type Store interface {
 	ListMessages(ctx context.Context, filter models.MessageFilter) (models.MessagePage, error)
 	LoadAppSettings(ctx context.Context) (models.AppSettings, bool, error)
 	SaveAppSettings(ctx context.Context, settings models.AppSettings) error
-	DeleteMessagesOlderThan(ctx context.Context, before time.Time) (int64, error)
+	LoadAdminMailboxSettings(ctx context.Context) (models.AppSettings, bool, error)
+	SaveAdminMailboxSettings(ctx context.Context, settings models.AppSettings) error
+	LoadUserSettings(ctx context.Context, userID int64) (models.AppSettings, bool, error)
+	SaveUserSettings(ctx context.Context, userID int64, settings models.AppSettings) error
+	CreateUser(ctx context.Context, username, passwordHash string, settings models.AppSettings) (models.User, error)
+	UpdateUser(ctx context.Context, userID int64, username string, settings models.AppSettings) (models.User, error)
+	UpdateUserPassword(ctx context.Context, userID int64, passwordHash string) error
+	DeleteUser(ctx context.Context, userID int64) error
+	ListUsers(ctx context.Context) ([]models.User, error)
+	GetUser(ctx context.Context, userID int64) (models.User, bool, error)
+	GetUserByUsername(ctx context.Context, username string) (models.UserCredentials, bool, error)
+	DeleteExpiredMessages(ctx context.Context, before time.Time) (int64, error)
+	RecalculateMessageExpirations(ctx context.Context, userID int64, settings models.AppSettings) error
 	CreateAuthSession(ctx context.Context, session models.AuthSession) error
 	GetAuthSession(ctx context.Context, sessionID string) (models.AuthSession, bool, error)
 	DeleteAuthSession(ctx context.Context, sessionID string) error
@@ -43,12 +55,12 @@ type Store interface {
 	SaveGreylistState(ctx context.Context, state models.GreylistState) error
 	DeleteGreylistState(ctx context.Context, key string) error
 	DeleteExpiredGreylistStates(ctx context.Context, before time.Time) error
-	GetMessage(ctx context.Context, id int64) (models.Message, error)
-	GetRawMessage(ctx context.Context, id int64) (string, error)
-	GetAttachment(ctx context.Context, messageID, attachmentID int64) (models.Attachment, []byte, error)
-	DeleteMessage(ctx context.Context, id int64) error
-	DeleteAllMessages(ctx context.Context) error
-	Stats(ctx context.Context) (models.Stats, error)
+	GetMessage(ctx context.Context, id int64, principal models.SessionPrincipal) (models.Message, error)
+	GetRawMessage(ctx context.Context, id int64, principal models.SessionPrincipal) (string, error)
+	GetAttachment(ctx context.Context, messageID, attachmentID int64, principal models.SessionPrincipal) (models.Attachment, []byte, error)
+	DeleteMessage(ctx context.Context, id int64, principal models.SessionPrincipal) error
+	DeleteAllMessages(ctx context.Context, principal models.SessionPrincipal) error
+	Stats(ctx context.Context, principal models.SessionPrincipal) (models.Stats, error)
 	Close() error
 }
 
@@ -87,15 +99,104 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
 
+	store := &SQLiteStore{db: db}
+	if err := store.applySchemaUpgrades(); err != nil {
+		return nil, fmt.Errorf("apply schema upgrades: %w", err)
+	}
+
 	if _, err := db.Exec(`INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')`); err != nil {
 		return nil, fmt.Errorf("rebuild message search index: %w", err)
 	}
 
-	return &SQLiteStore{db: db}, nil
+	return store, nil
 }
 
 func (s *SQLiteStore) Close() error {
 	return s.db.Close()
+}
+
+func (s *SQLiteStore) applySchemaUpgrades() error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS user_settings (
+			user_id INTEGER PRIMARY KEY,
+			value_json TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`,
+	}
+	for _, statement := range statements {
+		if _, err := s.db.Exec(statement); err != nil {
+			return err
+		}
+	}
+
+	if err := s.ensureColumn("messages", "owner_user_id", `ALTER TABLE messages ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("messages", "expires_at", `ALTER TABLE messages ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("auth_sessions", "user_id", `ALTER TABLE auth_sessions ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("auth_sessions", "is_admin", `ALTER TABLE auth_sessions ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 1`); err != nil {
+		return err
+	}
+
+	indexStatements := []string{
+		`CREATE INDEX IF NOT EXISTS idx_messages_owner_received_at ON messages(owner_user_id, received_at DESC, id DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_expires_at ON messages(expires_at)`,
+	}
+	for _, statement := range indexStatements {
+		if _, err := s.db.Exec(statement); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ensureColumn(table, column, alter string) error {
+	columns, err := s.tableColumns(table)
+	if err != nil {
+		return err
+	}
+	if _, exists := columns[column]; exists {
+		return nil
+	}
+	_, err = s.db.Exec(alter)
+	return err
+}
+
+func (s *SQLiteStore) tableColumns(table string) (map[string]struct{}, error) {
+	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	columns := make(map[string]struct{})
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			columnType string
+			notNull    int
+			defaultVal sql.NullString
+			pk         int
+		)
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultVal, &pk); err != nil {
+			return nil, err
+		}
+		columns[name] = struct{}{}
+	}
+	return columns, rows.Err()
 }
 
 func (s *SQLiteStore) CreateMessage(ctx context.Context, message models.StoredMessage) (int64, error) {
@@ -116,10 +217,12 @@ func (s *SQLiteStore) CreateMessage(ctx context.Context, message models.StoredMe
 
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO messages (
-			received_at, mail_from, rcpt_to_json, header_from, header_to,
+			owner_user_id, expires_at, received_at, mail_from, rcpt_to_json, header_from, header_to,
 			subject, message_id, helo, remote_ip, size, raw, text_body, html_body, headers_json
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
+		message.OwnerUserID,
+		formatOptionalTime(message.ExpiresAt),
 		message.ReceivedAt.UTC().Format(time.RFC3339Nano),
 		message.MailFrom,
 		string(rcptJSON),
@@ -168,8 +271,24 @@ func (s *SQLiteStore) CreateMessage(ctx context.Context, message models.StoredMe
 }
 
 func (s *SQLiteStore) LoadAppSettings(ctx context.Context) (models.AppSettings, bool, error) {
+	return s.loadNamedSettings(ctx, "runtime")
+}
+
+func (s *SQLiteStore) SaveAppSettings(ctx context.Context, settings models.AppSettings) error {
+	return s.saveNamedSettings(ctx, "runtime", settings)
+}
+
+func (s *SQLiteStore) LoadAdminMailboxSettings(ctx context.Context) (models.AppSettings, bool, error) {
+	return s.loadNamedSettings(ctx, "admin_mailbox")
+}
+
+func (s *SQLiteStore) SaveAdminMailboxSettings(ctx context.Context, settings models.AppSettings) error {
+	return s.saveNamedSettings(ctx, "admin_mailbox", settings)
+}
+
+func (s *SQLiteStore) loadNamedSettings(ctx context.Context, key string) (models.AppSettings, bool, error) {
 	var payload string
-	err := s.db.QueryRowContext(ctx, `SELECT value_json FROM app_settings WHERE key = ?`, "runtime").Scan(&payload)
+	err := s.db.QueryRowContext(ctx, `SELECT value_json FROM app_settings WHERE key = ?`, key).Scan(&payload)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return models.AppSettings{}, false, nil
@@ -184,7 +303,7 @@ func (s *SQLiteStore) LoadAppSettings(ctx context.Context) (models.AppSettings, 
 	return settings, true, nil
 }
 
-func (s *SQLiteStore) SaveAppSettings(ctx context.Context, settings models.AppSettings) error {
+func (s *SQLiteStore) saveNamedSettings(ctx context.Context, key string, settings models.AppSettings) error {
 	payload, err := json.Marshal(settings)
 	if err != nil {
 		return err
@@ -196,12 +315,248 @@ func (s *SQLiteStore) SaveAppSettings(ctx context.Context, settings models.AppSe
 		ON CONFLICT(key) DO UPDATE SET
 			value_json = excluded.value_json,
 			updated_at = excluded.updated_at
-	`, "runtime", string(payload), time.Now().UTC().Format(time.RFC3339Nano))
+	`, key, string(payload), time.Now().UTC().Format(time.RFC3339Nano))
 	return err
 }
 
-func (s *SQLiteStore) DeleteMessagesOlderThan(ctx context.Context, before time.Time) (int64, error) {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM messages WHERE received_at < ?`, before.UTC().Format(time.RFC3339Nano))
+func (s *SQLiteStore) LoadUserSettings(ctx context.Context, userID int64) (models.AppSettings, bool, error) {
+	var payload string
+	err := s.db.QueryRowContext(ctx, `SELECT value_json FROM user_settings WHERE user_id = ?`, userID).Scan(&payload)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return models.AppSettings{}, false, nil
+		}
+		return models.AppSettings{}, false, err
+	}
+
+	var settings models.AppSettings
+	if err := json.Unmarshal([]byte(payload), &settings); err != nil {
+		return models.AppSettings{}, false, err
+	}
+	return settings, true, nil
+}
+
+func (s *SQLiteStore) SaveUserSettings(ctx context.Context, userID int64, settings models.AppSettings) error {
+	payload, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO user_settings (user_id, value_json, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET
+			value_json = excluded.value_json,
+			updated_at = excluded.updated_at
+	`, userID, string(payload), time.Now().UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *SQLiteStore) CreateUser(ctx context.Context, username, passwordHash string, settings models.AppSettings) (models.User, error) {
+	now := time.Now().UTC()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return models.User{}, err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO users (username, password_hash, created_at, updated_at)
+		VALUES (?, ?, ?, ?)
+	`, username, passwordHash, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+	if err != nil {
+		return models.User{}, err
+	}
+	userID, err := result.LastInsertId()
+	if err != nil {
+		return models.User{}, err
+	}
+
+	payload, err := json.Marshal(settings)
+	if err != nil {
+		return models.User{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO user_settings (user_id, value_json, updated_at)
+		VALUES (?, ?, ?)
+	`, userID, string(payload), now.Format(time.RFC3339Nano)); err != nil {
+		return models.User{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return models.User{}, err
+	}
+	return models.User{ID: userID, Username: username, Settings: settings, CreatedAt: now, UpdatedAt: now}, nil
+}
+
+func (s *SQLiteStore) UpdateUser(ctx context.Context, userID int64, username string, settings models.AppSettings) (models.User, error) {
+	now := time.Now().UTC()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return models.User{}, err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, `UPDATE users SET username = ?, updated_at = ? WHERE id = ?`, username, now.Format(time.RFC3339Nano), userID)
+	if err != nil {
+		return models.User{}, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return models.User{}, err
+	}
+	if rows == 0 {
+		return models.User{}, ErrNotFound
+	}
+
+	payload, err := json.Marshal(settings)
+	if err != nil {
+		return models.User{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO user_settings (user_id, value_json, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET
+			value_json = excluded.value_json,
+			updated_at = excluded.updated_at
+	`, userID, string(payload), now.Format(time.RFC3339Nano)); err != nil {
+		return models.User{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return models.User{}, err
+	}
+	return s.getUserByID(ctx, userID)
+}
+
+func (s *SQLiteStore) UpdateUserPassword(ctx context.Context, userID int64, passwordHash string) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`, passwordHash, time.Now().UTC().Format(time.RFC3339Nano), userID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *SQLiteStore) DeleteUser(ctx context.Context, userID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM user_settings WHERE user_id = ?`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE owner_user_id = ?`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM auth_sessions WHERE user_id = ?`, userID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, userID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ListUsers(ctx context.Context) ([]models.User, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT users.id, users.username, users.created_at, users.updated_at, COALESCE(user_settings.value_json, '{}')
+		FROM users
+		LEFT JOIN user_settings ON user_settings.user_id = users.id
+		ORDER BY users.username ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	users := make([]models.User, 0)
+	for rows.Next() {
+		user, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, rows.Err()
+}
+
+func (s *SQLiteStore) GetUser(ctx context.Context, userID int64) (models.User, bool, error) {
+	user, err := s.getUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return models.User{}, false, nil
+		}
+		return models.User{}, false, err
+	}
+	return user, true, nil
+}
+
+func (s *SQLiteStore) getUserByID(ctx context.Context, userID int64) (models.User, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT users.id, users.username, users.created_at, users.updated_at, COALESCE(user_settings.value_json, '{}')
+		FROM users
+		LEFT JOIN user_settings ON user_settings.user_id = users.id
+		WHERE users.id = ?
+	`, userID)
+	user, err := scanUser(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return models.User{}, ErrNotFound
+		}
+		return models.User{}, err
+	}
+	return user, nil
+}
+
+func (s *SQLiteStore) GetUserByUsername(ctx context.Context, username string) (models.UserCredentials, bool, error) {
+	var (
+		user         models.User
+		passwordHash string
+		createdAt    string
+		updatedAt    string
+		settingsJSON string
+	)
+	err := s.db.QueryRowContext(ctx, `
+		SELECT users.id, users.username, users.password_hash, users.created_at, users.updated_at, COALESCE(user_settings.value_json, '{}')
+		FROM users
+		LEFT JOIN user_settings ON user_settings.user_id = users.id
+		WHERE LOWER(users.username) = LOWER(?)
+	`, username).Scan(&user.ID, &user.Username, &passwordHash, &createdAt, &updatedAt, &settingsJSON)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return models.UserCredentials{}, false, nil
+		}
+		return models.UserCredentials{}, false, err
+	}
+
+	if err := hydrateUser(&user, createdAt, updatedAt, settingsJSON); err != nil {
+		return models.UserCredentials{}, false, err
+	}
+	return models.UserCredentials{User: user, PasswordHash: passwordHash}, true, nil
+}
+
+func (s *SQLiteStore) DeleteExpiredMessages(ctx context.Context, before time.Time) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM messages WHERE expires_at != '' AND expires_at <= ?`, before.UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return 0, err
 	}
@@ -212,22 +567,74 @@ func (s *SQLiteStore) DeleteMessagesOlderThan(ctx context.Context, before time.T
 	return rows, nil
 }
 
+func (s *SQLiteStore) RecalculateMessageExpirations(ctx context.Context, userID int64, settings models.AppSettings) error {
+	expiresExpr := ""
+	if settings.AutoDeleteAfterDays > 0 {
+		interval := time.Duration(settings.AutoDeleteAfterDays) * 24 * time.Hour
+		rows, err := s.db.QueryContext(ctx, `SELECT id, received_at FROM messages WHERE owner_user_id = ?`, userID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		type updateRow struct {
+			id        int64
+			expiresAt string
+		}
+		updates := make([]updateRow, 0)
+		for rows.Next() {
+			var (
+				id         int64
+				receivedAt string
+			)
+			if err := rows.Scan(&id, &receivedAt); err != nil {
+				return err
+			}
+			parsed, err := time.Parse(time.RFC3339Nano, receivedAt)
+			if err != nil {
+				return err
+			}
+			updates = append(updates, updateRow{
+				id:        id,
+				expiresAt: parsed.Add(interval).UTC().Format(time.RFC3339Nano),
+			})
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		for _, update := range updates {
+			if _, err := tx.ExecContext(ctx, `UPDATE messages SET expires_at = ? WHERE id = ?`, update.expiresAt, update.id); err != nil {
+				return err
+			}
+		}
+		return tx.Commit()
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE messages SET expires_at = ? WHERE owner_user_id = ?`, expiresExpr, userID)
+	return err
+}
+
 func (s *SQLiteStore) CreateAuthSession(ctx context.Context, session models.AuthSession) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO auth_sessions (session_id, username, csrf_token, expires_at)
-		VALUES (?, ?, ?, ?)
-	`, session.SessionID, session.Username, session.CSRFToken, session.ExpiresAt.UTC().Format(time.RFC3339Nano))
+		INSERT INTO auth_sessions (session_id, username, user_id, is_admin, csrf_token, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, session.SessionID, session.Username, session.UserID, boolToInt(session.IsAdmin), session.CSRFToken, session.ExpiresAt.UTC().Format(time.RFC3339Nano))
 	return err
 }
 
 func (s *SQLiteStore) GetAuthSession(ctx context.Context, sessionID string) (models.AuthSession, bool, error) {
 	var session models.AuthSession
 	var expiresAt string
+	var isAdminInt int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT session_id, username, csrf_token, expires_at
+		SELECT session_id, username, user_id, is_admin, csrf_token, expires_at
 		FROM auth_sessions
 		WHERE session_id = ?
-	`, sessionID).Scan(&session.SessionID, &session.Username, &session.CSRFToken, &expiresAt)
+	`, sessionID).Scan(&session.SessionID, &session.Username, &session.UserID, &isAdminInt, &session.CSRFToken, &expiresAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return models.AuthSession{}, false, nil
@@ -240,6 +647,7 @@ func (s *SQLiteStore) GetAuthSession(ctx context.Context, sessionID string) (mod
 		return models.AuthSession{}, false, err
 	}
 	session.ExpiresAt = parsed
+	session.IsAdmin = isAdminInt == 1
 	return session, true, nil
 }
 
@@ -340,13 +748,17 @@ func (s *SQLiteStore) ListMessages(ctx context.Context, filter models.MessageFil
 	}
 
 	query := `
-		SELECT messages.id, messages.received_at, messages.mail_from, messages.rcpt_to_json,
+		SELECT messages.id, messages.owner_user_id, messages.received_at, messages.mail_from, messages.rcpt_to_json,
 		       messages.header_from, messages.header_to, messages.subject,
 		       messages.message_id, messages.helo, messages.remote_ip, messages.size
 		FROM messages
 	`
 	args := make([]any, 0, 6)
 	clauses := make([]string, 0, 2)
+	if !filter.IncludeAll {
+		clauses = append(clauses, `messages.owner_user_id = ?`)
+		args = append(args, filter.OwnerUserID)
+	}
 	if strings.TrimSpace(filter.Query) != "" {
 		ftsQuery := buildFTSQuery(filter.Query)
 		if ftsQuery != "" {
@@ -409,12 +821,18 @@ func (s *SQLiteStore) ListMessages(ctx context.Context, filter models.MessageFil
 	return page, nil
 }
 
-func (s *SQLiteStore) GetMessage(ctx context.Context, id int64) (models.Message, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, received_at, mail_from, rcpt_to_json, header_from, header_to, subject,
+func (s *SQLiteStore) GetMessage(ctx context.Context, id int64, principal models.SessionPrincipal) (models.Message, error) {
+	query := `
+		SELECT id, owner_user_id, received_at, mail_from, rcpt_to_json, header_from, header_to, subject,
 		       message_id, helo, remote_ip, size, raw, text_body, html_body, headers_json
 		FROM messages WHERE id = ?
-	`, id)
+	`
+	args := []any{id}
+	if !principal.IsAdmin {
+		query += ` AND owner_user_id = ?`
+		args = append(args, principal.UserID)
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
 
 	var (
 		msg         models.Message
@@ -424,6 +842,7 @@ func (s *SQLiteStore) GetMessage(ctx context.Context, id int64) (models.Message,
 	)
 	if err := row.Scan(
 		&msg.ID,
+		&msg.OwnerUserID,
 		&receivedAt,
 		&msg.MailFrom,
 		&rcptJSON,
@@ -457,9 +876,15 @@ func (s *SQLiteStore) GetMessage(ctx context.Context, id int64) (models.Message,
 	return msg, nil
 }
 
-func (s *SQLiteStore) GetRawMessage(ctx context.Context, id int64) (string, error) {
+func (s *SQLiteStore) GetRawMessage(ctx context.Context, id int64, principal models.SessionPrincipal) (string, error) {
 	var raw string
-	if err := s.db.QueryRowContext(ctx, `SELECT raw FROM messages WHERE id = ?`, id).Scan(&raw); err != nil {
+	query := `SELECT raw FROM messages WHERE id = ?`
+	args := []any{id}
+	if !principal.IsAdmin {
+		query += ` AND owner_user_id = ?`
+		args = append(args, principal.UserID)
+	}
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", ErrNotFound
 		}
@@ -468,12 +893,23 @@ func (s *SQLiteStore) GetRawMessage(ctx context.Context, id int64) (string, erro
 	return raw, nil
 }
 
-func (s *SQLiteStore) GetAttachment(ctx context.Context, messageID, attachmentID int64) (models.Attachment, []byte, error) {
-	row := s.db.QueryRowContext(ctx, `
+func (s *SQLiteStore) GetAttachment(ctx context.Context, messageID, attachmentID int64, principal models.SessionPrincipal) (models.Attachment, []byte, error) {
+	query := `
 		SELECT id, message_id, file_name, content_type, content_id, size, inline, content
 		FROM attachments
 		WHERE message_id = ? AND id = ?
-	`, messageID, attachmentID)
+	`
+	args := []any{messageID, attachmentID}
+	if !principal.IsAdmin {
+		query = `
+			SELECT attachments.id, attachments.message_id, attachments.file_name, attachments.content_type, attachments.content_id, attachments.size, attachments.inline, attachments.content
+			FROM attachments
+			JOIN messages ON messages.id = attachments.message_id
+			WHERE attachments.message_id = ? AND attachments.id = ? AND messages.owner_user_id = ?
+		`
+		args = append(args, principal.UserID)
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
 
 	var (
 		attachment models.Attachment
@@ -499,8 +935,14 @@ func (s *SQLiteStore) GetAttachment(ctx context.Context, messageID, attachmentID
 	return attachment, content, nil
 }
 
-func (s *SQLiteStore) DeleteMessage(ctx context.Context, id int64) error {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM messages WHERE id = ?`, id)
+func (s *SQLiteStore) DeleteMessage(ctx context.Context, id int64, principal models.SessionPrincipal) error {
+	query := `DELETE FROM messages WHERE id = ?`
+	args := []any{id}
+	if !principal.IsAdmin {
+		query += ` AND owner_user_id = ?`
+		args = append(args, principal.UserID)
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -514,18 +956,30 @@ func (s *SQLiteStore) DeleteMessage(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (s *SQLiteStore) DeleteAllMessages(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM messages`)
+func (s *SQLiteStore) DeleteAllMessages(ctx context.Context, principal models.SessionPrincipal) error {
+	query := `DELETE FROM messages`
+	args := []any{}
+	if !principal.IsAdmin {
+		query += ` WHERE owner_user_id = ?`
+		args = append(args, principal.UserID)
+	}
+	_, err := s.db.ExecContext(ctx, query, args...)
 	return err
 }
 
-func (s *SQLiteStore) Stats(ctx context.Context) (models.Stats, error) {
+func (s *SQLiteStore) Stats(ctx context.Context, principal models.SessionPrincipal) (models.Stats, error) {
 	var stats models.Stats
 	var latest sql.NullString
-	if err := s.db.QueryRowContext(ctx, `
+	query := `
 		SELECT COUNT(*), COALESCE(SUM(size), 0), MAX(received_at)
 		FROM messages
-	`).Scan(&stats.MessageCount, &stats.TotalSize, &latest); err != nil {
+	`
+	args := []any{}
+	if !principal.IsAdmin {
+		query += ` WHERE owner_user_id = ?`
+		args = append(args, principal.UserID)
+	}
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&stats.MessageCount, &stats.TotalSize, &latest); err != nil {
 		return models.Stats{}, err
 	}
 	if latest.Valid {
@@ -579,6 +1033,7 @@ func scanMessageSummary(scanner interface{ Scan(dest ...any) error }) (models.Me
 	)
 	if err := scanner.Scan(
 		&msg.ID,
+		&msg.OwnerUserID,
 		&receivedAt,
 		&msg.MailFrom,
 		&rcptJSON,
@@ -611,6 +1066,46 @@ func hydrateMessage(msg *models.Message, receivedAt, rcptJSON, headersJSON strin
 		return err
 	}
 	return nil
+}
+
+func scanUser(scanner interface{ Scan(dest ...any) error }) (models.User, error) {
+	var (
+		user         models.User
+		createdAt    string
+		updatedAt    string
+		settingsJSON string
+	)
+	if err := scanner.Scan(&user.ID, &user.Username, &createdAt, &updatedAt, &settingsJSON); err != nil {
+		return models.User{}, err
+	}
+	if err := hydrateUser(&user, createdAt, updatedAt, settingsJSON); err != nil {
+		return models.User{}, err
+	}
+	return user, nil
+}
+
+func hydrateUser(user *models.User, createdAt, updatedAt, settingsJSON string) error {
+	parsedCreatedAt, err := time.Parse(time.RFC3339Nano, createdAt)
+	if err != nil {
+		return err
+	}
+	parsedUpdatedAt, err := time.Parse(time.RFC3339Nano, updatedAt)
+	if err != nil {
+		return err
+	}
+	user.CreatedAt = parsedCreatedAt
+	user.UpdatedAt = parsedUpdatedAt
+	if err := json.Unmarshal([]byte(settingsJSON), &user.Settings); err != nil {
+		return err
+	}
+	return nil
+}
+
+func formatOptionalTime(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
 }
 
 func boolToInt(value bool) int {

@@ -58,3 +58,17 @@ export type AppSettings = {
   acceptedFromDomains: string;
   autoDeleteAfterDays: number;
 };
+
+export type SessionInfo = {
+  username: string;
+  isAdmin: boolean;
+  userId?: number;
+};
+
+export type User = {
+  id: number;
+  username: string;
+  settings: AppSettings;
+  createdAt?: string;
+  updatedAt?: string;
+};

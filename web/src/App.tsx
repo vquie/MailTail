@@ -2,17 +2,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   attachmentUrl,
   clearInbox,
+  createUser,
   deleteMessage,
+  deleteUser,
   fetchAppInfo,
+  fetchAdminMailboxSettings,
   fetchMessage,
   fetchMessages,
   fetchSettings,
   fetchStats,
+  fetchSession,
+  fetchUsers,
   rawMessageUrl,
   logout,
-  updateSettings
+  updateAdminMailboxSettings,
+  updateSettings,
+  updateUser
 } from "./api";
-import type { AppSettings, Message, Stats } from "./types";
+import type { AppSettings, Message, SessionInfo, Stats, User } from "./types";
 
 type TabKey = "html" | "text" | "headers" | "raw";
 
@@ -30,13 +37,26 @@ const emptySettings: AppSettings = {
   autoDeleteAfterDays: 0
 };
 
+const emptyManagedUser = {
+  username: "",
+  password: ""
+};
+
 export function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [stats, setStats] = useState<Stats>({ messageCount: 0, totalSize: 0 });
   const [version, setVersion] = useState("");
+  const [session, setSession] = useState<SessionInfo | null>(null);
   const [currentSettings, setCurrentSettings] = useState<AppSettings>(emptySettings);
+  const [globalSettingsDraft, setGlobalSettingsDraft] = useState<AppSettings>(emptySettings);
+  const [adminMailboxDraft, setAdminMailboxDraft] = useState<AppSettings>(emptySettings);
+  const [adminMailboxEnabled, setAdminMailboxEnabled] = useState(false);
+  const [adminMailboxLimitRemoteIps, setAdminMailboxLimitRemoteIps] = useState(false);
+  const [adminMailboxLimitAcceptedRcptDomains, setAdminMailboxLimitAcceptedRcptDomains] = useState(false);
+  const [adminMailboxLimitAcceptedFromDomains, setAdminMailboxLimitAcceptedFromDomains] = useState(false);
+  const [adminMailboxAutoDeleteEnabled, setAdminMailboxAutoDeleteEnabled] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [queryInput, setQueryInput] = useState("");
@@ -54,11 +74,15 @@ export function App() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
-  const [limitAllowedOrigins, setLimitAllowedOrigins] = useState(false);
   const [limitAllowedRemoteIps, setLimitAllowedRemoteIps] = useState(false);
   const [limitAcceptedRcptDomains, setLimitAcceptedRcptDomains] = useState(false);
   const [limitAcceptedFromDomains, setLimitAcceptedFromDomains] = useState(false);
   const [autoDeleteEnabled, setAutoDeleteEnabled] = useState(false);
+  const [managedUsers, setManagedUsers] = useState<User[]>([]);
+  const [selectedManagedUserId, setSelectedManagedUserId] = useState<number | null>(null);
+  const [createUserOpen, setCreateUserOpen] = useState(false);
+  const [managedUsername, setManagedUsername] = useState(emptyManagedUser.username);
+  const [managedPassword, setManagedPassword] = useState(emptyManagedUser.password);
   const [error, setError] = useState<string | null>(null);
   const queryRef = useRef(query);
   const messagesRef = useRef(messages);
@@ -99,7 +123,7 @@ export function App() {
   }, [hasMore]);
 
   useEffect(() => {
-    void loadCurrentSettings();
+    void loadSessionInfo();
   }, []);
 
   useEffect(() => {
@@ -197,6 +221,20 @@ export function App() {
     }
   }
 
+  async function loadSessionInfo() {
+    try {
+      const currentSession = await fetchSession();
+      setSession(currentSession);
+      if (!currentSession.isAdmin) {
+        await loadCurrentSettings();
+      } else {
+        setSettingsLoaded(false);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load session");
+    }
+  }
+
   async function handleLoadMore() {
     if (!nextCursorRef.current || loadingMore) {
       return;
@@ -253,16 +291,31 @@ export function App() {
       setSettingsLoading(true);
       setSettingsError(null);
       setSettingsNotice(null);
+      if (session?.isAdmin) {
+        const globalSettings = await fetchSettings();
+        const adminMailboxSettings = await fetchAdminMailboxSettings();
+        const users = await fetchUsers();
+        setGlobalSettingsDraft(normalizeSettingsDraft(globalSettings));
+        const normalizedAdminMailbox = normalizeSettingsDraft(adminMailboxSettings);
+        setAdminMailboxDraft(normalizedAdminMailbox);
+        applyAdminMailboxToggles(normalizedAdminMailbox);
+        setManagedUsers(users);
+        if (users.length > 0) {
+          applyManagedUserDraft(users[0]);
+          setSelectedManagedUserId(users[0].id);
+        } else {
+          applyManagedUserDraft(null);
+          setSelectedManagedUserId(null);
+        }
+        return;
+      }
+
       const settings = await fetchSettings();
       const normalized = normalizeSettingsDraft(settings);
       setSettingsDraft(normalized);
       setCurrentSettings(normalized);
       setSettingsLoaded(true);
-      setLimitAllowedOrigins(Boolean(normalized.allowedOrigins.trim()));
-      setLimitAllowedRemoteIps(Boolean(normalized.allowedRemoteIps.trim()));
-      setLimitAcceptedRcptDomains(Boolean(normalized.acceptedRcptDomains.trim()));
-      setLimitAcceptedFromDomains(Boolean(normalized.acceptedFromDomains.trim()));
-      setAutoDeleteEnabled(normalized.autoDeleteAfterDays > 0);
+      applySettingsToggles(normalized);
     } catch (err) {
       setSettingsError(err instanceof Error ? err.message : "Failed to load settings");
     } finally {
@@ -271,10 +324,14 @@ export function App() {
   }
 
   async function handleSaveSettings() {
+    if (session?.isAdmin) {
+      await handleSaveManagedUser();
+      return;
+    }
+
     try {
       setSettingsSaving(true);
       const saved = await updateSettings(buildSettingsPayload(settingsDraft, {
-        limitAllowedOrigins,
         limitAllowedRemoteIps,
         limitAcceptedRcptDomains,
         limitAcceptedFromDomains,
@@ -291,6 +348,167 @@ export function App() {
     } finally {
       setSettingsSaving(false);
     }
+  }
+
+  function applySettingsToggles(settings: AppSettings) {
+    setLimitAllowedRemoteIps(Boolean(settings.allowedRemoteIps.trim()));
+    setLimitAcceptedRcptDomains(Boolean(settings.acceptedRcptDomains.trim()));
+    setLimitAcceptedFromDomains(Boolean(settings.acceptedFromDomains.trim()));
+    setAutoDeleteEnabled(settings.autoDeleteAfterDays > 0);
+  }
+
+  function applyManagedUserDraft(user: User | null) {
+    const normalized = normalizeSettingsDraft(user?.settings ?? emptySettings);
+    setSettingsDraft(normalized);
+    setManagedUsername(user?.username ?? "");
+    setManagedPassword("");
+    applySettingsToggles(normalized);
+  }
+
+  async function handleSaveManagedUser() {
+    try {
+      setSettingsSaving(true);
+      const payload = {
+        username: managedUsername.trim(),
+        password: managedPassword,
+        settings: buildSettingsPayload(settingsDraft, {
+          limitAllowedRemoteIps,
+          limitAcceptedRcptDomains,
+          limitAcceptedFromDomains,
+          autoDeleteEnabled
+        })
+      };
+
+      const savedUser = selectedManagedUserId
+        ? await updateUser(selectedManagedUserId, payload)
+        : await createUser(payload);
+
+      const users = await fetchUsers();
+      setManagedUsers(users);
+      setSelectedManagedUserId(savedUser.id);
+      applyManagedUserDraft(savedUser);
+      setSettingsNotice(selectedManagedUserId ? "User updated." : "User created.");
+      setSettingsError(null);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : "Failed to save user");
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
+  async function handleSaveGlobalSettings() {
+    try {
+      setSettingsSaving(true);
+      const saved = await updateSettings({
+        ...emptySettings,
+        allowedOrigins: globalSettingsDraft.allowedOrigins,
+        smtpLogVerbose: globalSettingsDraft.smtpLogVerbose
+      });
+      setGlobalSettingsDraft(normalizeSettingsDraft(saved));
+      setSettingsNotice("Platform settings saved.");
+      setSettingsError(null);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : "Failed to save platform settings");
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
+  function applyAdminMailboxToggles(settings: AppSettings) {
+    setAdminMailboxEnabled(
+      Boolean(
+        settings.mailFailEnabled ||
+          settings.allowedRemoteIps.trim() ||
+          settings.acceptedRcptDomains.trim() ||
+          settings.acceptedFromDomains.trim() ||
+          settings.autoDeleteAfterDays > 0
+      )
+    );
+    setAdminMailboxLimitRemoteIps(Boolean(settings.allowedRemoteIps.trim()));
+    setAdminMailboxLimitAcceptedRcptDomains(Boolean(settings.acceptedRcptDomains.trim()));
+    setAdminMailboxLimitAcceptedFromDomains(Boolean(settings.acceptedFromDomains.trim()));
+    setAdminMailboxAutoDeleteEnabled(settings.autoDeleteAfterDays > 0);
+  }
+
+  async function handleSaveAdminMailboxSettings() {
+    try {
+      setSettingsSaving(true);
+      const saved = await updateAdminMailboxSettings(
+        adminMailboxEnabled
+          ? buildSettingsPayload(adminMailboxDraft, {
+              limitAllowedRemoteIps: adminMailboxLimitRemoteIps,
+              limitAcceptedRcptDomains: adminMailboxLimitAcceptedRcptDomains,
+              limitAcceptedFromDomains: adminMailboxLimitAcceptedFromDomains,
+              autoDeleteEnabled: adminMailboxAutoDeleteEnabled
+            })
+          : emptySettings
+      );
+      const normalized = normalizeSettingsDraft(saved);
+      setAdminMailboxDraft(normalized);
+      applyAdminMailboxToggles(normalized);
+      setSettingsNotice("Admin mailbox settings saved.");
+      setSettingsError(null);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : "Failed to save admin mailbox settings");
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
+  async function handleCreateUserWithCredentials() {
+    try {
+      setSettingsSaving(true);
+      const savedUser = await createUser({
+        username: managedUsername.trim(),
+        password: managedPassword,
+        settings: emptySettings
+      });
+
+      const users = await fetchUsers();
+      setManagedUsers(users);
+      setSelectedManagedUserId(savedUser.id);
+      applyManagedUserDraft(savedUser);
+      setCreateUserOpen(false);
+      setSettingsNotice("User created. Configure delivery policies on the right.");
+      setSettingsError(null);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : "Failed to create user");
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
+  async function handleDeleteManagedUser() {
+    if (!selectedManagedUserId) {
+      return;
+    }
+    try {
+      setSettingsSaving(true);
+      await deleteUser(selectedManagedUserId);
+      const users = await fetchUsers();
+      setManagedUsers(users);
+      if (users.length > 0) {
+        setSelectedManagedUserId(users[0].id);
+        applyManagedUserDraft(users[0]);
+      } else {
+        setSelectedManagedUserId(null);
+        applyManagedUserDraft(null);
+      }
+      setSettingsNotice("User deleted.");
+      setSettingsError(null);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : "Failed to delete user");
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
+  function handleCreateManagedUser() {
+    setCreateUserOpen(true);
+    setSelectedManagedUserId(null);
+    applyManagedUserDraft(null);
+    setSettingsNotice(null);
+    setSettingsError(null);
   }
 
   async function handleCopyHeaderValue(headerKey: string, value: string) {
@@ -496,7 +714,7 @@ export function App() {
         </div>
 
         <div className="sidebarFooter">
-          {settingsLoaded && currentSettings.mailFailEnabled ? (
+          {!session?.isAdmin && settingsLoaded && currentSettings.mailFailEnabled ? (
             <div className="sidebarNotice">
               <span className="statusDot" aria-hidden="true" />
               <span>MailFail enabled for this user</span>
@@ -657,8 +875,8 @@ export function App() {
             <section className="settingsPanel" onClick={(event) => event.stopPropagation()}>
               <div className="settingsPanelHeader">
                 <div>
-                  <p className="eyebrow">Runtime settings</p>
-                  <h2>Settings</h2>
+                  <p className="eyebrow">{session?.isAdmin ? "Admin area" : "User settings"}</p>
+                  <h2>{session?.isAdmin ? "Users" : "Settings"}</h2>
                 </div>
                 <button className="ghostButton compactButton" onClick={() => setSettingsOpen(false)}>
                   Close
@@ -666,7 +884,9 @@ export function App() {
               </div>
 
               <p className="settingsLead">
-                These settings are persisted in SQLite and applied live without a restart.
+                {session?.isAdmin
+                  ? "Manage local users and their delivery policies."
+                  : "These settings are persisted in SQLite and applied live without a restart."}
               </p>
 
               {settingsLoading ? <p className="emptyState">Loading settings...</p> : null}
@@ -674,36 +894,396 @@ export function App() {
               {settingsNotice ? <div className="settingsNotice">{settingsNotice}</div> : null}
 
               {!settingsLoading ? (
-                <div className="settingsGrid">
-                  <div className="settingsField toggleField">
-                    <span>Allowed origins</span>
-                    <label className="toggleRow">
-                      <input type="checkbox" checked={limitAllowedOrigins} onChange={(event) => setLimitAllowedOrigins(event.target.checked)} />
-                      <span>Restrict cross-origin browser access</span>
-                    </label>
-                    {limitAllowedOrigins ? (
-                      <textarea
-                        rows={3}
-                        value={settingsDraft.allowedOrigins}
-                        onChange={(event) => updateSettingsField("allowedOrigins", event.target.value)}
-                      />
-                    ) : null}
-                    <small>Comma-separated origins for cross-origin browser access.</small>
-                  </div>
+                session?.isAdmin ? (
+                  <div className="adminSettingsLayout">
+                    <section className="settingsField platformSettingsCard">
+                      <div className="adminSectionHeader">
+                        <span>Platform settings</span>
+                      </div>
+                      <div className="platformSettingsRow">
+                        <label className="settingsField nestedSettingsField">
+                          <span>Allowed origins</span>
+                          <textarea
+                            rows={3}
+                            value={globalSettingsDraft.allowedOrigins}
+                            onChange={(event) =>
+                              setGlobalSettingsDraft((current) => ({
+                                ...current,
+                                allowedOrigins: event.target.value
+                              }))
+                            }
+                          />
+                          <small>Instance-wide CORS allow-list. Applies to all users.</small>
+                        </label>
+                        <div className="settingsField nestedSettingsField platformToggleCard">
+                          <span>Verbose SMTP logging</span>
+                          <label className="toggleRow">
+                            <input
+                              type="checkbox"
+                              checked={globalSettingsDraft.smtpLogVerbose}
+                              onChange={(event) =>
+                                setGlobalSettingsDraft((current) => ({
+                                  ...current,
+                                  smtpLogVerbose: event.target.checked
+                                }))
+                              }
+                            />
+                            <span>Enable verbose SMTP logging for the whole instance</span>
+                          </label>
+                          <small>Applies to all SMTP sessions on this MailTail instance.</small>
+                        </div>
+                      </div>
+                      <div className="platformSettingsActions">
+                        <button className="ghostButton compactButton" disabled={settingsSaving} onClick={() => void handleSaveGlobalSettings()}>
+                          Save platform settings
+                        </button>
+                      </div>
+                    </section>
 
-                  <div className="settingsField toggleField">
-                    <span>Verbose SMTP logging</span>
-                    <label className="toggleRow">
-                      <input
-                        type="checkbox"
-                        checked={settingsDraft.smtpLogVerbose}
-                        onChange={(event) => updateSettingsField("smtpLogVerbose", event.target.checked)}
-                      />
-                      <span>Enable per-command SMTP logging</span>
-                    </label>
-                    <small>Logs each SMTP command step instead of only accepted messages and rejects.</small>
-                  </div>
+                    <section className="settingsField platformSettingsCard">
+                      <div className="adminSectionHeader">
+                        <div>
+                          <span>Admin mailbox</span>
+                          <p className="adminEditorLead">Use this if the env admin should also receive and retain mail.</p>
+                        </div>
+                        <button className="ghostButton compactButton" disabled={settingsSaving} onClick={() => void handleSaveAdminMailboxSettings()}>
+                          Save admin mailbox
+                        </button>
+                      </div>
 
+                      <label className="toggleRow">
+                        <input
+                          type="checkbox"
+                          checked={adminMailboxEnabled}
+                          onChange={(event) => setAdminMailboxEnabled(event.target.checked)}
+                        />
+                        <span>Enable admin mailbox policies</span>
+                      </label>
+
+                      {adminMailboxEnabled ? (
+                        <div className="settingsGrid adminMailboxGrid">
+                          <div className="settingsField toggleField">
+                            <span>MailFail enabled</span>
+                            <label className="toggleRow">
+                              <input
+                                type="checkbox"
+                                checked={adminMailboxDraft.mailFailEnabled}
+                                onChange={(event) =>
+                                  setAdminMailboxDraft((current) => ({
+                                    ...current,
+                                    mailFailEnabled: event.target.checked,
+                                    mailFailRulesFile:
+                                      event.target.checked && !current.mailFailRulesFile.trim()
+                                        ? defaultMailFailRulesFile
+                                        : current.mailFailRulesFile
+                                  }))
+                                }
+                              />
+                              <span>Enable MailFail rule evaluation</span>
+                            </label>
+                          </div>
+
+                          {adminMailboxDraft.mailFailEnabled ? (
+                            <label className="settingsField">
+                              <span>MailFail rules file</span>
+                              <input
+                                value={adminMailboxDraft.mailFailRulesFile}
+                                onChange={(event) =>
+                                  setAdminMailboxDraft((current) => ({
+                                    ...current,
+                                    mailFailRulesFile: event.target.value
+                                  }))
+                                }
+                                placeholder={defaultMailFailRulesFile}
+                              />
+                              <small>Defaults to {defaultMailFailRulesFile} unless you override it.</small>
+                            </label>
+                          ) : null}
+
+                          <div className="settingsField toggleField">
+                            <span>Allowed remote IPs</span>
+                            <label className="toggleRow">
+                              <input
+                                type="checkbox"
+                                checked={adminMailboxLimitRemoteIps}
+                                onChange={(event) => setAdminMailboxLimitRemoteIps(event.target.checked)}
+                              />
+                              <span>Restrict SMTP connections to specific IPs or CIDRs</span>
+                            </label>
+                            {adminMailboxLimitRemoteIps ? (
+                              <textarea
+                                rows={3}
+                                value={adminMailboxDraft.allowedRemoteIps}
+                                onChange={(event) =>
+                                  setAdminMailboxDraft((current) => ({
+                                    ...current,
+                                    allowedRemoteIps: event.target.value
+                                  }))
+                                }
+                              />
+                            ) : null}
+                          </div>
+
+                          <div className="settingsField toggleField">
+                            <span>Accepted recipient domains</span>
+                            <label className="toggleRow">
+                              <input
+                                type="checkbox"
+                                checked={adminMailboxLimitAcceptedRcptDomains}
+                                onChange={(event) => setAdminMailboxLimitAcceptedRcptDomains(event.target.checked)}
+                              />
+                              <span>Restrict accepted recipient domains</span>
+                            </label>
+                            {adminMailboxLimitAcceptedRcptDomains ? (
+                              <textarea
+                                rows={3}
+                                value={adminMailboxDraft.acceptedRcptDomains}
+                                onChange={(event) =>
+                                  setAdminMailboxDraft((current) => ({
+                                    ...current,
+                                    acceptedRcptDomains: event.target.value
+                                  }))
+                                }
+                              />
+                            ) : null}
+                          </div>
+
+                          <div className="settingsField toggleField">
+                            <span>Accepted sender domains</span>
+                            <label className="toggleRow">
+                              <input
+                                type="checkbox"
+                                checked={adminMailboxLimitAcceptedFromDomains}
+                                onChange={(event) => setAdminMailboxLimitAcceptedFromDomains(event.target.checked)}
+                              />
+                              <span>Restrict accepted sender domains</span>
+                            </label>
+                            {adminMailboxLimitAcceptedFromDomains ? (
+                              <textarea
+                                rows={3}
+                                value={adminMailboxDraft.acceptedFromDomains}
+                                onChange={(event) =>
+                                  setAdminMailboxDraft((current) => ({
+                                    ...current,
+                                    acceptedFromDomains: event.target.value
+                                  }))
+                                }
+                              />
+                            ) : null}
+                          </div>
+
+                          <div className="settingsField toggleField">
+                            <span>Automatic message deletion</span>
+                            <label className="toggleRow">
+                              <input
+                                type="checkbox"
+                                checked={adminMailboxAutoDeleteEnabled}
+                                onChange={(event) => setAdminMailboxAutoDeleteEnabled(event.target.checked)}
+                              />
+                              <span>Automatically delete old messages</span>
+                            </label>
+                            {adminMailboxAutoDeleteEnabled ? (
+                              <label className="settingsInlineField">
+                                <span>Delete after</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  step={1}
+                                  value={adminMailboxDraft.autoDeleteAfterDays > 0 ? adminMailboxDraft.autoDeleteAfterDays : defaultAutoDeleteDays}
+                                  onChange={(event) =>
+                                    setAdminMailboxDraft((current) => ({
+                                      ...current,
+                                      autoDeleteAfterDays: Math.max(
+                                        1,
+                                        Number.parseInt(event.target.value || String(defaultAutoDeleteDays), 10)
+                                      )
+                                    }))
+                                  }
+                                />
+                                <span>days</span>
+                              </label>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <div className="adminUserLayout">
+                      <section className="settingsField adminUsersCard">
+                        <div className="adminSectionHeader">
+                          <span>Users</span>
+                          <button className="ghostButton compactButton" onClick={handleCreateManagedUser}>
+                            Create user
+                          </button>
+                        </div>
+                        <div className="adminUserList">
+                          {managedUsers.length > 0 ? (
+                            managedUsers.map((user) => (
+                              <button
+                                key={user.id}
+                                className={user.id === selectedManagedUserId ? "messageItem active adminUserItem" : "messageItem adminUserItem"}
+                                onClick={() => {
+                                  setSelectedManagedUserId(user.id);
+                                  applyManagedUserDraft(user);
+                                }}
+                              >
+                                <strong>{user.username}</strong>
+                                <span className="mutedText">{user.settings.acceptedRcptDomains || "No recipient filter"}</span>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="emptyListCard">
+                              <strong>No users yet</strong>
+                              <p>Create the first local user on the right.</p>
+                            </div>
+                          )}
+                        </div>
+                      </section>
+
+                      <section className="settingsField adminEditorCard">
+                        <div className="adminSectionHeader">
+                          <div>
+                            <span>{selectedManagedUserId ? "Edit user" : "User policies"}</span>
+                            <p className="adminEditorLead">
+                              {selectedManagedUserId ? "Update login and delivery policy for this user." : "Select a user on the left or create a new one first."}
+                            </p>
+                          </div>
+                          {selectedManagedUserId ? (
+                            <button className="dangerButton compactButton" disabled={settingsSaving} onClick={() => void handleSaveManagedUser()}>
+                              {settingsSaving ? "Saving..." : "Save user"}
+                            </button>
+                          ) : null}
+                        </div>
+
+                        {selectedManagedUserId ? (
+                        <div className="settingsGrid adminEditorGrid">
+                          <label className="settingsField">
+                            <span>Username</span>
+                            <input value={managedUsername} onChange={(event) => setManagedUsername(event.target.value)} />
+                            <small>Local username used for login.</small>
+                          </label>
+                          <label className="settingsField">
+                            <span>{selectedManagedUserId ? "New password" : "Password"}</span>
+                            <input
+                              type="password"
+                              value={managedPassword}
+                              onChange={(event) => setManagedPassword(event.target.value)}
+                              placeholder={selectedManagedUserId ? "Leave empty to keep the current password" : ""}
+                            />
+                            <small>{selectedManagedUserId ? "Optional on update." : "Required when creating a user."}</small>
+                          </label>
+
+                          <div className="settingsField toggleField">
+                            <span>MailFail enabled</span>
+                            <label className="toggleRow">
+                              <input
+                                type="checkbox"
+                                checked={settingsDraft.mailFailEnabled}
+                                onChange={(event) => handleToggleMailFail(event.target.checked)}
+                              />
+                              <span>Enable MailFail rule evaluation</span>
+                            </label>
+                            <small>Turns MailFail rule evaluation on for incoming SMTP sessions.</small>
+                          </div>
+
+                          {settingsDraft.mailFailEnabled ? (
+                            <label className="settingsField">
+                              <span>MailFail rules file</span>
+                              <input
+                                value={settingsDraft.mailFailRulesFile}
+                                onChange={(event) => updateSettingsField("mailFailRulesFile", event.target.value)}
+                                placeholder={defaultMailFailRulesFile}
+                              />
+                              <small>Defaults to {defaultMailFailRulesFile} unless you override it.</small>
+                            </label>
+                          ) : null}
+
+                          <div className="settingsField toggleField">
+                            <span>Allowed remote IPs</span>
+                            <label className="toggleRow">
+                              <input type="checkbox" checked={limitAllowedRemoteIps} onChange={(event) => setLimitAllowedRemoteIps(event.target.checked)} />
+                              <span>Restrict SMTP connections to specific IPs or CIDRs</span>
+                            </label>
+                            {limitAllowedRemoteIps ? (
+                              <textarea
+                                rows={3}
+                                value={settingsDraft.allowedRemoteIps}
+                                onChange={(event) => updateSettingsField("allowedRemoteIps", event.target.value)}
+                              />
+                            ) : null}
+                            <small>Comma-separated IPs or CIDR ranges allowed to connect via SMTP.</small>
+                          </div>
+
+                          <div className="settingsField toggleField">
+                            <span>Accepted recipient domains</span>
+                            <label className="toggleRow">
+                              <input type="checkbox" checked={limitAcceptedRcptDomains} onChange={(event) => setLimitAcceptedRcptDomains(event.target.checked)} />
+                              <span>Restrict accepted recipient domains</span>
+                            </label>
+                            {limitAcceptedRcptDomains ? (
+                              <textarea
+                                rows={3}
+                                value={settingsDraft.acceptedRcptDomains}
+                                onChange={(event) => updateSettingsField("acceptedRcptDomains", event.target.value)}
+                              />
+                            ) : null}
+                            <small>Comma-separated recipient domains or regex patterns to accept.</small>
+                          </div>
+
+                          <div className="settingsField toggleField">
+                            <span>Accepted sender domains</span>
+                            <label className="toggleRow">
+                              <input type="checkbox" checked={limitAcceptedFromDomains} onChange={(event) => setLimitAcceptedFromDomains(event.target.checked)} />
+                              <span>Restrict accepted sender domains</span>
+                            </label>
+                            {limitAcceptedFromDomains ? (
+                              <textarea
+                                rows={3}
+                                value={settingsDraft.acceptedFromDomains}
+                                onChange={(event) => updateSettingsField("acceptedFromDomains", event.target.value)}
+                              />
+                            ) : null}
+                            <small>Comma-separated sender domains or regex patterns to accept.</small>
+                          </div>
+
+                          <div className="settingsField toggleField">
+                            <span>Automatic message deletion</span>
+                            <label className="toggleRow">
+                              <input type="checkbox" checked={autoDeleteEnabled} onChange={(event) => handleToggleAutoDelete(event.target.checked)} />
+                              <span>Automatically delete old messages</span>
+                            </label>
+                            {autoDeleteEnabled ? (
+                              <label className="settingsInlineField">
+                                <span>Delete after</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  step={1}
+                                  value={settingsDraft.autoDeleteAfterDays > 0 ? settingsDraft.autoDeleteAfterDays : defaultAutoDeleteDays}
+                                  onChange={(event) =>
+                                    updateSettingsField(
+                                      "autoDeleteAfterDays",
+                                      Math.max(1, Number.parseInt(event.target.value || String(defaultAutoDeleteDays), 10))
+                                    )
+                                  }
+                                />
+                                <span>days</span>
+                              </label>
+                            ) : null}
+                            <small>Deletes messages after the configured number of days.</small>
+                          </div>
+                        </div>
+                        ) : (
+                          <div className="emptyListCard adminEditorEmpty">
+                            <strong>No user selected</strong>
+                            <p>Create a user from the left column, then edit delivery policies here.</p>
+                          </div>
+                        )}
+                      </section>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="settingsGrid">
                   <div className="settingsField toggleField">
                     <span>MailFail enabled</span>
                     <label className="toggleRow">
@@ -803,15 +1383,63 @@ export function App() {
                     ) : null}
                     <small>Deletes messages after the configured number of days.</small>
                   </div>
-                </div>
+                  </div>
+                )
               ) : null}
 
               <div className="settingsActions">
+                {session?.isAdmin && selectedManagedUserId ? (
+                  <button className="ghostButton compactButton" disabled={settingsSaving} onClick={() => void handleDeleteManagedUser()}>
+                    Delete user
+                  </button>
+                ) : null}
                 <button className="ghostButton compactButton" onClick={() => setSettingsOpen(false)}>
                   Cancel
                 </button>
-                <button className="dangerButton compactButton" disabled={settingsLoading || settingsSaving} onClick={() => void handleSaveSettings()}>
-                  {settingsSaving ? "Saving..." : "Save settings"}
+                {!session?.isAdmin ? (
+                  <button className="dangerButton compactButton" disabled={settingsLoading || settingsSaving} onClick={() => void handleSaveSettings()}>
+                    {settingsSaving ? "Saving..." : "Save settings"}
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {settingsOpen && session?.isAdmin && createUserOpen ? (
+          <div className="settingsOverlay nestedOverlay" onClick={() => setCreateUserOpen(false)}>
+            <section className="createUserDialog" onClick={(event) => event.stopPropagation()}>
+              <div className="settingsPanelHeader">
+                <div>
+                  <p className="eyebrow">Admin area</p>
+                  <h2>Create user</h2>
+                </div>
+                <button className="ghostButton compactButton" onClick={() => setCreateUserOpen(false)}>
+                  Close
+                </button>
+              </div>
+
+              <p className="settingsLead">Create a local user first. Delivery policies can be edited right after creation.</p>
+
+              <div className="settingsGrid createUserGrid">
+                <label className="settingsField">
+                  <span>Username</span>
+                  <input value={managedUsername} onChange={(event) => setManagedUsername(event.target.value)} />
+                  <small>Local username used for login.</small>
+                </label>
+                <label className="settingsField">
+                  <span>Password</span>
+                  <input type="password" value={managedPassword} onChange={(event) => setManagedPassword(event.target.value)} />
+                  <small>Required when creating a user.</small>
+                </label>
+              </div>
+
+              <div className="settingsActions">
+                <button className="ghostButton compactButton" onClick={() => setCreateUserOpen(false)}>
+                  Cancel
+                </button>
+                <button className="dangerButton compactButton" disabled={settingsSaving} onClick={() => void handleCreateUserWithCredentials()}>
+                  {settingsSaving ? "Creating..." : "Create user"}
                 </button>
               </div>
             </section>
@@ -886,7 +1514,6 @@ function normalizeSettingsDraft(settings: AppSettings): AppSettings {
 function buildSettingsPayload(
   settings: AppSettings,
   toggles: {
-    limitAllowedOrigins: boolean;
     limitAllowedRemoteIps: boolean;
     limitAcceptedRcptDomains: boolean;
     limitAcceptedFromDomains: boolean;
@@ -895,7 +1522,8 @@ function buildSettingsPayload(
 ): AppSettings {
   return {
     ...settings,
-    allowedOrigins: toggles.limitAllowedOrigins ? settings.allowedOrigins : "",
+    allowedOrigins: "",
+    smtpLogVerbose: false,
     mailFailRulesFile: settings.mailFailEnabled ? settings.mailFailRulesFile.trim() || defaultMailFailRulesFile : defaultMailFailRulesFile,
     allowedRemoteIps: toggles.limitAllowedRemoteIps ? settings.allowedRemoteIps : "",
     acceptedRcptDomains: toggles.limitAcceptedRcptDomains ? settings.acceptedRcptDomains : "",

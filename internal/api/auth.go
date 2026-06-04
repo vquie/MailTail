@@ -71,7 +71,12 @@ func (a *SessionAuth) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		principal := models.SessionPrincipal{
+			Username: record.Username,
+			IsAdmin:  record.IsAdmin,
+			UserID:   record.UserID,
+		}
+		next.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), principal)))
 	})
 }
 
@@ -94,7 +99,29 @@ func (a *SessionAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
-	if !a.credentialsMatch(username, password) {
+	sessionUsername := username
+	userID := int64(0)
+	isAdmin := false
+	switch {
+	case a.adminCredentialsMatch(username, password):
+		sessionUsername = a.config.Username
+		isAdmin = true
+	default:
+		credentials, ok, err := a.store.GetUserByUsername(r.Context(), username)
+		if err != nil {
+			http.Error(w, "Failed to process login", http.StatusInternalServerError)
+			return
+		}
+		if !ok || !verifyPassword(password, credentials.PasswordHash) {
+			_ = a.recordLoginAttempt(r)
+			a.serveLoginPage(w, "Invalid username or password.")
+			return
+		}
+		sessionUsername = credentials.User.Username
+		userID = credentials.User.ID
+	}
+
+	if !isAdmin && userID == 0 {
 		_ = a.recordLoginAttempt(r)
 		a.serveLoginPage(w, "Invalid username or password.")
 		return
@@ -119,7 +146,9 @@ func (a *SessionAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	if err := a.store.CreateAuthSession(r.Context(), models.AuthSession{
 		SessionID: sessionID,
-		Username:  a.config.Username,
+		Username:  sessionUsername,
+		UserID:    userID,
+		IsAdmin:   isAdmin,
 		CSRFToken: csrfToken,
 		ExpiresAt: expiresAt,
 	}); err != nil {
@@ -168,7 +197,7 @@ func (a *SessionAuth) sessionIDFromRequest(r *http.Request) (string, bool) {
 	return cookie.Value, true
 }
 
-func (a *SessionAuth) credentialsMatch(username, password string) bool {
+func (a *SessionAuth) adminCredentialsMatch(username, password string) bool {
 	usernameMatch := subtle.ConstantTimeCompare([]byte(a.config.Username), []byte(username)) == 1
 	passwordMatch := subtle.ConstantTimeCompare([]byte(a.config.Password), []byte(password)) == 1
 	return usernameMatch && passwordMatch

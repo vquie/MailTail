@@ -21,6 +21,7 @@ type Server struct {
 	service    *Service
 	logger     *log.Logger
 	staticDir  string
+	authConfig AuthConfig
 }
 
 type CORSConfig struct {
@@ -37,11 +38,16 @@ func NewServer(addr, staticDir string, service *Service, logger *log.Logger, sto
 		service:   service,
 		logger:    logger,
 		staticDir: staticDir,
+		authConfig: authConfig,
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/app", server.handleAppInfo)
+	mux.HandleFunc("/api/session", server.handleSession)
 	mux.HandleFunc("/api/settings", server.handleSettings)
+	mux.HandleFunc("/api/admin/mailbox-settings", server.handleAdminMailboxSettings)
+	mux.HandleFunc("/api/admin/users", server.handleAdminUsers)
+	mux.HandleFunc("/api/admin/users/", server.handleAdminUserByID)
 	mux.HandleFunc("/api/messages", server.handleMessages)
 	mux.HandleFunc("/api/messages/", server.handleMessageByID)
 	mux.HandleFunc("/api/stats", server.handleStats)
@@ -68,6 +74,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
+	principal := currentPrincipal(r.Context())
 	switch r.Method {
 	case http.MethodGet:
 		limit, err := parseMessagePageSize(r)
@@ -77,6 +84,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		page, err := s.service.ListMessages(
 			r.Context(),
+			principal,
 			r.URL.Query().Get("q"),
 			r.URL.Query().Get("cursor"),
 			limit,
@@ -91,7 +99,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, page)
 	case http.MethodDelete:
-		if err := s.service.DeleteAllMessages(r.Context()); err != nil {
+		if err := s.service.DeleteAllMessages(r.Context(), principal); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -160,9 +168,10 @@ func (s *Server) handleMessageByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMessageResource(w http.ResponseWriter, r *http.Request, id int64) {
+	principal := currentPrincipal(r.Context())
 	switch r.Method {
 	case http.MethodGet:
-		message, err := s.service.GetMessage(r.Context(), id)
+		message, err := s.service.GetMessage(r.Context(), principal, id)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				writeError(w, http.StatusNotFound, "message not found")
@@ -173,7 +182,7 @@ func (s *Server) handleMessageResource(w http.ResponseWriter, r *http.Request, i
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"message": message})
 	case http.MethodDelete:
-		if err := s.service.DeleteMessage(r.Context(), id); err != nil {
+		if err := s.service.DeleteMessage(r.Context(), principal, id); err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				writeError(w, http.StatusNotFound, "message not found")
 				return
@@ -192,7 +201,7 @@ func (s *Server) handleRawMessage(w http.ResponseWriter, r *http.Request, id int
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	raw, err := s.service.GetRawMessage(r.Context(), id)
+	raw, err := s.service.GetRawMessage(r.Context(), currentPrincipal(r.Context()), id)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "message not found")
@@ -210,7 +219,7 @@ func (s *Server) handleAttachment(w http.ResponseWriter, r *http.Request, messag
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	attachment, content, err := s.service.GetAttachment(r.Context(), messageID, attachmentID)
+	attachment, content, err := s.service.GetAttachment(r.Context(), currentPrincipal(r.Context()), messageID, attachmentID)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "attachment not found")
@@ -230,7 +239,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	stats, err := s.service.Stats(r.Context())
+	stats, err := s.service.Stats(r.Context(), currentPrincipal(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -246,10 +255,24 @@ func (s *Server) handleAppInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.service.AppInfo())
 }
 
+func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"session": s.service.Session(currentPrincipal(r.Context()))})
+}
+
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	principal := currentPrincipal(r.Context())
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]any{"settings": s.service.Settings()})
+		settings, err := s.service.Settings(r.Context(), principal)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
 	case http.MethodPut:
 		var payload struct {
 			Settings models.AppSettings `json:"settings"`
@@ -259,12 +282,139 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		settings, err := s.service.UpdateSettings(r.Context(), payload.Settings)
+		settings, err := s.service.UpdateSettings(r.Context(), principal, payload.Settings)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
+	principal := currentPrincipal(r.Context())
+	if !principal.IsAdmin {
+		writeError(w, http.StatusForbidden, "admin access required")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		users, err := s.service.ListUsers(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"users": users})
+	case http.MethodPost:
+		var payload struct {
+			Username string             `json:"username"`
+			Password string             `json:"password"`
+			Settings models.AppSettings `json:"settings"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid user payload")
+			return
+		}
+		user, err := s.service.CreateUser(r.Context(), payload.Username, payload.Password, payload.Settings, s.authConfig.Username)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, ErrReservedUsername) || errors.Is(err, ErrUsernameExists) {
+				status = http.StatusConflict
+			}
+			writeError(w, status, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{"user": user})
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleAdminMailboxSettings(w http.ResponseWriter, r *http.Request) {
+	principal := currentPrincipal(r.Context())
+	if !principal.IsAdmin {
+		writeError(w, http.StatusForbidden, "admin access required")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		settings, err := s.service.AdminMailboxSettings(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
+	case http.MethodPut:
+		var payload struct {
+			Settings models.AppSettings `json:"settings"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid settings payload")
+			return
+		}
+		settings, err := s.service.UpdateAdminMailboxSettings(r.Context(), payload.Settings)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request) {
+	principal := currentPrincipal(r.Context())
+	if !principal.IsAdmin {
+		writeError(w, http.StatusForbidden, "admin access required")
+		return
+	}
+
+	idValue := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/users/"), "/")
+	userID, err := strconv.ParseInt(idValue, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPut:
+		var payload struct {
+			Username string             `json:"username"`
+			Password string             `json:"password"`
+			Settings models.AppSettings `json:"settings"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid user payload")
+			return
+		}
+		user, err := s.service.UpdateUser(r.Context(), userID, payload.Username, payload.Password, payload.Settings, s.authConfig.Username)
+		if err != nil {
+			status := http.StatusBadRequest
+			switch {
+			case errors.Is(err, storage.ErrNotFound):
+				status = http.StatusNotFound
+			case errors.Is(err, ErrReservedUsername), errors.Is(err, ErrUsernameExists):
+				status = http.StatusConflict
+			}
+			writeError(w, status, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"user": user})
+	case http.MethodDelete:
+		if err := s.service.DeleteUser(r.Context(), userID); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, storage.ErrNotFound) {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}

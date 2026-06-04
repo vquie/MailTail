@@ -4,6 +4,7 @@ import "time"
 
 type Message struct {
 	ID          int64        `json:"id"`
+	OwnerUserID int64        `json:"ownerUserId,omitempty"`
 	ReceivedAt  time.Time    `json:"receivedAt"`
 	MailFrom    string       `json:"mailFrom"`
 	RcptTo      []string     `json:"rcptTo"`
@@ -37,6 +38,8 @@ type Attachment struct {
 }
 
 type StoredMessage struct {
+	OwnerUserID int64
+	ExpiresAt   *time.Time
 	ReceivedAt  time.Time
 	MailFrom    string
 	RcptTo      []string
@@ -64,9 +67,11 @@ type StoredAttachment struct {
 }
 
 type MessageFilter struct {
-	Query  string
-	Limit  int
-	Cursor string
+	Query       string
+	Limit       int
+	Cursor      string
+	OwnerUserID int64
+	IncludeAll  bool
 }
 
 type MessagePage struct {
@@ -96,9 +101,30 @@ type AppSettings struct {
 	AutoDeleteAfterDays int    `json:"autoDeleteAfterDays"`
 }
 
+type User struct {
+	ID        int64       `json:"id"`
+	Username  string      `json:"username"`
+	Settings  AppSettings `json:"settings"`
+	CreatedAt time.Time   `json:"createdAt,omitempty"`
+	UpdatedAt time.Time   `json:"updatedAt,omitempty"`
+}
+
+type UserCredentials struct {
+	User         User
+	PasswordHash string
+}
+
+type SessionPrincipal struct {
+	Username string `json:"username"`
+	IsAdmin  bool   `json:"isAdmin"`
+	UserID   int64  `json:"userId,omitempty"`
+}
+
 type AuthSession struct {
 	SessionID string
 	Username  string
+	UserID    int64
+	IsAdmin   bool
 	CSRFToken string
 	ExpiresAt time.Time
 }
