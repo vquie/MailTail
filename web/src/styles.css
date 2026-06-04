@@ -832,14 +832,17 @@ textarea {
 .adminUsersCard {
   min-height: 100%;
   align-content: start;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .adminEditorCard {
   gap: 12px;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .adminEditorEmpty {
   min-height: 220px;
+  height: 100%;
   display: grid;
   align-content: center;
 }
@@ -863,6 +866,14 @@ textarea {
   gap: 8px;
   max-height: 320px;
   overflow: auto;
+  min-height: 220px;
+  align-content: start;
+}
+
+.adminUserList > .emptyListCard {
+  min-height: 220px;
+  height: 100%;
+  align-content: center;
 }
 
 .adminUserItem {
