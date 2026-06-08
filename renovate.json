@@ -14,5 +14,6 @@
   "vulnerabilityAlerts": {
     "addLabels": ["security"]
   },
+  "osvVulnerabilityAlerts": true,
   "dependencyDashboardOSVVulnerabilitySummary": "all"
 }
