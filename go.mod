@@ -2,7 +2,7 @@ module github.com/vquie/MailTail
 
 go 1.25.0
 
-require modernc.org/sqlite v1.51.0
+require modernc.org/sqlite v1.52.0
 require go.yaml.in/yaml/v3 v3.0.4
 
 require (
