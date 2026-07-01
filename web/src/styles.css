@@ -726,6 +726,16 @@ select {
   gap: 16px;
 }
 
+.settingsPageShell {
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  gap: 18px;
+}
+
 .settingsPageOverlay .settingsPanel {
   width: 100%;
   max-height: none;
@@ -740,11 +750,69 @@ select {
   gap: 12px;
 }
 
+.settingsPageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.settingsPageTitle {
+  display: grid;
+  gap: 8px;
+}
+
+.settingsPageTitle h2,
+.settingsCardHeader h3 {
+  margin: 0;
+}
+
+.settingsPageToolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .settingsLead,
 .settingsField small {
   margin: 0;
   color: rgb(248 243 234 / 70%);
   line-height: 1.5;
+}
+
+.settingsTabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+}
+
+.settingsTabButton {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: rgb(248 243 234 / 72%);
+  padding: 10px 2px;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease;
+}
+
+.settingsTabButton.active {
+  color: #f8f3ea;
+  border-bottom-color: #f0b36f;
+}
+
+.settingsCardGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.settingsCardGridAdmin {
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
 }
 
 .settingsGrid {
@@ -760,6 +828,35 @@ select {
   border: 1px solid rgb(255 255 255 / 8%);
   border-radius: 8px;
   background: rgb(255 255 255 / 4%);
+}
+
+.settingsCard {
+  gap: 14px;
+  align-content: start;
+}
+
+.settingsCardPrimary {
+  min-height: 100%;
+}
+
+.settingsCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settingsCardLead {
+  margin: 4px 0 0;
+  color: rgb(248 243 234 / 68%);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.settingsCardBody {
+  display: grid;
+  gap: 14px;
 }
 
 .settingsField > span {
@@ -898,6 +995,62 @@ select {
 
 .platformSettingsCard {
   gap: 12px;
+}
+
+.settingsStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settingsStat {
+  padding: 14px 12px;
+  border-radius: 8px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 2.5%);
+  display: grid;
+  gap: 8px;
+}
+
+.settingsStat span {
+  color: rgb(248 243 234 / 62%);
+  font-size: 0.82rem;
+}
+
+.settingsStat strong {
+  font-size: 1rem;
+}
+
+.settingsDefinitionList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.settingsDefinitionList div {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgb(255 255 255 / 6%);
+}
+
+.settingsDefinitionList div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.settingsDefinitionList dt,
+.settingsDefinitionList dd {
+  margin: 0;
+}
+
+.settingsDefinitionList dt {
+  color: rgb(248 243 234 / 62%);
+}
+
+.settingsDefinitionList dd {
+  color: #dce7f9;
 }
 
 .platformSettingsRow {
@@ -1061,11 +1214,14 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .settingsCardGrid,
+  .settingsCardGridAdmin,
   .platformSettingsRow,
   .adminUserLayout,
   .mailFailManagerLayout,
   .createUserGrid,
-  .adminMailboxGrid {
+  .adminMailboxGrid,
+  .settingsStatsGrid {
     grid-template-columns: 1fr;
   }
 }
@@ -1135,6 +1291,12 @@ select {
 
   .settingsOverlay {
     padding: 12px;
+  }
+
+  .settingsPageHeader,
+  .settingsCardHeader {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 
