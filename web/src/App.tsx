@@ -92,6 +92,8 @@ const emptyManagedUser = {
   password: ""
 };
 
+type FlashTone = "error" | "success";
+
 export function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -179,6 +181,18 @@ export function App() {
   useEffect(() => {
     hasMoreRef.current = hasMore;
   }, [hasMore]);
+
+  useEffect(() => {
+    if (!settingsNotice) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setSettingsNotice(null);
+    }, 4000);
+
+    return () => window.clearTimeout(timer);
+  }, [settingsNotice]);
 
   useEffect(() => {
     void loadSessionInfo();
@@ -347,8 +361,7 @@ export function App() {
     try {
       setSettingsOpen(true);
       setSettingsLoading(true);
-      setSettingsError(null);
-      setSettingsNotice(null);
+      clearSettingsFlash();
       if (session?.isAdmin) {
         const globalSettings = await fetchSettings();
         const adminMailboxSettings = await fetchAdminMailboxSettings();
@@ -389,6 +402,7 @@ export function App() {
 
     try {
       setSettingsSaving(true);
+      clearSettingsFlash();
       const saved = await updateSettings(buildSettingsPayload(settingsDraft, {
         limitAllowedRemoteIps,
         limitAcceptedRcptDomains,
@@ -399,10 +413,9 @@ export function App() {
       setSettingsDraft(normalized);
       setCurrentSettings(normalized);
       setSettingsLoaded(true);
-      setSettingsNotice("Saved. Changes are applied immediately.");
-      setSettingsError(null);
+      showSettingsNotice("Saved. Changes are applied immediately.");
     } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : "Failed to save settings");
+      showSettingsError(err instanceof Error ? err.message : "Failed to save settings");
     } finally {
       setSettingsSaving(false);
     }
@@ -426,6 +439,7 @@ export function App() {
   async function handleSaveManagedUser() {
     try {
       setSettingsSaving(true);
+      clearSettingsFlash();
       const payload = {
         username: managedUsername.trim(),
         password: managedPassword,
@@ -445,10 +459,9 @@ export function App() {
       setManagedUsers(users);
       setSelectedManagedUserId(savedUser.id);
       applyManagedUserDraft(savedUser);
-      setSettingsNotice(selectedManagedUserId ? "User updated." : "User created.");
-      setSettingsError(null);
+      showSettingsNotice(selectedManagedUserId ? "User updated." : "User created.");
     } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : "Failed to save user");
+      showSettingsError(err instanceof Error ? err.message : "Failed to save user");
     } finally {
       setSettingsSaving(false);
     }
@@ -457,16 +470,16 @@ export function App() {
   async function handleSaveGlobalSettings() {
     try {
       setSettingsSaving(true);
+      clearSettingsFlash();
       const saved = await updateSettings({
         ...emptySettings,
         allowedOrigins: globalSettingsDraft.allowedOrigins,
         smtpLogVerbose: globalSettingsDraft.smtpLogVerbose
       });
       setGlobalSettingsDraft(normalizeSettingsDraft(saved));
-      setSettingsNotice("Platform settings saved.");
-      setSettingsError(null);
+      showSettingsNotice("Platform settings saved.");
     } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : "Failed to save platform settings");
+      showSettingsError(err instanceof Error ? err.message : "Failed to save platform settings");
     } finally {
       setSettingsSaving(false);
     }
@@ -491,6 +504,7 @@ export function App() {
   async function handleSaveAdminMailboxSettings() {
     try {
       setSettingsSaving(true);
+      clearSettingsFlash();
       const saved = await updateAdminMailboxSettings(
         adminMailboxEnabled
           ? buildSettingsPayload(adminMailboxDraft, {
@@ -504,10 +518,9 @@ export function App() {
       const normalized = normalizeSettingsDraft(saved);
       setAdminMailboxDraft(normalized);
       applyAdminMailboxToggles(normalized);
-      setSettingsNotice("Admin mailbox settings saved.");
-      setSettingsError(null);
+      showSettingsNotice("Admin mailbox settings saved.");
     } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : "Failed to save admin mailbox settings");
+      showSettingsError(err instanceof Error ? err.message : "Failed to save admin mailbox settings");
     } finally {
       setSettingsSaving(false);
     }
@@ -516,6 +529,7 @@ export function App() {
   async function handleCreateUserWithCredentials() {
     try {
       setSettingsSaving(true);
+      clearSettingsFlash();
       const savedUser = await createUser({
         username: managedUsername.trim(),
         password: managedPassword,
@@ -527,10 +541,9 @@ export function App() {
       setSelectedManagedUserId(savedUser.id);
       applyManagedUserDraft(savedUser);
       setCreateUserOpen(false);
-      setSettingsNotice("User created. Configure delivery policies on the right.");
-      setSettingsError(null);
+      showSettingsNotice("User created. Configure delivery policies on the right.");
     } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : "Failed to create user");
+      showSettingsError(err instanceof Error ? err.message : "Failed to create user");
     } finally {
       setSettingsSaving(false);
     }
@@ -542,6 +555,7 @@ export function App() {
     }
     try {
       setSettingsSaving(true);
+      clearSettingsFlash();
       await deleteUser(selectedManagedUserId);
       const users = await fetchUsers();
       setManagedUsers(users);
@@ -552,21 +566,34 @@ export function App() {
         setSelectedManagedUserId(null);
         applyManagedUserDraft(null);
       }
-      setSettingsNotice("User deleted.");
-      setSettingsError(null);
+      showSettingsNotice("User deleted.");
     } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : "Failed to delete user");
+      showSettingsError(err instanceof Error ? err.message : "Failed to delete user");
     } finally {
       setSettingsSaving(false);
     }
+  }
+
+  function clearSettingsFlash() {
+    setSettingsError(null);
+    setSettingsNotice(null);
+  }
+
+  function showSettingsNotice(message: string) {
+    setSettingsError(null);
+    setSettingsNotice(message);
+  }
+
+  function showSettingsError(message: string) {
+    setSettingsNotice(null);
+    setSettingsError(message);
   }
 
   function handleCreateManagedUser() {
     setCreateUserOpen(true);
     setSelectedManagedUserId(null);
     applyManagedUserDraft(null);
-    setSettingsNotice(null);
-    setSettingsError(null);
+    clearSettingsFlash();
   }
 
   async function handleCopyHeaderValue(headerKey: string, value: string) {
@@ -605,7 +632,7 @@ export function App() {
       ...current,
       [key]: value
     }));
-    setSettingsNotice(null);
+    clearSettingsFlash();
   }
 
   function handleToggleMailFail(enabled: boolean) {
@@ -621,7 +648,7 @@ export function App() {
     } else {
       setSettingsDraft((current) => updater(current));
     }
-    setSettingsNotice(null);
+    clearSettingsFlash();
   }
 
   function currentScopedSettings(scope: MailFailSettingsScope): AppSettings {
@@ -691,11 +718,11 @@ export function App() {
   function handleSaveMailFailRule() {
     const normalizedRule = normalizeMailFailRuleDraft(mailFailRuleDraft);
     if (!normalizedRule.trigger) {
-      setSettingsError("MailFail rules require a trigger.");
+      showSettingsError("MailFail rules require a trigger.");
       return;
     }
     if (!normalizedRule.message) {
-      setSettingsError("MailFail rules require a reply message.");
+      showSettingsError("MailFail rules require a reply message.");
       return;
     }
     const rules = currentScopedSettings(mailFailManagerScope).mailFailRules ?? [];
@@ -714,7 +741,7 @@ export function App() {
       mailFailRules: nextRules
     }));
     setMailFailRuleDraft(normalizedRule);
-    setSettingsError(null);
+    showSettingsNotice("Rule saved. Save the parent settings to apply it.");
   }
 
   function handleToggleAutoDelete(enabled: boolean) {
@@ -1073,8 +1100,6 @@ export function App() {
               </p>
 
               {settingsLoading ? <p className="emptyState">Loading settings...</p> : null}
-              {settingsError ? <div className="errorBanner settingsBanner">{settingsError}</div> : null}
-              {settingsNotice ? <div className="settingsNotice">{settingsNotice}</div> : null}
 
               {!settingsLoading ? (
                 session?.isAdmin ? (
@@ -1841,7 +1866,25 @@ export function App() {
             </section>
           </div>
         ) : null}
+
+        {settingsOpen && (settingsError || settingsNotice) ? (
+          <div className="flashStack flashStackOverlay">
+            {settingsError ? <FlashBanner tone="error" message={settingsError} onDismiss={() => setSettingsError(null)} /> : null}
+            {settingsNotice ? <FlashBanner tone="success" message={settingsNotice} onDismiss={() => setSettingsNotice(null)} /> : null}
+          </div>
+        ) : null}
       </main>
+    </div>
+  );
+}
+
+function FlashBanner({ tone, message, onDismiss }: { tone: FlashTone; message: string; onDismiss: () => void }) {
+  return (
+    <div className={tone === "error" ? "flashBanner flashBannerError" : "flashBanner flashBannerSuccess"} role="alert" aria-live="polite">
+      <span>{message}</span>
+      <button type="button" className="flashBannerClose" onClick={onDismiss} aria-label="Dismiss notification">
+        ×
+      </button>
     </div>
   );
 }

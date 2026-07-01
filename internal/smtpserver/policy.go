@@ -108,25 +108,6 @@ func ValidateRecipientOwnership(ctx context.Context, ownerUserID int64, settings
 	}
 
 	if candidate.acceptedRcptDomains.Empty() {
-		users, err := store.ListUsers(ctx)
-		if err != nil {
-			return err
-		}
-		for _, user := range users {
-			if user.ID == ownerUserID {
-				continue
-			}
-			if mailboxPolicyEnabled(user.Settings) {
-				return ErrRecipientOwnershipConflict
-			}
-		}
-		adminSettings, ok, err := store.LoadAdminMailboxSettings(ctx)
-		if err != nil {
-			return err
-		}
-		if ok && ownerUserID != 0 && mailboxPolicyEnabled(adminSettings) {
-			return ErrRecipientOwnershipConflict
-		}
 		return nil
 	}
 
@@ -155,6 +136,9 @@ func ValidateRecipientOwnership(ctx context.Context, ownerUserID int64, settings
 		other, err := BuildUserPolicyState(user.ID, user.Settings, store)
 		if err != nil {
 			return err
+		}
+		if other.acceptedRcptDomains.Empty() {
+			continue
 		}
 		if recipientOwnershipOverlaps(candidate, other) {
 			return ErrRecipientOwnershipConflict
@@ -536,7 +520,7 @@ func hasRecipientDomainRestrictions(states []domainPolicyState) bool {
 
 func recipientOwnershipOverlaps(left, right domainPolicyState) bool {
 	if left.acceptedRcptDomains.Empty() || right.acceptedRcptDomains.Empty() {
-		return true
+		return false
 	}
 
 	for domain := range left.acceptedRcptDomains.exactDomains {

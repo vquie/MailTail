@@ -101,6 +101,50 @@ func TestUpdateAdminMailboxSettingsRejectsRecipientOwnershipConflict(t *testing.
 	}
 }
 
+func TestUpdateAdminMailboxSettingsAllowsUsersWithoutRecipientDomains(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	service := NewService(store, nil, "test", nil, nil)
+	ctx := context.Background()
+
+	if _, err := service.CreateUser(ctx, "user1", "secret", models.AppSettings{}, ""); err != nil {
+		t.Fatalf("create user1: %v", err)
+	}
+
+	saved, err := service.UpdateAdminMailboxSettings(ctx, models.AppSettings{
+		AcceptedRcptDomains: "example.test",
+	})
+	if err != nil {
+		t.Fatalf("save admin mailbox settings: %v", err)
+	}
+	if saved.AcceptedRcptDomains != "example.test" {
+		t.Fatalf("unexpected saved settings: %+v", saved)
+	}
+}
+
+func TestCreateUserWithoutRecipientDomainsAllowedAlongsideScopedAdminMailbox(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	service := NewService(store, nil, "test", nil, nil)
+	ctx := context.Background()
+
+	if _, err := service.UpdateAdminMailboxSettings(ctx, models.AppSettings{
+		AcceptedRcptDomains: "example.test",
+	}); err != nil {
+		t.Fatalf("save admin mailbox settings: %v", err)
+	}
+
+	user, err := service.CreateUser(ctx, "user1", "secret", models.AppSettings{}, "")
+	if err != nil {
+		t.Fatalf("create user without recipient domains: %v", err)
+	}
+	if user.Username != "user1" {
+		t.Fatalf("unexpected created user: %+v", user)
+	}
+}
+
 func newTestStore(t *testing.T) *storage.SQLiteStore {
 	t.Helper()
 
