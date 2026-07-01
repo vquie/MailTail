@@ -94,6 +94,48 @@ func TestDomainPolicyRejectsMixedRecipientsAcrossUsersWithoutUsernameLeak(t *tes
 	}
 }
 
+func TestDomainPolicyRejectsCatchAllUserWhenAnotherMailboxHasRecipientDomains(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.SaveAdminMailboxSettings(ctx, models.AppSettings{
+		AcceptedRcptDomains: "mp.quiering.com",
+	}); err != nil {
+		t.Fatalf("save admin mailbox settings: %v", err)
+	}
+	if _, err := store.CreateUser(ctx, "ricardo", "hash", models.AppSettings{}); err != nil {
+		t.Fatalf("create unrestricted user: %v", err)
+	}
+
+	policy, err := NewDomainPolicy(DomainPolicyConfig{}, store)
+	if err != nil {
+		t.Fatalf("new policy: %v", err)
+	}
+
+	session := &SessionMetadata{RemoteIP: "127.0.0.1", MailFrom: "sender@outside.test"}
+
+	response := policy.OnRcptTo(session, "user@hotmail.com")
+	if response == nil {
+		t.Fatal("expected recipient rejection")
+	}
+	if response.Code != 550 {
+		t.Fatalf("expected 550 rejection, got %d", response.Code)
+	}
+	if !strings.Contains(strings.ToLower(response.Message), "recipient not allowed") {
+		t.Fatalf("unexpected response message: %q", response.Message)
+	}
+
+	adminSession := &SessionMetadata{RemoteIP: "127.0.0.1", MailFrom: "sender@outside.test"}
+	if response := policy.OnRcptTo(adminSession, "user@mp.quiering.com"); response != nil {
+		t.Fatalf("unexpected rcpt response for admin mailbox: %v", response)
+	}
+	if adminSession.OwnerUserID != 0 {
+		t.Fatalf("expected admin mailbox owner id 0, got %d", adminSession.OwnerUserID)
+	}
+}
+
 func newTestStore(t *testing.T) *storage.SQLiteStore {
 	t.Helper()
 

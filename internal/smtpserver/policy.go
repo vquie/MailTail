@@ -233,9 +233,13 @@ func (p *DomainPolicy) OnRcptTo(session *SessionMetadata, recipient string) *Res
 	if err != nil {
 		return &ResponseError{Code: 451, Message: "Temporary policy lookup failure"}
 	}
+	domainScoped := hasRecipientDomainRestrictions(users)
 
 	candidates := make([]domainPolicyState, 0)
 	for _, user := range users {
+		if domainScoped && user.acceptedRcptDomains.Empty() {
+			continue
+		}
 		if matchesUserPolicy(user, *session, recipient) {
 			candidates = append(candidates, user)
 		}
@@ -519,6 +523,15 @@ func parseAllowedRemoteCIDRs(values []string) ([]*net.IPNet, error) {
 		networks = append(networks, network)
 	}
 	return networks, nil
+}
+
+func hasRecipientDomainRestrictions(states []domainPolicyState) bool {
+	for _, state := range states {
+		if !state.acceptedRcptDomains.Empty() {
+			return true
+		}
+	}
+	return false
 }
 
 func recipientOwnershipOverlaps(left, right domainPolicyState) bool {
