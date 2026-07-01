@@ -35,9 +35,9 @@ const (
 
 func NewServer(addr, staticDir string, service *Service, logger *log.Logger, store storage.Store, authConfig AuthConfig, corsConfig CORSConfig) *Server {
 	server := &Server{
-		service:   service,
-		logger:    logger,
-		staticDir: staticDir,
+		service:    service,
+		logger:     logger,
+		staticDir:  staticDir,
 		authConfig: authConfig,
 	}
 
@@ -284,7 +284,11 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 		settings, err := s.service.UpdateSettings(r.Context(), principal, payload.Settings)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			status := http.StatusBadRequest
+			if errors.Is(err, ErrMailboxPolicyConflict) {
+				status = http.StatusConflict
+			}
+			writeError(w, status, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
@@ -321,7 +325,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		user, err := s.service.CreateUser(r.Context(), payload.Username, payload.Password, payload.Settings, s.authConfig.Username)
 		if err != nil {
 			status := http.StatusBadRequest
-			if errors.Is(err, ErrReservedUsername) || errors.Is(err, ErrUsernameExists) {
+			if errors.Is(err, ErrReservedUsername) || errors.Is(err, ErrUsernameExists) || errors.Is(err, ErrMailboxPolicyConflict) {
 				status = http.StatusConflict
 			}
 			writeError(w, status, err.Error())
@@ -358,7 +362,11 @@ func (s *Server) handleAdminMailboxSettings(w http.ResponseWriter, r *http.Reque
 		}
 		settings, err := s.service.UpdateAdminMailboxSettings(r.Context(), payload.Settings)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			status := http.StatusBadRequest
+			if errors.Is(err, ErrMailboxPolicyConflict) {
+				status = http.StatusConflict
+			}
+			writeError(w, status, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
@@ -398,7 +406,7 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case errors.Is(err, storage.ErrNotFound):
 				status = http.StatusNotFound
-			case errors.Is(err, ErrReservedUsername), errors.Is(err, ErrUsernameExists):
+			case errors.Is(err, ErrReservedUsername), errors.Is(err, ErrUsernameExists), errors.Is(err, ErrMailboxPolicyConflict):
 				status = http.StatusConflict
 			}
 			writeError(w, status, err.Error())

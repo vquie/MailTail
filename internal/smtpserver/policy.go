@@ -2,6 +2,7 @@ package smtpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"regexp"
@@ -51,8 +52,10 @@ type DomainPolicyConfig struct {
 	MailFailRules       []models.MailFailRule
 }
 
+var ErrRecipientOwnershipConflict = errors.New("recipient ownership conflicts with an existing mailbox policy")
+
 type domainPolicyState struct {
-	userID               int64
+	userID              int64
 	acceptedRcptDomains *addressMatcher
 	acceptedFromDomains *addressMatcher
 	allowedRemoteNets   []*net.IPNet
@@ -94,6 +97,73 @@ func BuildUserPolicyState(userID int64, settings models.AppSettings, store stora
 	return buildDomainPolicyState(userID, DomainPolicyConfigFromSettings(settings), store)
 }
 
+func ValidateRecipientOwnership(ctx context.Context, ownerUserID int64, settings models.AppSettings, store storage.Store) error {
+	if store == nil {
+		return nil
+	}
+
+	candidate, err := BuildUserPolicyState(ownerUserID, settings, store)
+	if err != nil {
+		return err
+	}
+
+	if candidate.acceptedRcptDomains.Empty() {
+		users, err := store.ListUsers(ctx)
+		if err != nil {
+			return err
+		}
+		for _, user := range users {
+			if user.ID == ownerUserID {
+				continue
+			}
+			if mailboxPolicyEnabled(user.Settings) {
+				return ErrRecipientOwnershipConflict
+			}
+		}
+		adminSettings, ok, err := store.LoadAdminMailboxSettings(ctx)
+		if err != nil {
+			return err
+		}
+		if ok && ownerUserID != 0 && mailboxPolicyEnabled(adminSettings) {
+			return ErrRecipientOwnershipConflict
+		}
+		return nil
+	}
+
+	adminSettings, ok, err := store.LoadAdminMailboxSettings(ctx)
+	if err != nil {
+		return err
+	}
+	if ok && ownerUserID != 0 {
+		adminState, err := BuildUserPolicyState(0, adminSettings, store)
+		if err != nil {
+			return err
+		}
+		if recipientOwnershipOverlaps(candidate, adminState) {
+			return ErrRecipientOwnershipConflict
+		}
+	}
+
+	users, err := store.ListUsers(ctx)
+	if err != nil {
+		return err
+	}
+	for _, user := range users {
+		if user.ID == ownerUserID {
+			continue
+		}
+		other, err := BuildUserPolicyState(user.ID, user.Settings, store)
+		if err != nil {
+			return err
+		}
+		if recipientOwnershipOverlaps(candidate, other) {
+			return ErrRecipientOwnershipConflict
+		}
+	}
+
+	return nil
+}
+
 func buildDomainPolicyState(userID int64, config DomainPolicyConfig, store storage.Store) (domainPolicyState, error) {
 	allowedRemoteNets, err := parseAllowedRemoteCIDRs(config.AllowedRemoteCIDRs)
 	if err != nil {
@@ -124,7 +194,7 @@ func buildDomainPolicyState(userID int64, config DomainPolicyConfig, store stora
 	}
 
 	return domainPolicyState{
-		userID:               userID,
+		userID:              userID,
 		acceptedRcptDomains: rcptMatcher,
 		acceptedFromDomains: fromMatcher,
 		allowedRemoteNets:   allowedRemoteNets,
@@ -262,6 +332,10 @@ func (p *DomainPolicy) policyUsers() ([]domainPolicyState, error) {
 }
 
 func adminMailboxEnabled(settings models.AppSettings) bool {
+	return mailboxPolicyEnabled(settings)
+}
+
+func mailboxPolicyEnabled(settings models.AppSettings) bool {
 	return (settings.MailFailEnabled && len(settings.MailFailRules) > 0) ||
 		strings.TrimSpace(settings.AllowedRemoteIPs) != "" ||
 		strings.TrimSpace(settings.AcceptedRcptDomains) != "" ||
@@ -445,6 +519,33 @@ func parseAllowedRemoteCIDRs(values []string) ([]*net.IPNet, error) {
 		networks = append(networks, network)
 	}
 	return networks, nil
+}
+
+func recipientOwnershipOverlaps(left, right domainPolicyState) bool {
+	if left.acceptedRcptDomains.Empty() || right.acceptedRcptDomains.Empty() {
+		return true
+	}
+
+	for domain := range left.acceptedRcptDomains.exactDomains {
+		if right.acceptedRcptDomains.Match(domain) || right.acceptedRcptDomains.Match("probe@"+domain) {
+			return true
+		}
+	}
+	for domain := range right.acceptedRcptDomains.exactDomains {
+		if left.acceptedRcptDomains.Match(domain) || left.acceptedRcptDomains.Match("probe@"+domain) {
+			return true
+		}
+	}
+
+	for _, pattern := range left.acceptedRcptDomains.patterns {
+		for _, other := range right.acceptedRcptDomains.patterns {
+			if pattern.String() == other.String() {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func csvList(value string) []string {

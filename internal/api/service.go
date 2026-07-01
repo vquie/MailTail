@@ -17,6 +17,7 @@ var (
 	ErrUsernameRequired      = errors.New("username is required")
 	ErrUsernameExists        = errors.New("username already exists")
 	ErrPasswordRequired      = errors.New("password is required")
+	ErrMailboxPolicyConflict = smtpserver.ErrRecipientOwnershipConflict
 )
 
 type Service struct {
@@ -122,6 +123,9 @@ func (s *Service) UpdateSettings(ctx context.Context, principal models.SessionPr
 		settings.AutoDeleteAfterDays = 0
 	}
 	settings = runtimeconfig.NormalizeUserSettings(settings)
+	if err := smtpserver.ValidateRecipientOwnership(ctx, principal.UserID, settings, s.store); err != nil {
+		return models.AppSettings{}, err
+	}
 	if _, err := smtpserver.BuildUserPolicyState(principal.UserID, settings, s.store); err != nil {
 		return models.AppSettings{}, err
 	}
@@ -151,6 +155,9 @@ func (s *Service) UpdateAdminMailboxSettings(ctx context.Context, settings model
 		settings.AutoDeleteAfterDays = 0
 	}
 	settings = runtimeconfig.NormalizeUserSettings(settings)
+	if err := smtpserver.ValidateRecipientOwnership(ctx, 0, settings, s.store); err != nil {
+		return models.AppSettings{}, err
+	}
 	if _, err := smtpserver.BuildUserPolicyState(0, settings, s.store); err != nil {
 		return models.AppSettings{}, err
 	}
@@ -176,6 +183,9 @@ func (s *Service) CreateUser(ctx context.Context, username, password string, set
 		return models.User{}, ErrPasswordRequired
 	}
 	settings = runtimeconfig.NormalizeUserSettings(settings)
+	if err := smtpserver.ValidateRecipientOwnership(ctx, -1, settings, s.store); err != nil {
+		return models.User{}, err
+	}
 	if _, err := smtpserver.BuildUserPolicyState(0, settings, s.store); err != nil {
 		return models.User{}, err
 	}
@@ -200,6 +210,9 @@ func (s *Service) UpdateUser(ctx context.Context, userID int64, username, passwo
 		return models.User{}, ErrUsernameRequired
 	}
 	settings = runtimeconfig.NormalizeUserSettings(settings)
+	if err := smtpserver.ValidateRecipientOwnership(ctx, userID, settings, s.store); err != nil {
+		return models.User{}, err
+	}
 	if _, err := smtpserver.BuildUserPolicyState(userID, settings, s.store); err != nil {
 		return models.User{}, err
 	}
