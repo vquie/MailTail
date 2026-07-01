@@ -865,14 +865,18 @@ select {
   display: grid;
   gap: 8px;
   padding: 14px;
-  border: 1px solid rgb(255 255 255 / 8%);
+  border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 8px;
   background: rgb(255 255 255 / 4%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 3%),
+    0 0 0 1px rgb(7 10 18 / 18%);
 }
 
 .settingsCard {
   gap: 14px;
   align-content: start;
+  background: linear-gradient(180deg, rgb(255 255 255 / 5%), rgb(255 255 255 / 3%));
 }
 
 .settingsCardPrimary {
@@ -1107,6 +1111,8 @@ select {
 
 .nestedSettingsField {
   padding: 12px;
+  background: rgb(255 255 255 / 3%);
+  border-color: rgb(255 255 255 / 9%);
 }
 
 .platformToggleCard {
@@ -1168,6 +1174,16 @@ select {
   gap: 14px;
 }
 
+.rulesWorkspace > .settingsCard,
+.rulesWorkspace > .rulesOverviewGrid > .settingsCard,
+.rulesWorkspace > .rulesComposerLayout > .settingsCard {
+  border-color: rgb(255 255 255 / 14%);
+  background: linear-gradient(180deg, rgb(52 58 74 / 86%), rgb(38 43 56 / 88%));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 4%),
+    0 0 0 1px rgb(255 255 255 / 3%);
+}
+
 .rulesOverviewGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1177,6 +1193,10 @@ select {
 .rulesOverviewCard strong {
   font-size: 1rem;
   color: #f8f3ea;
+}
+
+.rulesOverviewCard {
+  min-height: 100%;
 }
 
 .rulesComposerLayout {
@@ -1191,14 +1211,32 @@ select {
   min-height: 100%;
 }
 
+.rulesCatalogCard,
+.rulesGuidanceCard,
+.rulesOverviewCard {
+  position: relative;
+}
+
+.rulesCatalogCard::before,
+.rulesGuidanceCard::before,
+.rulesOverviewCard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 3%);
+}
+
 .rulesCatalogList {
   display: grid;
   gap: 10px;
+  padding-top: 4px;
 }
 
 .rulesCatalogItem {
-  border: 1px solid rgb(255 255 255 / 8%);
-  background: rgb(255 255 255 / 3%);
+  border: 1px solid rgb(255 255 255 / 14%);
+  background: linear-gradient(180deg, rgb(61 66 82 / 92%), rgb(48 52 66 / 94%));
   border-radius: 8px;
   padding: 12px;
   text-align: left;
@@ -1206,13 +1244,17 @@ select {
   cursor: pointer;
   display: grid;
   gap: 8px;
-  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease, box-shadow 140ms ease;
 }
 
 .rulesCatalogItem:hover {
-  border-color: rgb(240 179 111 / 34%);
-  background: rgb(255 255 255 / 5%);
+  border-color: rgb(240 179 111 / 42%);
+  background: linear-gradient(180deg, rgb(68 74 92 / 96%), rgb(53 58 74 / 96%));
   transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 4%),
+    0 10px 24px rgb(0 0 0 / 18%);
 }
 
 .rulesCatalogItemTop,
@@ -1243,8 +1285,9 @@ select {
   gap: 6px;
   padding: 12px;
   border-radius: 8px;
-  border: 1px solid rgb(255 255 255 / 8%);
-  background: rgb(255 255 255 / 2.5%);
+  border: 1px solid rgb(255 255 255 / 13%);
+  background: linear-gradient(180deg, rgb(61 66 82 / 80%), rgb(48 52 66 / 88%));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
 }
 
 .rulesGuidanceCallout strong {
