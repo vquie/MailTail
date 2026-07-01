@@ -663,14 +663,28 @@ export function App() {
     return scope === "adminMailbox" ? adminMailboxDraft : settingsDraft;
   }
 
-  function openMailFailManager(scope: MailFailSettingsScope) {
+  function openMailFailManager(
+    scope: MailFailSettingsScope,
+    options: {
+      selectedIndex?: number | null;
+      createNew?: boolean;
+    } = {}
+  ) {
     const settings = currentScopedSettings(scope);
     const rules = settings.mailFailRules ?? [];
     setMailFailManagerScope(scope);
     setMailFailManagerOpen(true);
-    if (rules.length > 0) {
-      setSelectedMailFailRuleIndex(0);
-      setMailFailRuleDraft(cloneMailFailRule(rules[0]));
+    if (options.createNew) {
+      setSelectedMailFailRuleIndex(null);
+      setMailFailRuleDraft(createDefaultMailFailRule());
+      return;
+    }
+
+    const desiredIndex = options.selectedIndex ?? 0;
+    const rule = desiredIndex !== null ? rules[desiredIndex] : null;
+    if (rule) {
+      setSelectedMailFailRuleIndex(desiredIndex);
+      setMailFailRuleDraft(cloneMailFailRule(rule));
     } else {
       setSelectedMailFailRuleIndex(null);
       setMailFailRuleDraft(createDefaultMailFailRule());
@@ -757,6 +771,150 @@ export function App() {
     if (enabled && settingsDraft.autoDeleteAfterDays <= 0) {
       updateSettingsField("autoDeleteAfterDays", defaultAutoDeleteDays);
     }
+  }
+
+  function renderRulesWorkspace(options: {
+    scope: MailFailSettingsScope;
+    enabled: boolean;
+    onToggle: (enabled: boolean) => void;
+    exampleRecipient: string;
+  }) {
+    const scopedSettings = currentScopedSettings(options.scope);
+    const rules = scopedSettings.mailFailRules ?? [];
+    const uniqueStages = Array.from(new Set(rules.map((rule) => rule.stage.toUpperCase())));
+    const uniqueActions = Array.from(new Set(rules.map((rule) => rule.action)));
+
+    return (
+      <div className="rulesWorkspace">
+        <section className="settingsField settingsCard">
+          <div className="settingsCardHeader">
+            <div>
+              <h3>Rule activation</h3>
+              <p className="settingsCardLead">MailFail rules are evaluated on inbound SMTP sessions for this mailbox context.</p>
+            </div>
+          </div>
+          <div className="settingsField nestedSettingsField toggleField">
+            <span>MailFail enabled</span>
+            <label className="toggleRow">
+              <input type="checkbox" checked={options.enabled} onChange={(event) => options.onToggle(event.target.checked)} />
+              <span>Enable MailFail rule evaluation</span>
+            </label>
+            <small>Rules match plus-address triggers on the local part before the `@` sign.</small>
+          </div>
+        </section>
+
+        {options.enabled ? (
+          <>
+            <div className="rulesOverviewGrid">
+              <section className="settingsField settingsCard rulesOverviewCard">
+                <span>Rules</span>
+                <strong>{rules.length}</strong>
+                <small>Configured for this mailbox.</small>
+              </section>
+              <section className="settingsField settingsCard rulesOverviewCard">
+                <span>SMTP stages</span>
+                <strong>{uniqueStages.length ? uniqueStages.join(", ") : "None"}</strong>
+                <small>Where rule checks happen.</small>
+              </section>
+              <section className="settingsField settingsCard rulesOverviewCard">
+                <span>Actions</span>
+                <strong>{uniqueActions.length ? uniqueActions.join(", ") : "None"}</strong>
+                <small>Current response types.</small>
+              </section>
+            </div>
+
+            <div className="rulesComposerLayout">
+              <section className="settingsField settingsCard rulesCatalogCard">
+                <div className="settingsCardHeader">
+                  <div>
+                    <h3>Rule catalog</h3>
+                    <p className="settingsCardLead">Every rule maps a trigger like `user+mf-greylist@…` to a SMTP response.</p>
+                  </div>
+                  <div className="settingsCardActions">
+                    <button
+                      className="ghostButton compactButton"
+                      type="button"
+                      onClick={() => openMailFailManager(options.scope, { createNew: true })}
+                    >
+                      Add rule
+                    </button>
+                    <button className="ghostButton compactButton" type="button" onClick={() => handleImportMailFailTemplate(options.scope)}>
+                      Load example rules
+                    </button>
+                  </div>
+                </div>
+
+                {rules.length ? (
+                  <div className="rulesCatalogList">
+                    {rules.map((rule, index) => (
+                      <button
+                        key={`${rule.name}-${rule.trigger}-${index}`}
+                        className="rulesCatalogItem"
+                        type="button"
+                        onClick={() => openMailFailManager(options.scope, { selectedIndex: index })}
+                      >
+                        <div className="rulesCatalogItemTop">
+                          <strong>{rule.name || rule.trigger}</strong>
+                          <span className="ruleChip">{rule.code}</span>
+                        </div>
+                        <div className="rulesCatalogMeta">
+                          <span>{rule.trigger}</span>
+                          <span>{rule.stage.toUpperCase()}</span>
+                          <span>{rule.action}</span>
+                        </div>
+                        <p>{rule.message || "No reply message configured."}</p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="emptyListCard">
+                    <strong>No rules yet</strong>
+                    <p>Start with an example set or create the first rule for this mailbox.</p>
+                  </div>
+                )}
+              </section>
+
+              <section className="settingsField settingsCard rulesGuidanceCard">
+                <div className="settingsCardHeader">
+                  <div>
+                    <h3>How this works</h3>
+                    <p className="settingsCardLead">Rules are designed for test scenarios where you need deterministic SMTP failures.</p>
+                  </div>
+                  <button className="dangerButton compactButton" type="button" onClick={() => openMailFailManager(options.scope)}>
+                    Open rule editor
+                  </button>
+                </div>
+
+                <dl className="settingsDefinitionList">
+                  <div>
+                    <dt>Example recipient</dt>
+                    <dd>{options.exampleRecipient}</dd>
+                  </div>
+                  <div>
+                    <dt>Trigger match</dt>
+                    <dd>Matches the plus-address fragment after `+`.</dd>
+                  </div>
+                  <div>
+                    <dt>Typical use</dt>
+                    <dd>Model rejects, greylisting or quota responses per mailbox.</dd>
+                  </div>
+                </dl>
+
+                <div className="rulesGuidanceCallout">
+                  <strong>Recommended flow</strong>
+                  <p>Keep a small reusable rule set per mailbox, then open the editor only when you need to adjust SMTP codes, timing or response text.</p>
+                </div>
+              </section>
+            </div>
+          </>
+        ) : (
+          <div className="emptyListCard">
+            <strong>Rules are off</strong>
+            <p>Enable MailFail first if this mailbox should answer with rule-based SMTP responses.</p>
+          </div>
+        )}
+      </div>
+    );
   }
 
   const content = useMemo(() => {
@@ -1414,59 +1572,20 @@ export function App() {
                           ) : null}
 
                           {adminMailboxEnabled && adminMailboxSubTab === "rules" ? (
-                            <div className="settingsField nestedSettingsField toggleField">
-                              <span>MailFail enabled</span>
-                              <label className="toggleRow">
-                                <input
-                                  type="checkbox"
-                                  checked={adminMailboxDraft.mailFailEnabled}
-                                  onChange={(event) =>
-                                    setAdminMailboxDraft((current) => ({
-                                      ...current,
-                                      mailFailEnabled: event.target.checked,
-                                      mailFailRules:
-                                        event.target.checked && current.mailFailRules.length === 0
-                                          ? cloneMailFailRules(defaultMailFailRulesTemplate)
-                                          : current.mailFailRules
-                                    }))
-                                  }
-                                />
-                                <span>Enable MailFail rule evaluation</span>
-                              </label>
-                              <small>Turns MailFail rule evaluation on for incoming SMTP sessions.</small>
-                              {adminMailboxDraft.mailFailEnabled ? (
-                                <>
-                                  <div className="ruleSummaryList">
-                                    {(adminMailboxDraft.mailFailRules ?? []).length ? (
-                                      adminMailboxDraft.mailFailRules.map((rule) => (
-                                        <span key={`${rule.name}-${rule.trigger}-${rule.stage}`} className="ruleChip">
-                                          {rule.name || rule.trigger}
-                                        </span>
-                                      ))
-                                    ) : (
-                                      <span className="mutedText">No rules configured yet.</span>
-                                    )}
-                                  </div>
-                                  <div className="settingsCardActions">
-                                    <button className="ghostButton compactButton" type="button" onClick={() => openMailFailManager("adminMailbox")}>
-                                      Manage rules
-                                    </button>
-                                    <button
-                                      className="ghostButton compactButton"
-                                      type="button"
-                                      onClick={() => handleImportMailFailTemplate("adminMailbox")}
-                                    >
-                                      Load example rules
-                                    </button>
-                                  </div>
-                                </>
-                              ) : (
-                                <div className="emptyListCard">
-                                  <strong>Rules are off</strong>
-                                  <p>Enable MailFail first if this mailbox should respond with rule-based SMTP behavior.</p>
-                                </div>
-                              )}
-                            </div>
+                            renderRulesWorkspace({
+                              scope: "adminMailbox",
+                              enabled: adminMailboxDraft.mailFailEnabled,
+                              onToggle: (enabled) =>
+                                setAdminMailboxDraft((current) => ({
+                                  ...current,
+                                  mailFailEnabled: enabled,
+                                  mailFailRules:
+                                    enabled && current.mailFailRules.length === 0
+                                      ? cloneMailFailRules(defaultMailFailRulesTemplate)
+                                      : current.mailFailRules
+                                })),
+                              exampleRecipient: `admin+mf-greylist@${mailFailExampleDomain}`
+                            })
                           ) : null}
                         </div>
                       </section>
@@ -1689,46 +1808,12 @@ export function App() {
                             ) : null}
 
                             {userEditorSubTab === "rules" ? (
-                              <div className="settingsField toggleField">
-                                <span>MailFail enabled</span>
-                                <label className="toggleRow">
-                                  <input
-                                    type="checkbox"
-                                    checked={settingsDraft.mailFailEnabled}
-                                    onChange={(event) => handleToggleMailFail(event.target.checked)}
-                                  />
-                                  <span>Enable MailFail rule evaluation</span>
-                                </label>
-                                <small>Turns MailFail rule evaluation on for incoming SMTP sessions.</small>
-                                {settingsDraft.mailFailEnabled ? (
-                                  <>
-                                    <div className="ruleSummaryList">
-                                      {(settingsDraft.mailFailRules ?? []).length ? (
-                                        settingsDraft.mailFailRules.map((rule) => (
-                                          <span key={`${rule.name}-${rule.trigger}-${rule.stage}`} className="ruleChip">
-                                            {rule.name || rule.trigger}
-                                          </span>
-                                        ))
-                                      ) : (
-                                        <span className="mutedText">No rules configured yet.</span>
-                                      )}
-                                    </div>
-                                    <div className="settingsCardActions">
-                                      <button className="ghostButton compactButton" type="button" onClick={() => openMailFailManager("user")}>
-                                        Manage rules
-                                      </button>
-                                      <button className="ghostButton compactButton" type="button" onClick={() => handleImportMailFailTemplate("user")}>
-                                        Load example rules
-                                      </button>
-                                    </div>
-                                  </>
-                                ) : (
-                                  <div className="emptyListCard">
-                                    <strong>Rules are off</strong>
-                                    <p>Enable MailFail first if this user should answer with rule-based SMTP responses.</p>
-                                  </div>
-                                )}
-                              </div>
+                              renderRulesWorkspace({
+                                scope: "user",
+                                enabled: settingsDraft.mailFailEnabled,
+                                onToggle: handleToggleMailFail,
+                                exampleRecipient: mailFailExampleRecipient
+                              })
                             ) : null}
                           </>
                         ) : (

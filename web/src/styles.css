@@ -1163,6 +1163,94 @@ select {
   font-size: 0.8rem;
 }
 
+.rulesWorkspace {
+  display: grid;
+  gap: 14px;
+}
+
+.rulesOverviewGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rulesOverviewCard strong {
+  font-size: 1rem;
+  color: #f8f3ea;
+}
+
+.rulesComposerLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.rulesCatalogCard,
+.rulesGuidanceCard {
+  min-height: 100%;
+}
+
+.rulesCatalogList {
+  display: grid;
+  gap: 10px;
+}
+
+.rulesCatalogItem {
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 3%);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 8px;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.rulesCatalogItem:hover {
+  border-color: rgb(240 179 111 / 34%);
+  background: rgb(255 255 255 / 5%);
+  transform: translateY(-1px);
+}
+
+.rulesCatalogItemTop,
+.rulesCatalogMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.rulesCatalogMeta {
+  color: rgb(248 243 234 / 62%);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rulesCatalogItem p,
+.rulesGuidanceCallout p {
+  margin: 0;
+  color: rgb(248 243 234 / 74%);
+  line-height: 1.5;
+}
+
+.rulesGuidanceCallout {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 2.5%);
+}
+
+.rulesGuidanceCallout strong {
+  color: #f8f3ea;
+}
+
 .adminSectionHeader {
   display: flex;
   justify-content: space-between;
@@ -1260,10 +1348,15 @@ select {
   .settingsCardGridAdmin,
   .platformSettingsRow,
   .adminUserLayout,
+  .rulesComposerLayout,
   .mailFailManagerLayout,
   .createUserGrid,
   .adminMailboxGrid,
   .settingsStatsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .rulesOverviewGrid {
     grid-template-columns: 1fr;
   }
 }
