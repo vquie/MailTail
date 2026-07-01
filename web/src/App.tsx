@@ -24,6 +24,7 @@ import type { AppSettings, MailFailRule, Message, SessionInfo, Stats, User } fro
 type TabKey = "html" | "text" | "headers" | "raw";
 type MailFailSettingsScope = "user" | "adminMailbox";
 type SettingsTab = "instance" | "adminMailbox" | "users" | "delivery" | "retention";
+type SettingsSubTab = "general" | "rules";
 
 const defaultPageSize = 25;
 const defaultAutoDeleteDays = 30;
@@ -123,6 +124,8 @@ export function App() {
   const [copiedPaneKey, setCopiedPaneKey] = useState<TabKey | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>("instance");
+  const [adminMailboxSubTab, setAdminMailboxSubTab] = useState<SettingsSubTab>("general");
+  const [userEditorSubTab, setUserEditorSubTab] = useState<SettingsSubTab>("general");
   const [settingsDraft, setSettingsDraft] = useState<AppSettings>(emptySettings);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -595,6 +598,7 @@ export function App() {
   function handleCreateManagedUser() {
     setCreateUserOpen(true);
     setActiveSettingsTab("users");
+    setUserEditorSubTab("general");
     setSelectedManagedUserId(null);
     applyManagedUserDraft(null);
     clearSettingsFlash();
@@ -839,6 +843,10 @@ export function App() {
     { key: "retention", label: "Retention" }
   ];
   const settingsTabs = session?.isAdmin ? adminSettingsTabs : userSettingsTabs;
+  const settingsSubTabs: Array<{ key: SettingsSubTab; label: string }> = [
+    { key: "general", label: "General" },
+    { key: "rules", label: "Rules" }
+  ];
   const enabledAdminMailboxFilters = [
     adminMailboxLimitRemoteIps,
     adminMailboxLimitAcceptedRcptDomains,
@@ -1262,6 +1270,19 @@ export function App() {
                         </div>
 
                         <div className="settingsCardBody">
+                          <div className="settingsSubTabs" role="tablist" aria-label="Admin mailbox sections">
+                            {settingsSubTabs.map((tab) => (
+                              <button
+                                key={tab.key}
+                                className={adminMailboxSubTab === tab.key ? "settingsSubTabButton active" : "settingsSubTabButton"}
+                                onClick={() => setAdminMailboxSubTab(tab.key)}
+                                type="button"
+                              >
+                                {tab.label}
+                              </button>
+                            ))}
+                          </div>
+
                           <div className="settingsField nestedSettingsField">
                             <span>Mailbox activation</span>
                             <label className="toggleRow">
@@ -1283,57 +1304,8 @@ export function App() {
                             <small>Disabled means the admin account does not capture or retain messages.</small>
                           </div>
 
-                          {adminMailboxEnabled ? (
+                          {adminMailboxEnabled && adminMailboxSubTab === "general" ? (
                             <div className="settingsGrid adminMailboxGrid">
-                              <div className="settingsField toggleField">
-                                <span>MailFail enabled</span>
-                                <label className="toggleRow">
-                                  <input
-                                    type="checkbox"
-                                    checked={adminMailboxDraft.mailFailEnabled}
-                                    onChange={(event) =>
-                                      setAdminMailboxDraft((current) => ({
-                                        ...current,
-                                        mailFailEnabled: event.target.checked,
-                                        mailFailRules:
-                                          event.target.checked && current.mailFailRules.length === 0
-                                            ? cloneMailFailRules(defaultMailFailRulesTemplate)
-                                            : current.mailFailRules
-                                      }))
-                                    }
-                                  />
-                                  <span>Enable MailFail rule evaluation</span>
-                                </label>
-                                <small>Turns MailFail rule evaluation on for incoming SMTP sessions.</small>
-                                {adminMailboxDraft.mailFailEnabled ? (
-                                  <>
-                                    <div className="ruleSummaryList">
-                                      {(adminMailboxDraft.mailFailRules ?? []).length ? (
-                                        adminMailboxDraft.mailFailRules.map((rule) => (
-                                          <span key={`${rule.name}-${rule.trigger}-${rule.stage}`} className="ruleChip">
-                                            {rule.name || rule.trigger}
-                                          </span>
-                                        ))
-                                      ) : (
-                                        <span className="mutedText">No rules configured yet.</span>
-                                      )}
-                                    </div>
-                                    <div className="settingsCardActions">
-                                      <button className="ghostButton compactButton" type="button" onClick={() => openMailFailManager("adminMailbox")}>
-                                        Manage rules
-                                      </button>
-                                      <button
-                                        className="ghostButton compactButton"
-                                        type="button"
-                                        onClick={() => handleImportMailFailTemplate("adminMailbox")}
-                                      >
-                                        Load example rules
-                                      </button>
-                                    </div>
-                                  </>
-                                ) : null}
-                              </div>
-
                               <div className="settingsField toggleField">
                                 <span>Allowed remote IPs</span>
                                 <label className="toggleRow">
@@ -1440,6 +1412,62 @@ export function App() {
                               </div>
                             </div>
                           ) : null}
+
+                          {adminMailboxEnabled && adminMailboxSubTab === "rules" ? (
+                            <div className="settingsField nestedSettingsField toggleField">
+                              <span>MailFail enabled</span>
+                              <label className="toggleRow">
+                                <input
+                                  type="checkbox"
+                                  checked={adminMailboxDraft.mailFailEnabled}
+                                  onChange={(event) =>
+                                    setAdminMailboxDraft((current) => ({
+                                      ...current,
+                                      mailFailEnabled: event.target.checked,
+                                      mailFailRules:
+                                        event.target.checked && current.mailFailRules.length === 0
+                                          ? cloneMailFailRules(defaultMailFailRulesTemplate)
+                                          : current.mailFailRules
+                                    }))
+                                  }
+                                />
+                                <span>Enable MailFail rule evaluation</span>
+                              </label>
+                              <small>Turns MailFail rule evaluation on for incoming SMTP sessions.</small>
+                              {adminMailboxDraft.mailFailEnabled ? (
+                                <>
+                                  <div className="ruleSummaryList">
+                                    {(adminMailboxDraft.mailFailRules ?? []).length ? (
+                                      adminMailboxDraft.mailFailRules.map((rule) => (
+                                        <span key={`${rule.name}-${rule.trigger}-${rule.stage}`} className="ruleChip">
+                                          {rule.name || rule.trigger}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="mutedText">No rules configured yet.</span>
+                                    )}
+                                  </div>
+                                  <div className="settingsCardActions">
+                                    <button className="ghostButton compactButton" type="button" onClick={() => openMailFailManager("adminMailbox")}>
+                                      Manage rules
+                                    </button>
+                                    <button
+                                      className="ghostButton compactButton"
+                                      type="button"
+                                      onClick={() => handleImportMailFailTemplate("adminMailbox")}
+                                    >
+                                      Load example rules
+                                    </button>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="emptyListCard">
+                                  <strong>Rules are off</strong>
+                                  <p>Enable MailFail first if this mailbox should respond with rule-based SMTP behavior.</p>
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
                         </div>
                       </section>
 
@@ -1492,6 +1520,7 @@ export function App() {
                                 className={user.id === selectedManagedUserId ? "messageItem active adminUserItem" : "messageItem adminUserItem"}
                                 onClick={() => {
                                   setSelectedManagedUserId(user.id);
+                                  setUserEditorSubTab("general");
                                   applyManagedUserDraft(user);
                                 }}
                                 type="button"
@@ -1542,142 +1571,166 @@ export function App() {
                         </div>
 
                         {selectedManagedUserId ? (
-                          <div className="settingsGrid adminEditorGrid">
-                            <label className="settingsField">
-                              <span>Username</span>
-                              <input value={managedUsername} onChange={(event) => setManagedUsername(event.target.value)} />
-                              <small>Local username used for login.</small>
-                            </label>
-                            <label className="settingsField">
-                              <span>New password</span>
-                              <input
-                                type="password"
-                                value={managedPassword}
-                                onChange={(event) => setManagedPassword(event.target.value)}
-                                placeholder="Leave empty to keep the current password"
-                              />
-                              <small>Optional on update.</small>
-                            </label>
-
-                            <div className="settingsField toggleField">
-                              <span>MailFail enabled</span>
-                              <label className="toggleRow">
-                                <input
-                                  type="checkbox"
-                                  checked={settingsDraft.mailFailEnabled}
-                                  onChange={(event) => handleToggleMailFail(event.target.checked)}
-                                />
-                                <span>Enable MailFail rule evaluation</span>
-                              </label>
-                              <small>Turns MailFail rule evaluation on for incoming SMTP sessions.</small>
-                              {settingsDraft.mailFailEnabled ? (
-                                <>
-                                  <div className="ruleSummaryList">
-                                    {(settingsDraft.mailFailRules ?? []).length ? (
-                                      settingsDraft.mailFailRules.map((rule) => (
-                                        <span key={`${rule.name}-${rule.trigger}-${rule.stage}`} className="ruleChip">
-                                          {rule.name || rule.trigger}
-                                        </span>
-                                      ))
-                                    ) : (
-                                      <span className="mutedText">No rules configured yet.</span>
-                                    )}
-                                  </div>
-                                  <div className="settingsCardActions">
-                                    <button className="ghostButton compactButton" type="button" onClick={() => openMailFailManager("user")}>
-                                      Manage rules
-                                    </button>
-                                    <button className="ghostButton compactButton" type="button" onClick={() => handleImportMailFailTemplate("user")}>
-                                      Load example rules
-                                    </button>
-                                  </div>
-                                </>
-                              ) : null}
+                          <>
+                            <div className="settingsSubTabs" role="tablist" aria-label="User editor sections">
+                              {settingsSubTabs.map((tab) => (
+                                <button
+                                  key={tab.key}
+                                  className={userEditorSubTab === tab.key ? "settingsSubTabButton active" : "settingsSubTabButton"}
+                                  onClick={() => setUserEditorSubTab(tab.key)}
+                                  type="button"
+                                >
+                                  {tab.label}
+                                </button>
+                              ))}
                             </div>
 
-                            <div className="settingsField toggleField">
-                              <span>Allowed remote IPs</span>
-                              <label className="toggleRow">
-                                <input type="checkbox" checked={limitAllowedRemoteIps} onChange={(event) => setLimitAllowedRemoteIps(event.target.checked)} />
-                                <span>Restrict SMTP connections to specific IPs or CIDRs</span>
-                              </label>
-                              {limitAllowedRemoteIps ? (
-                                <textarea
-                                  rows={3}
-                                  value={settingsDraft.allowedRemoteIps}
-                                  onChange={(event) => updateSettingsField("allowedRemoteIps", event.target.value)}
-                                />
-                              ) : null}
-                              <small>Comma-separated IPs or CIDR ranges allowed to connect via SMTP.</small>
-                            </div>
-
-                            <div className="settingsField toggleField">
-                              <span>Accepted recipient domains</span>
-                              <label className="toggleRow">
-                                <input
-                                  type="checkbox"
-                                  checked={limitAcceptedRcptDomains}
-                                  onChange={(event) => setLimitAcceptedRcptDomains(event.target.checked)}
-                                />
-                                <span>Restrict accepted recipient domains</span>
-                              </label>
-                              {limitAcceptedRcptDomains ? (
-                                <textarea
-                                  rows={3}
-                                  value={settingsDraft.acceptedRcptDomains}
-                                  onChange={(event) => updateSettingsField("acceptedRcptDomains", event.target.value)}
-                                />
-                              ) : null}
-                              <small>Comma-separated recipient domains or regex patterns to accept.</small>
-                            </div>
-
-                            <div className="settingsField toggleField">
-                              <span>Accepted sender domains</span>
-                              <label className="toggleRow">
-                                <input
-                                  type="checkbox"
-                                  checked={limitAcceptedFromDomains}
-                                  onChange={(event) => setLimitAcceptedFromDomains(event.target.checked)}
-                                />
-                                <span>Restrict accepted sender domains</span>
-                              </label>
-                              {limitAcceptedFromDomains ? (
-                                <textarea
-                                  rows={3}
-                                  value={settingsDraft.acceptedFromDomains}
-                                  onChange={(event) => updateSettingsField("acceptedFromDomains", event.target.value)}
-                                />
-                              ) : null}
-                              <small>Comma-separated sender domains or regex patterns to accept.</small>
-                            </div>
-
-                            <div className="settingsField toggleField">
-                              <span>Automatic message deletion</span>
-                              <label className="toggleRow">
-                                <input type="checkbox" checked={autoDeleteEnabled} onChange={(event) => handleToggleAutoDelete(event.target.checked)} />
-                                <span>Automatically delete old messages</span>
-                              </label>
-                              {autoDeleteEnabled ? (
-                                <label className="settingsInlineField">
-                                  <span>Delete after</span>
-                                  <input
-                                    type="number"
-                                    min={1}
-                                    step={1}
-                                    value={settingsDraft.autoDeleteAfterDays > 0 ? settingsDraft.autoDeleteAfterDays : defaultAutoDeleteDays}
-                                    onChange={(event) =>
-                                      updateSettingsField(
-                                        "autoDeleteAfterDays",
-                                        Math.max(1, Number.parseInt(event.target.value || String(defaultAutoDeleteDays), 10))
-                                      )
-                                    }
-                                  />
-                                  <span>days</span>
+                            {userEditorSubTab === "general" ? (
+                              <div className="settingsGrid adminEditorGrid">
+                                <label className="settingsField">
+                                  <span>Username</span>
+                                  <input value={managedUsername} onChange={(event) => setManagedUsername(event.target.value)} />
+                                  <small>Local username used for login.</small>
                                 </label>
-                              ) : null}
-                              <small>Deletes messages after the configured number of days.</small>
-                            </div>
-                          </div>
+                                <label className="settingsField">
+                                  <span>New password</span>
+                                  <input
+                                    type="password"
+                                    value={managedPassword}
+                                    onChange={(event) => setManagedPassword(event.target.value)}
+                                    placeholder="Leave empty to keep the current password"
+                                  />
+                                  <small>Optional on update.</small>
+                                </label>
+
+                                <div className="settingsField toggleField">
+                                  <span>Allowed remote IPs</span>
+                                  <label className="toggleRow">
+                                    <input type="checkbox" checked={limitAllowedRemoteIps} onChange={(event) => setLimitAllowedRemoteIps(event.target.checked)} />
+                                    <span>Restrict SMTP connections to specific IPs or CIDRs</span>
+                                  </label>
+                                  {limitAllowedRemoteIps ? (
+                                    <textarea
+                                      rows={3}
+                                      value={settingsDraft.allowedRemoteIps}
+                                      onChange={(event) => updateSettingsField("allowedRemoteIps", event.target.value)}
+                                    />
+                                  ) : null}
+                                  <small>Comma-separated IPs or CIDR ranges allowed to connect via SMTP.</small>
+                                </div>
+
+                                <div className="settingsField toggleField">
+                                  <span>Accepted recipient domains</span>
+                                  <label className="toggleRow">
+                                    <input
+                                      type="checkbox"
+                                      checked={limitAcceptedRcptDomains}
+                                      onChange={(event) => setLimitAcceptedRcptDomains(event.target.checked)}
+                                    />
+                                    <span>Restrict accepted recipient domains</span>
+                                  </label>
+                                  {limitAcceptedRcptDomains ? (
+                                    <textarea
+                                      rows={3}
+                                      value={settingsDraft.acceptedRcptDomains}
+                                      onChange={(event) => updateSettingsField("acceptedRcptDomains", event.target.value)}
+                                    />
+                                  ) : null}
+                                  <small>Comma-separated recipient domains or regex patterns to accept.</small>
+                                </div>
+
+                                <div className="settingsField toggleField">
+                                  <span>Accepted sender domains</span>
+                                  <label className="toggleRow">
+                                    <input
+                                      type="checkbox"
+                                      checked={limitAcceptedFromDomains}
+                                      onChange={(event) => setLimitAcceptedFromDomains(event.target.checked)}
+                                    />
+                                    <span>Restrict accepted sender domains</span>
+                                  </label>
+                                  {limitAcceptedFromDomains ? (
+                                    <textarea
+                                      rows={3}
+                                      value={settingsDraft.acceptedFromDomains}
+                                      onChange={(event) => updateSettingsField("acceptedFromDomains", event.target.value)}
+                                    />
+                                  ) : null}
+                                  <small>Comma-separated sender domains or regex patterns to accept.</small>
+                                </div>
+
+                                <div className="settingsField toggleField">
+                                  <span>Automatic message deletion</span>
+                                  <label className="toggleRow">
+                                    <input type="checkbox" checked={autoDeleteEnabled} onChange={(event) => handleToggleAutoDelete(event.target.checked)} />
+                                    <span>Automatically delete old messages</span>
+                                  </label>
+                                  {autoDeleteEnabled ? (
+                                    <label className="settingsInlineField">
+                                      <span>Delete after</span>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        step={1}
+                                        value={settingsDraft.autoDeleteAfterDays > 0 ? settingsDraft.autoDeleteAfterDays : defaultAutoDeleteDays}
+                                        onChange={(event) =>
+                                          updateSettingsField(
+                                            "autoDeleteAfterDays",
+                                            Math.max(1, Number.parseInt(event.target.value || String(defaultAutoDeleteDays), 10))
+                                          )
+                                        }
+                                      />
+                                      <span>days</span>
+                                    </label>
+                                  ) : null}
+                                  <small>Deletes messages after the configured number of days.</small>
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {userEditorSubTab === "rules" ? (
+                              <div className="settingsField toggleField">
+                                <span>MailFail enabled</span>
+                                <label className="toggleRow">
+                                  <input
+                                    type="checkbox"
+                                    checked={settingsDraft.mailFailEnabled}
+                                    onChange={(event) => handleToggleMailFail(event.target.checked)}
+                                  />
+                                  <span>Enable MailFail rule evaluation</span>
+                                </label>
+                                <small>Turns MailFail rule evaluation on for incoming SMTP sessions.</small>
+                                {settingsDraft.mailFailEnabled ? (
+                                  <>
+                                    <div className="ruleSummaryList">
+                                      {(settingsDraft.mailFailRules ?? []).length ? (
+                                        settingsDraft.mailFailRules.map((rule) => (
+                                          <span key={`${rule.name}-${rule.trigger}-${rule.stage}`} className="ruleChip">
+                                            {rule.name || rule.trigger}
+                                          </span>
+                                        ))
+                                      ) : (
+                                        <span className="mutedText">No rules configured yet.</span>
+                                      )}
+                                    </div>
+                                    <div className="settingsCardActions">
+                                      <button className="ghostButton compactButton" type="button" onClick={() => openMailFailManager("user")}>
+                                        Manage rules
+                                      </button>
+                                      <button className="ghostButton compactButton" type="button" onClick={() => handleImportMailFailTemplate("user")}>
+                                        Load example rules
+                                      </button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div className="emptyListCard">
+                                    <strong>Rules are off</strong>
+                                    <p>Enable MailFail first if this user should answer with rule-based SMTP responses.</p>
+                                  </div>
+                                )}
+                              </div>
+                            ) : null}
+                          </>
                         ) : (
                           <div className="emptyListCard adminEditorEmpty">
                             <strong>No user selected</strong>
