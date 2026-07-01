@@ -1069,7 +1069,7 @@ export function App() {
               <p className="settingsLead">
                 {session?.isAdmin
                   ? "Manage local users and their delivery policies."
-                  : "These settings are persisted in SQLite and applied live without a restart."}
+                  : "These settings are saved and applied live without a restart."}
               </p>
 
               {settingsLoading ? <p className="emptyState">Loading settings...</p> : null}
@@ -1723,7 +1723,7 @@ export function App() {
                   <div className="adminSectionHeader">
                     <div>
                       <span>{selectedMailFailRuleIndex === null ? "Create rule" : "Edit rule"}</span>
-                      <p className="adminEditorLead">Rules are stored in SQLite and applied immediately after saving the parent settings.</p>
+                      <p className="adminEditorLead">Rules are applied immediately after saving the parent settings.</p>
                     </div>
                     <div className="settingsCardActions">
                       {selectedMailFailRuleIndex !== null ? (

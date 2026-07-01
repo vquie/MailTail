@@ -6,7 +6,7 @@ MailTail is a modern open-source SMTP test inbox focused on mail infrastructure 
 
 - SMTP server on port `8025`
 - Web UI and REST API on port `8080`
-- SQLite persistence with surviving container restarts
+- Persistent message storage across restarts
 - MIME parsing for text, HTML, and attachments
 - Search over subject, sender, and recipient
 - Full raw message storage
@@ -54,7 +54,7 @@ go mod tidy
 go run ./cmd/mailtail
 ```
 
-The backend creates `data/mailtail.db` automatically.
+The backend initializes its local data directory automatically.
 
 ### Start the frontend
 
@@ -296,7 +296,7 @@ curl --url smtp://localhost:8025 \
 
 MailTail can optionally simulate SMTP failures based on the localpart of the sender or recipient address.
 
-MailFail is disabled by default. Rules are now managed directly in the web UI and stored in SQLite per user.
+MailFail is disabled by default. Rules are now managed directly in the web UI per user.
 
 Enable MailFail in the relevant user settings, then either:
 
@@ -386,16 +386,16 @@ Bootstrap environment variables:
 Runtime settings:
 
 - The web UI includes a Settings panel for MailFail, SMTP logging, origin restrictions, SMTP IP restrictions, sender/recipient restrictions, and automatic message deletion.
-- These settings are persisted in SQLite and applied live without restarting MailTail.
+- These settings are saved and applied live without restarting MailTail.
 - The related environment variables are still supported as bootstrap values for the first start or for instances without saved runtime settings yet.
-- Once runtime settings have been saved in the UI, the database values take precedence over the environment.
+- Once runtime settings have been saved in the UI, the saved values take precedence over the environment.
 
 The runtime-setting bootstrap variables are:
 
 - `MAILTAIL_ALLOWED_ORIGINS` default: empty, disables cross-origin browser access. Set this only if you intentionally need browser clients from another origin.
 - `MAILTAIL_SMTP_LOG_VERBOSE` default: `false`, logs only accepted messages and rejects/errors. Set to `true` for per-command SMTP tracing.
 - `MAILTAIL_MAILFAIL_ENABLED` default: `false`
-- MailFail rules are stored in SQLite and edited in the UI.
+- MailFail rules are edited in the UI.
 - `MAILTAIL_ALLOWED_REMOTE_IPS` default: empty, accepts SMTP connections from all IPs and logs a startup warning. Supports IPs and CIDR ranges.
 - `MAILTAIL_ACCEPTED_RCPT_DOMAINS` default: empty, accepts recipients for all domains and logs a startup warning. Values may be exact domains or regular expressions.
 - `MAILTAIL_ACCEPTED_FROM_DOMAINS` default: empty, accepts senders for all domains and logs a startup warning. Values may be exact domains or regular expressions.
