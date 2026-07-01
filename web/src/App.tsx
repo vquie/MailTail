@@ -138,6 +138,10 @@ export function App() {
   const [managedUsername, setManagedUsername] = useState(emptyManagedUser.username);
   const [managedPassword, setManagedPassword] = useState(emptyManagedUser.password);
   const [error, setError] = useState<string | null>(null);
+  const selectedManagedUser = useMemo(
+    () => managedUsers.find((user) => user.id === selectedManagedUserId) ?? null,
+    [managedUsers, selectedManagedUserId]
+  );
   const queryRef = useRef(query);
   const messagesRef = useRef(messages);
   const selectedIdRef = useRef<number | null>(selectedId);
@@ -766,8 +770,31 @@ export function App() {
 
   const hasMessages = messages.length > 0;
   const hasAttachments = Boolean(selectedMessage?.attachments?.length);
-  const smtpExampleRecipient = "test@example.test";
-  const smtpExampleSender = "sender@example.test";
+  const smtpExampleDomain = useMemo(
+    () =>
+      resolveExampleDomain([
+        selectedManagedUser?.settings,
+        settingsDraft,
+        currentSettings,
+        adminMailboxDraft,
+        ...managedUsers.map((user) => user.settings)
+      ]),
+    [adminMailboxDraft, currentSettings, managedUsers, selectedManagedUser, settingsDraft]
+  );
+  const mailFailExampleDomain = useMemo(
+    () =>
+      resolveExampleDomain([
+        mailFailManagerScope === "adminMailbox" ? adminMailboxDraft : settingsDraft,
+        selectedManagedUser?.settings,
+        currentSettings,
+        adminMailboxDraft,
+        ...managedUsers.map((user) => user.settings)
+      ]),
+    [adminMailboxDraft, currentSettings, mailFailManagerScope, managedUsers, selectedManagedUser, settingsDraft]
+  );
+  const smtpExampleRecipient = `test@${smtpExampleDomain}`;
+  const smtpExampleSender = `sender@${smtpExampleDomain}`;
+  const mailFailExampleRecipient = `user+mf-greylist@${mailFailExampleDomain}`;
   const paneCopyValue = currentPaneCopyValue(activeTab, selectedMessage);
   const paneCopyLabel = activeTab === "headers" ? "Copy all" : "Copy all";
   const hasActiveSearch = query.length > 0;
@@ -1724,7 +1751,7 @@ export function App() {
                         onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, trigger: event.target.value }))}
                         placeholder="mf-greylist"
                       />
-                      <small>Example recipient: <code>user+mf-greylist@example.test</code></small>
+                      <small>Example recipient: <code>{mailFailExampleRecipient}</code></small>
                     </label>
 
                     <label className="settingsField">
@@ -1899,6 +1926,65 @@ function buildSettingsPayload(
     acceptedFromDomains: toggles.limitAcceptedFromDomains ? settings.acceptedFromDomains : "",
     autoDeleteAfterDays: toggles.autoDeleteEnabled ? Math.max(1, settings.autoDeleteAfterDays || defaultAutoDeleteDays) : 0
   };
+}
+
+function resolveExampleDomain(settingsList: Array<AppSettings | null | undefined>): string {
+  for (const settings of settingsList) {
+    const domain = extractExampleDomain(settings);
+    if (domain) {
+      return domain;
+    }
+  }
+  return "example.test";
+}
+
+function extractExampleDomain(settings?: AppSettings | null): string | null {
+  if (!settings) {
+    return null;
+  }
+
+  for (const value of [settings.acceptedRcptDomains, settings.acceptedFromDomains]) {
+    for (const token of splitCSV(value)) {
+      const domain = normalizeExampleDomainToken(token);
+      if (domain) {
+        return domain;
+      }
+    }
+  }
+
+  return null;
+}
+
+function splitCSV(value: string): string[] {
+  if (!value.trim()) {
+    return [];
+  }
+
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function normalizeExampleDomainToken(token: string): string | null {
+  const normalized = token.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(normalized)) {
+    return normalized;
+  }
+
+  const atIndex = normalized.lastIndexOf("@");
+  if (atIndex > 0) {
+    const candidate = normalized.slice(atIndex + 1);
+    if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 function cloneMailFailRule(rule: MailFailRule): MailFailRule {
