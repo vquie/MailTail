@@ -153,6 +153,7 @@ export function App() {
   const messagesRef = useRef(messages);
   const selectedIdRef = useRef<number | null>(selectedId);
   const selectedMessageRef = useRef<Message | null>(selectedMessage);
+  const userMenuRef = useRef<HTMLDetailsElement | null>(null);
   const nextCursorRef = useRef(nextCursor);
   const hasMoreRef = useRef(hasMore);
 
@@ -365,6 +366,7 @@ export function App() {
 
   async function openSettingsPanel() {
     try {
+      userMenuRef.current?.removeAttribute("open");
       setSettingsOpen(true);
       setSettingsLoading(true);
       setActiveSettingsTab(session?.isAdmin ? "instance" : "delivery");
@@ -1142,6 +1144,12 @@ export function App() {
   }, [activeTab, availableTabs]);
 
   useEffect(() => {
+    if (settingsOpen) {
+      userMenuRef.current?.removeAttribute("open");
+    }
+  }, [settingsOpen]);
+
+  useEffect(() => {
     if (!settingsOpen) {
       return;
     }
@@ -1236,6 +1244,8 @@ export function App() {
   ].filter(Boolean).length;
   const enabledUserFilters = [limitAllowedRemoteIps, limitAcceptedRcptDomains, limitAcceptedFromDomains].filter(Boolean).length;
   const selectedMessageBadges = selectedMessage ? buildMessageBadges(selectedMessage) : [];
+  const repoUrl = "https://github.com/vquie/MailTail";
+  const issuesUrl = "https://github.com/vquie/MailTail/issues/new/choose";
   const sidebarDiagnostics = [
     { label: "Messages", value: String(stats.messageCount) },
     { label: "Database size", value: formatBytes(stats.totalSize) },
@@ -1250,7 +1260,7 @@ export function App() {
       <header className="workspaceHeader">
         <div className="workspaceHeaderCard">
           <div className="workspaceTopRow">
-            <div className="brandLockup">
+            <a className="brandLockup brandHomeLink" href="/" onClick={() => setSettingsOpen(false)}>
               <div className="brandMark" aria-hidden="true">
                 <MailIcon />
               </div>
@@ -1258,7 +1268,7 @@ export function App() {
                 <p className="eyebrow">SMTP Debugger</p>
                 <h1>MailTail</h1>
               </div>
-            </div>
+            </a>
 
             <label className="searchField workspaceSearchField searchFieldLarge">
               <span className="searchFieldIcon" aria-hidden="true">
@@ -1296,21 +1306,23 @@ export function App() {
               >
                 Refresh
               </button>
-              <details className="userMenu">
-                <summary className="ghostButton compactButton userMenuTrigger">
-                  <span>{session?.username || "User"}</span>
-                  <span className="userMenuCaret" aria-hidden="true">▼</span>
-                </summary>
-                <div className="userMenuPanel">
-                  <button className="ghostButton compactButton toolbarButton userMenuAction" type="button" onClick={() => void openSettingsPanel()}>
-                    <SettingsIcon />
-                    <span>Settings</span>
-                  </button>
-                  <button className="ghostButton compactButton" type="button" onClick={() => void handleLogout()}>
-                    Logout
-                  </button>
-                </div>
-              </details>
+              <div className="topToolbarAccountSlot">
+                <details className="userMenu" ref={userMenuRef}>
+                  <summary className="ghostButton compactButton userMenuTrigger">
+                    <span>{session?.username || "User"}</span>
+                    <span className="userMenuCaret" aria-hidden="true">▼</span>
+                  </summary>
+                  <div className="userMenuPanel">
+                    <button className="ghostButton compactButton toolbarButton userMenuAction" type="button" onClick={() => void openSettingsPanel()}>
+                      <SettingsIcon />
+                      <span>Settings</span>
+                    </button>
+                    <button className="ghostButton compactButton" type="button" onClick={() => void handleLogout()}>
+                      Logout
+                    </button>
+                  </div>
+                </details>
+              </div>
             </div>
           </div>
         </div>
@@ -1384,6 +1396,16 @@ export function App() {
               ))}
             </dl>
           </section>
+          <div className="supportLinks">
+            <a className="ghostButton compactButton toolbarButton supportLink" href={repoUrl} target="_blank" rel="noreferrer">
+              <GitHubIcon />
+              <span>GitHub repo</span>
+            </a>
+            <a className="ghostButton compactButton toolbarButton supportLink" href={issuesUrl} target="_blank" rel="noreferrer">
+              <GitHubIcon />
+              <span>Report a bug</span>
+            </a>
+          </div>
           {!session?.isAdmin && settingsLoaded && currentSettings.mailFailEnabled ? (
             <div className="sidebarNotice">
               <span className="statusDot" aria-hidden="true" />
@@ -1581,9 +1603,19 @@ export function App() {
                   </p>
                 </div>
                 <div className="settingsPageToolbar">
-                  <button className="ghostButton compactButton" onClick={() => setSettingsOpen(false)}>
-                    Close
-                  </button>
+                  <div className="settingsSupportLinks">
+                    <a className="ghostButton compactButton toolbarButton settingsSupportLink" href={repoUrl} target="_blank" rel="noreferrer">
+                      <GitHubIcon />
+                      <span>vquie/MailTail</span>
+                    </a>
+                    <a className="ghostButton compactButton toolbarButton settingsSupportLink" href={issuesUrl} target="_blank" rel="noreferrer">
+                      <GitHubIcon />
+                      <span>Report a bug</span>
+                    </a>
+                    <button className="ghostButton compactButton settingsToolbarCloseButton" type="button" onClick={() => setSettingsOpen(false)}>
+                      Close
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -2733,6 +2765,14 @@ function MailIcon() {
     <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
       <path d="M2 4.5h12v7H2z" />
       <path d="M2.5 5 8 9l5.5-4" />
+    </svg>
+  );
+}
+
+function GitHubIcon() {
+  return (
+    <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M8 1.5a6.5 6.5 0 0 0-2 12.7c.3.1.4-.1.4-.3v-1.2c-1.7.4-2.1-.8-2.1-.8-.3-.8-.7-1-1-1.1-.2-.1-.5-.3 0-.3.5 0 1 .5 1.2.7.5.8 1.3.6 1.7.5.1-.4.2-.6.4-.8-1.5-.2-3.1-.8-3.1-3.3 0-.7.2-1.3.7-1.8-.1-.2-.3-.9.1-1.8 0 0 .6-.2 1.9.7a6 6 0 0 1 3.5 0c1.3-.9 1.9-.7 1.9-.7.4.9.2 1.6.1 1.8.4.5.7 1.1.7 1.8 0 2.6-1.6 3.1-3.1 3.3.2.2.5.6.5 1.3v1.9c0 .2.1.4.4.3A6.5 6.5 0 0 0 8 1.5Z" />
     </svg>
   );
 }
