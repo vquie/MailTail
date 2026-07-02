@@ -100,7 +100,12 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, page)
 	case http.MethodDelete:
-		if err := s.service.DeleteAllMessages(r.Context(), principal); err != nil {
+		if err := s.service.DeleteAllMessages(
+			r.Context(),
+			principal,
+			r.URL.Query().Get("q"),
+			r.URL.Query().Get("tag"),
+		); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

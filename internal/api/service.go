@@ -71,8 +71,13 @@ func (s *Service) DeleteMessage(ctx context.Context, principal models.SessionPri
 	return s.store.DeleteMessage(ctx, id, principal)
 }
 
-func (s *Service) DeleteAllMessages(ctx context.Context, principal models.SessionPrincipal) error {
-	return s.store.DeleteAllMessages(ctx, principal)
+func (s *Service) DeleteAllMessages(ctx context.Context, principal models.SessionPrincipal, query, tag string) error {
+	return s.store.DeleteAllMessages(ctx, principal, models.MessageFilter{
+		Query:       query,
+		Tag:         tag,
+		OwnerUserID: principal.UserID,
+		IncludeAll:  principal.IsAdmin,
+	})
 }
 
 func (s *Service) Stats(ctx context.Context, principal models.SessionPrincipal) (models.Stats, error) {

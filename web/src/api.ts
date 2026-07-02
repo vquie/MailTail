@@ -88,8 +88,16 @@ export async function deleteMessage(id: number): Promise<void> {
   await request<void>(`/api/messages/${id}`, { method: "DELETE" });
 }
 
-export async function clearInbox(): Promise<void> {
-  await request<void>("/api/messages", { method: "DELETE" });
+export async function clearInbox(query = "", tag = ""): Promise<void> {
+  const params = new URLSearchParams();
+  if (query) {
+    params.set("q", query);
+  }
+  if (tag) {
+    params.set("tag", tag);
+  }
+  const suffix = params.size ? `?${params.toString()}` : "";
+  await request<void>(`/api/messages${suffix}`, { method: "DELETE" });
 }
 
 export async function fetchUsers(): Promise<User[]> {

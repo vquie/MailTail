@@ -170,6 +170,52 @@ func TestSQLiteStoreListsAvailableTagsPerOwnerScope(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreDeleteAllMessagesRespectsFilters(t *testing.T) {
+	t.Parallel()
+
+	store := newTagTestStore(t)
+	ctx := context.Background()
+
+	create := func(subject, recipient string) {
+		t.Helper()
+		if _, err := store.CreateMessage(ctx, models.StoredMessage{
+			ReceivedAt: time.Date(2026, 7, 2, 10, 0, 0, 0, time.UTC),
+			MailFrom:   "sender@example.test",
+			RcptTo:     []string{recipient},
+			HeaderFrom: "sender@example.test",
+			HeaderTo:   recipient,
+			Subject:    subject,
+			MessageID:  "<" + subject + "@example.test>",
+			Helo:       "mail.example.test",
+			RemoteIP:   "127.0.0.1",
+			Size:       128,
+			Raw:        "raw",
+			TextBody:   "body",
+		}); err != nil {
+			t.Fatalf("create message %q: %v", subject, err)
+		}
+	}
+
+	create("keep", "user+keep@example.test")
+	create("delete alpha", "user+alpha@example.test")
+	create("delete alpha second", "user+alpha@example.test")
+
+	if err := store.DeleteAllMessages(ctx, models.SessionPrincipal{IsAdmin: true}, models.MessageFilter{IncludeAll: true, Tag: "alpha"}); err != nil {
+		t.Fatalf("delete filtered messages: %v", err)
+	}
+
+	page, err := store.ListMessages(ctx, models.MessageFilter{IncludeAll: true, Limit: 25})
+	if err != nil {
+		t.Fatalf("list remaining messages: %v", err)
+	}
+	if len(page.Messages) != 1 || page.Messages[0].Subject != "keep" {
+		t.Fatalf("unexpected remaining messages: %+v", page.Messages)
+	}
+	if diff := compareStringSlices(page.AvailableTags, []string{"keep"}); diff != "" {
+		t.Fatalf("unexpected remaining tags: %s", diff)
+	}
+}
+
 func newTagTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
 

@@ -85,6 +85,69 @@ func TestHandleMessagesSupportsTagFilter(t *testing.T) {
 	}
 }
 
+func TestHandleMessagesDeleteRespectsTagFilter(t *testing.T) {
+	t.Parallel()
+
+	store := newServerTestStore(t)
+	service := NewService(store, parser.NewService(), "test", nil, nil)
+	server := &Server{service: service}
+	ctx := context.Background()
+
+	create := func(subject, recipient string) {
+		t.Helper()
+		if _, err := store.CreateMessage(ctx, models.StoredMessage{
+			ReceivedAt: time.Date(2026, 7, 2, 10, 0, 0, 0, time.UTC),
+			MailFrom:   "sender@example.test",
+			RcptTo:     []string{recipient},
+			HeaderFrom: "sender@example.test",
+			HeaderTo:   recipient,
+			Subject:    subject,
+			MessageID:  "<" + subject + "@example.test>",
+			Helo:       "mail.example.test",
+			RemoteIP:   "127.0.0.1",
+			Size:       128,
+			Raw:        "raw",
+			TextBody:   "body",
+		}); err != nil {
+			t.Fatalf("create message %q: %v", subject, err)
+		}
+	}
+
+	create("keep", "user+keep@example.test")
+	create("delete me", "user+alpha@example.test")
+
+	deleteRequest := httptest.NewRequest(http.MethodDelete, "/api/messages?tag=alpha", nil)
+	deleteRequest = deleteRequest.WithContext(withPrincipal(deleteRequest.Context(), models.SessionPrincipal{IsAdmin: true, Username: "admin"}))
+	deleteRecorder := httptest.NewRecorder()
+
+	server.handleMessages(deleteRecorder, deleteRequest)
+
+	if deleteRecorder.Code != http.StatusNoContent {
+		t.Fatalf("unexpected delete status: got %d body=%s", deleteRecorder.Code, deleteRecorder.Body.String())
+	}
+
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/messages?limit=25", nil)
+	listRequest = listRequest.WithContext(withPrincipal(listRequest.Context(), models.SessionPrincipal{IsAdmin: true, Username: "admin"}))
+	listRecorder := httptest.NewRecorder()
+
+	server.handleMessages(listRecorder, listRequest)
+
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("unexpected list status: got %d body=%s", listRecorder.Code, listRecorder.Body.String())
+	}
+
+	var page models.MessagePage
+	if err := json.Unmarshal(listRecorder.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	if len(page.Messages) != 1 || page.Messages[0].Subject != "keep" {
+		t.Fatalf("unexpected remaining messages: %+v", page.Messages)
+	}
+	if len(page.AvailableTags) != 1 || page.AvailableTags[0] != "keep" {
+		t.Fatalf("unexpected remaining tags: %+v", page.AvailableTags)
+	}
+}
+
 func newServerTestStore(t *testing.T) *storage.SQLiteStore {
 	t.Helper()
 

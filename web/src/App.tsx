@@ -369,11 +369,15 @@ export function App() {
   }
 
   async function handleClearInbox() {
-    await clearInbox();
-    setQueryInput("");
-    setQuery("");
-    setSelectedTag("");
-    await loadOverview("", { preferredId: null, forceDetail: true, resetList: true });
+    const activeQuery = query.trim();
+    const activeTag = selectedTag.trim();
+    const confirmation = describeDeleteScope(activeQuery, activeTag);
+    if (!window.confirm(confirmation)) {
+      return;
+    }
+
+    await clearInbox(activeQuery, activeTag);
+    await loadOverview(activeQuery, { preferredId: null, forceDetail: true, resetList: true });
   }
 
   async function handleLogout() {
@@ -2673,6 +2677,20 @@ function describeEmptyState(query: string, tag: string): string {
     return "No messages captured yet.";
   }
   return `No results for ${filters.join(" and ")}.`;
+}
+
+function describeDeleteScope(query: string, tag: string): string {
+  const filters: string[] = [];
+  if (query) {
+    filters.push(`search "${query}"`);
+  }
+  if (tag) {
+    filters.push(`tag "+${tag}"`);
+  }
+  if (filters.length === 0) {
+    return "Delete all messages in the current mailbox?";
+  }
+  return `Delete all messages matching ${filters.join(" and ")}?`;
 }
 
 function buildTagColorStyle(tag: string): CSSProperties {

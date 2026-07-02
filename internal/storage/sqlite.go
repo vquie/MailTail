@@ -59,7 +59,7 @@ type Store interface {
 	GetRawMessage(ctx context.Context, id int64, principal models.SessionPrincipal) (string, error)
 	GetAttachment(ctx context.Context, messageID, attachmentID int64, principal models.SessionPrincipal) (models.Attachment, []byte, error)
 	DeleteMessage(ctx context.Context, id int64, principal models.SessionPrincipal) error
-	DeleteAllMessages(ctx context.Context, principal models.SessionPrincipal) error
+	DeleteAllMessages(ctx context.Context, principal models.SessionPrincipal, filter models.MessageFilter) error
 	Stats(ctx context.Context, principal models.SessionPrincipal) (models.Stats, error)
 	Close() error
 }
@@ -996,14 +996,41 @@ func (s *SQLiteStore) DeleteMessage(ctx context.Context, id int64, principal mod
 	return nil
 }
 
-func (s *SQLiteStore) DeleteAllMessages(ctx context.Context, principal models.SessionPrincipal) error {
-	query := `DELETE FROM messages`
-	args := []any{}
+func (s *SQLiteStore) DeleteAllMessages(ctx context.Context, principal models.SessionPrincipal, filter models.MessageFilter) error {
+	selectQuery := `
+		SELECT messages.id
+		FROM messages
+	`
+	args := make([]any, 0, 6)
+	clauses := make([]string, 0, 3)
 	if !principal.IsAdmin {
-		query += ` WHERE owner_user_id = ?`
+		clauses = append(clauses, `messages.owner_user_id = ?`)
 		args = append(args, principal.UserID)
 	}
-	_, err := s.db.ExecContext(ctx, query, args...)
+	if strings.TrimSpace(filter.Query) != "" {
+		ftsQuery := buildFTSQuery(filter.Query)
+		if ftsQuery != "" {
+			selectQuery += `
+				JOIN messages_fts ON messages_fts.rowid = messages.id
+			`
+			clauses = append(clauses, `messages_fts MATCH ?`)
+			args = append(args, ftsQuery)
+		} else {
+			clauses = append(clauses, `(LOWER(messages.subject) LIKE ? OR LOWER(messages.header_from) LIKE ? OR LOWER(messages.header_to) LIKE ?)`)
+			term := "%" + strings.ToLower(strings.TrimSpace(filter.Query)) + "%"
+			args = append(args, term, term, term)
+		}
+	}
+	if tag := strings.ToLower(strings.TrimSpace(filter.Tag)); tag != "" {
+		clauses = append(clauses, `EXISTS (SELECT 1 FROM message_tags WHERE message_tags.message_id = messages.id AND message_tags.tag = ?)`)
+		args = append(args, tag)
+	}
+	if len(clauses) > 0 {
+		selectQuery += ` WHERE ` + strings.Join(clauses, ` AND `)
+	}
+
+	deleteQuery := `DELETE FROM messages WHERE id IN (` + selectQuery + `)`
+	_, err := s.db.ExecContext(ctx, deleteQuery, args...)
 	return err
 }
 
