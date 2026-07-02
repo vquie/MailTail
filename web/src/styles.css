@@ -1625,7 +1625,7 @@ body {
 
 .workspaceTopRow {
   display: grid;
-  grid-template-columns: auto minmax(320px, 1fr) auto;
+  grid-template-columns: minmax(140px, auto) minmax(260px, 1fr) auto;
   align-items: center;
   gap: 14px;
 }
@@ -1633,7 +1633,7 @@ body {
 .brandLockup {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -1661,6 +1661,9 @@ body {
   font-size: 1.2rem;
   line-height: 1.05;
   letter-spacing: -0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .workspaceTitle .eyebrow,
@@ -1670,6 +1673,10 @@ body {
 .settingsPageTitle .eyebrow {
   color: #8fb6ff;
   letter-spacing: 0.14em;
+}
+
+.workspaceTitle .eyebrow {
+  font-size: 0.68rem;
 }
 
 .searchFieldLarge {
@@ -1701,10 +1708,12 @@ body {
 }
 
 .topToolbar {
+  display: flex;
   justify-content: flex-end;
   align-items: center;
   gap: 8px;
   flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .ghostButton,
@@ -1833,6 +1842,10 @@ body {
   z-index: 6;
 }
 
+.userMenuAction {
+  justify-content: flex-start;
+}
+
 .sidebar {
   background: transparent;
   border-right: 1px solid var(--border);
@@ -1854,12 +1867,27 @@ body {
   font-size: 1rem;
 }
 
+.sidebarSectionHeader {
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.sidebarSectionHeader > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.sidebarSectionHeader h2 {
+  line-height: 1;
+}
+
 .sidebarSectionMeta {
   display: grid;
   gap: 4px;
   justify-items: end;
   color: var(--text-subtle);
   font-size: 0.78rem;
+  text-align: right;
 }
 
 .messageList {
@@ -2281,5 +2309,333 @@ body {
 
   .headerRow {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Responsive polish pass */
+
+.workspaceHeaderCard,
+.workspaceTopRow,
+.brandLockup,
+.workspaceTitle,
+.workspaceSearchField,
+.topToolbar,
+.messageTop,
+.messageMetaCompact,
+.viewerHeader,
+.tabs,
+.heroActions,
+.settingsPageHeader,
+.settingsPageTitle,
+.settingsPageToolbar,
+.settingsTabs,
+.settingsCardGrid,
+.settingsCardGridAdmin,
+.adminUserLayout,
+.platformSettingsRow,
+.rulesComposerLayout,
+.rulesOverviewGrid,
+.mailFailManagerLayout {
+  min-width: 0;
+}
+
+.workspaceTitle,
+.heroCopy,
+.settingsPageTitle,
+.settingsCardHeader > div {
+  min-width: 0;
+}
+
+.workspaceTitle h1,
+.messageHeroCard h2,
+.settingsPageTitle h2,
+.emptyHero h2 {
+  overflow-wrap: anywhere;
+}
+
+.sidebarSectionHeader,
+.messageTop,
+.viewerHeader,
+.settingsPageHeader,
+.settingsCardHeader {
+  min-width: 0;
+}
+
+.sidebarSectionMeta,
+.messageTime,
+.diagnosticsStamp {
+  flex: 0 0 auto;
+}
+
+.settingsPageTitle p,
+.settingsCardLead,
+.settingsLead,
+.emptyCopy {
+  max-width: 72ch;
+}
+
+.topToolbar > *,
+.heroActions > * {
+  flex: 0 1 auto;
+}
+
+.heroActions {
+  align-items: flex-start;
+}
+
+.messageInfoPanel dd,
+.diagnosticsList dd,
+.headerValue {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.messageList {
+  padding-right: 0;
+}
+
+.shell.settingsMode .contentPane {
+  overflow: auto;
+}
+
+@media (width <= 1200px) {
+  .shell {
+    grid-template-columns: 320px minmax(0, 1fr);
+  }
+
+  .workspaceTopRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .brandLockup {
+    max-width: 100%;
+  }
+
+  .workspaceSearchField {
+    max-width: none;
+    width: 100%;
+  }
+
+  .topToolbar {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .messageHeroCard {
+    grid-template-columns: 1fr;
+  }
+
+  .heroActions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .settingsPageHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settingsPageToolbar {
+    justify-content: flex-end;
+  }
+}
+
+@media (width <= 1044px) {
+  body {
+    overflow: auto;
+  }
+
+  #root {
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "header"
+      "sidebar"
+      "content";
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .shell.settingsMode {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "header"
+      "content";
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding-top: 10px;
+  }
+
+  .contentPane {
+    height: auto;
+  }
+
+  .messageList {
+    max-height: none;
+  }
+
+  .detailGrid,
+  .settingsCardGrid,
+  .settingsCardGridAdmin,
+  .settingsGrid,
+  .adminUserLayout,
+  .platformSettingsRow,
+  .rulesComposerLayout,
+  .rulesOverviewGrid,
+  .mailFailManagerLayout,
+  .adminMailboxGrid,
+  .settingsStatsGrid,
+  .createUserGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .settingsTabs {
+    flex-wrap: wrap;
+  }
+
+  .settingsTabButton {
+    flex: 0 1 auto;
+  }
+}
+
+@media (width <= 860px) {
+  .workspaceHeader,
+  .sidebar,
+  .contentPane {
+    padding: 12px;
+  }
+
+  .workspaceHeaderCard,
+  .messageHeroCard,
+  .viewerCard,
+  .emptyHero,
+  .settingsPanel,
+  .createUserDialog {
+    padding: 12px;
+  }
+
+  .brandLockup {
+    gap: 10px;
+  }
+
+  .brandMark {
+    width: 34px;
+    height: 34px;
+  }
+
+  .workspaceTitle h1 {
+    font-size: 1.08rem;
+  }
+
+  .searchFieldLarge input {
+    min-height: 40px;
+    font-size: 0.9rem;
+  }
+
+  .topToolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .topToolbar > * {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .toolbarStatus,
+  .toolbarToggle,
+  .userMenuTrigger,
+  .ghostButton,
+  .primaryButton,
+  .dangerButton,
+  .tab,
+  .settingsTabButton,
+  .settingsSubTabButton {
+    min-height: 34px;
+  }
+
+  .sidebarSectionHeader {
+    align-items: flex-end;
+  }
+
+  .sidebarSectionMeta {
+    width: 100%;
+    justify-items: start;
+    text-align: left;
+  }
+
+  .messageTop {
+    gap: 8px;
+  }
+
+  .messageSubject {
+    font-size: 0.86rem;
+  }
+
+  .messageHeroCard h2,
+  .settingsPageTitle h2 {
+    font-size: 1.18rem;
+  }
+
+  .messageInfoPanel,
+  .diagnosticsList,
+  .settingsDefinitionList {
+    gap: 8px;
+  }
+
+  .messageInfoPanel div,
+  .diagnosticsList div,
+  .settingsDefinitionList div,
+  .headerRow {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .viewerHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tabs {
+    flex-wrap: wrap;
+  }
+
+  .viewerCopyButton {
+    align-self: flex-end;
+  }
+}
+
+@media (width <= 640px) {
+  .topToolbar,
+  .heroActions {
+    grid-template-columns: 1fr;
+  }
+
+  .messageBadgeRow,
+  .heroBadgeRow {
+    gap: 4px;
+  }
+
+  .messageBadge {
+    min-height: 20px;
+    padding: 0 7px;
+  }
+
+  .settingsTabs {
+    gap: 6px;
+  }
+
+  .settingsTabButton {
+    width: 100%;
+    justify-content: center;
   }
 }

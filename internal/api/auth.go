@@ -369,49 +369,65 @@ var loginTemplate = template.Must(template.New("login").Parse(`<!doctype html>
         color-scheme: dark;
         font-family: "Space Grotesk", sans-serif;
         background:
-          radial-gradient(circle at top left, rgba(242, 154, 74, 0.22), transparent 28%),
-          radial-gradient(circle at right, rgba(39, 98, 255, 0.18), transparent 30%),
-          linear-gradient(160deg, #11131a 0%, #181d2a 55%, #0d1016 100%);
-        color: #f8f3ea;
+          radial-gradient(circle at top left, rgba(79, 140, 255, 0.10), transparent 24%),
+          linear-gradient(180deg, #0a0f16 0%, #0b1118 48%, #0a1017 100%);
+        color: #e6edf7;
       }
       * { box-sizing: border-box; }
-      body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
-      .card {
-        width: min(420px, calc(100vw - 32px));
-        padding: 28px;
-        border: 1px solid rgba(255,255,255,0.08);
-        background: rgba(255,255,255,0.05);
-        border-radius: 10px;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+      body {
+        margin: 0;
+        min-height: 100vh;
+        padding: 24px;
+        display: grid;
+        place-items: center;
       }
-      h1 { margin: 0 0 8px; font-size: 2rem; }
-      p { margin: 0 0 18px; color: rgba(248,243,234,0.75); }
+      .card {
+        width: min(420px, 100%);
+        padding: 22px;
+        border: 1px solid rgba(255,255,255,0.07);
+        background: rgba(17,24,34,0.96);
+        border-radius: 14px;
+      }
+      h1 { margin: 0 0 4px; font-size: 1.9rem; letter-spacing: -0.04em; }
+      p { margin: 0 0 18px; color: rgba(230,237,247,0.72); }
       label { display: grid; gap: 6px; margin-bottom: 14px; font-size: 0.92rem; }
       input {
+        width: 100%;
         border: 1px solid rgba(255,255,255,0.08);
-        background: rgba(255,255,255,0.06);
+        background: rgba(8,12,19,0.78);
         color: inherit;
-        border-radius: 6px;
+        border-radius: 10px;
         padding: 11px 12px;
       }
       button {
-        border: 0;
-        background: linear-gradient(135deg, #f0b36f, #f26a4a);
-        color: #11131a;
-        border-radius: 6px;
+        border: 1px solid rgba(79,140,255,0.22);
+        background: rgba(79,140,255,0.16);
+        color: #c7dbff;
+        border-radius: 10px;
         padding: 11px 14px;
         font: inherit;
         font-weight: 700;
         cursor: pointer;
         width: 100%;
       }
+      button:hover {
+        background: rgba(79,140,255,0.22);
+      }
       .error {
         margin-bottom: 14px;
         padding: 10px 12px;
-        border-radius: 6px;
-        background: rgba(245,72,74,0.16);
-        border: 1px solid rgba(245,72,74,0.35);
+        border-radius: 10px;
+        background: rgba(245,72,74,0.12);
+        border: 1px solid rgba(245,72,74,0.24);
         color: #ffd6d6;
+      }
+      @media (width <= 860px) {
+        body {
+          padding: 16px;
+        }
+        .card {
+          width: 100%;
+        }
       }
     </style>
   </head>

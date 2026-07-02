@@ -1140,16 +1140,16 @@ export function App() {
               >
                 Refresh
               </button>
-              <button className="ghostButton compactButton toolbarButton" onClick={() => void openSettingsPanel()}>
-                <SettingsIcon />
-                <span>Settings</span>
-              </button>
               <details className="userMenu">
                 <summary className="ghostButton compactButton userMenuTrigger">
                   <span>{session?.username || "User"}</span>
                   <span className="userMenuCaret" aria-hidden="true">▼</span>
                 </summary>
                 <div className="userMenuPanel">
+                  <button className="ghostButton compactButton toolbarButton userMenuAction" type="button" onClick={() => void openSettingsPanel()}>
+                    <SettingsIcon />
+                    <span>Settings</span>
+                  </button>
                   <button className="ghostButton compactButton" type="button" onClick={() => void handleLogout()}>
                     Logout
                   </button>
