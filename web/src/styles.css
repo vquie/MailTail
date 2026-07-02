@@ -52,18 +52,6 @@ select {
   display: none;
 }
 
-.shell.settingsMode .workspaceHeader {
-  padding: 12px 16px 0;
-}
-
-.shell.settingsMode .workspaceHeaderCard {
-  padding: 10px 14px;
-}
-
-.shell.settingsMode .contentPane {
-  padding-top: 10px;
-}
-
 .sidebar {
   grid-area: sidebar;
   padding: 16px;
