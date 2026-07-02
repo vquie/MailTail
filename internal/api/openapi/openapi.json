@@ -1,0 +1,1154 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MailTail HTTP API",
+    "version": "1.0.0",
+    "description": "OpenAPI reference for the MailTail web and admin API. This specification is intended to stay in lockstep with the server implementation and is checked in tests."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same-origin MailTail HTTP server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "App",
+      "description": "Application metadata and current session details."
+    },
+    {
+      "name": "Messages",
+      "description": "Captured SMTP messages and message assets."
+    },
+    {
+      "name": "Settings",
+      "description": "Per-user delivery policy settings."
+    },
+    {
+      "name": "Admin",
+      "description": "Instance-wide mailbox policy and managed users."
+    },
+    {
+      "name": "Stats",
+      "description": "Inbox counters and aggregate sizes."
+    },
+    {
+      "name": "Auth",
+      "description": "Session login and logout."
+    }
+  ],
+  "paths": {
+    "/api/app": {
+      "get": {
+        "tags": ["App"],
+        "summary": "Get application metadata",
+        "description": "Returns static metadata about the running MailTail build.",
+        "security": [
+          { "sessionCookie": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Application information.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppInfo" },
+                "example": { "version": "0.1.0" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" }
+        }
+      }
+    },
+    "/api/session": {
+      "get": {
+        "tags": ["App"],
+        "summary": "Get the active session principal",
+        "description": "Returns the session principal resolved from the current authenticated request.",
+        "security": [
+          { "sessionCookie": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current session principal.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SessionEnvelope" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" }
+        }
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "tags": ["Settings"],
+        "summary": "Get settings for the current mailbox context",
+        "description": "Admins receive instance runtime settings. Non-admin users receive their mailbox delivery settings.",
+        "security": [
+          { "sessionCookie": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mailbox settings.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SettingsEnvelope" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" }
+        }
+      },
+      "put": {
+        "tags": ["Settings"],
+        "summary": "Update settings for the current mailbox context",
+        "description": "Normalizes comma- and newline-separated list fields before storing them.",
+        "security": [
+          { "sessionCookie": [], "csrfToken": [] }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateSettingsRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated and normalized settings.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SettingsEnvelope" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "403": { "$ref": "#/components/responses/InvalidCSRF" },
+          "409": {
+            "description": "Mailbox policy conflict.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "recipient ownership conflicts with an existing mailbox policy" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/mailbox-settings": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get admin mailbox settings",
+        "description": "Returns the admin-owned mailbox delivery policy. Admin access is required.",
+        "security": [
+          { "sessionCookie": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Admin mailbox settings.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SettingsEnvelope" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "403": { "$ref": "#/components/responses/AdminRequired" }
+        }
+      },
+      "put": {
+        "tags": ["Admin"],
+        "summary": "Update admin mailbox settings",
+        "description": "Stores the admin mailbox policy used for unmatched deliveries.",
+        "security": [
+          { "sessionCookie": [], "csrfToken": [] }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateSettingsRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated admin mailbox settings.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SettingsEnvelope" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "403": { "$ref": "#/components/responses/AdminOrInvalidCSRF" },
+          "409": {
+            "description": "Mailbox policy conflict.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List managed users",
+        "description": "Returns all managed mailbox users. Admin access is required.",
+        "security": [
+          { "sessionCookie": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Managed users.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UsersEnvelope" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "403": { "$ref": "#/components/responses/AdminRequired" }
+        }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Create a managed user",
+        "description": "Creates a login-capable managed mailbox user and stores its delivery settings.",
+        "security": [
+          { "sessionCookie": [], "csrfToken": [] }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateUserRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created user.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserEnvelope" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "403": { "$ref": "#/components/responses/AdminOrInvalidCSRF" },
+          "409": {
+            "description": "Username or mailbox policy conflict.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/users/{id}": {
+      "parameters": [
+        { "$ref": "#/components/parameters/UserID" }
+      ],
+      "put": {
+        "tags": ["Admin"],
+        "summary": "Update a managed user",
+        "description": "Updates the user's login name, optional password and delivery settings.",
+        "security": [
+          { "sessionCookie": [], "csrfToken": [] }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateUserRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated user.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserEnvelope" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "403": { "$ref": "#/components/responses/AdminOrInvalidCSRF" },
+          "404": { "$ref": "#/components/responses/UserNotFound" },
+          "409": {
+            "description": "Username or mailbox policy conflict.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete a managed user",
+        "description": "Deletes a managed user and its active sessions.",
+        "security": [
+          { "sessionCookie": [], "csrfToken": [] }
+        ],
+        "responses": {
+          "204": {
+            "description": "User deleted."
+          },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "403": { "$ref": "#/components/responses/AdminOrInvalidCSRF" },
+          "404": { "$ref": "#/components/responses/UserNotFound" }
+        }
+      }
+    },
+    "/api/messages": {
+      "get": {
+        "tags": ["Messages"],
+        "summary": "List messages",
+        "description": "Returns a cursor-based page of captured messages, filtered by search query and optional plus-address tag.",
+        "security": [
+          { "sessionCookie": [] }
+        ],
+        "parameters": [
+          { "$ref": "#/components/parameters/Query" },
+          { "$ref": "#/components/parameters/Tag" },
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/Limit" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated message list.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MessagePage" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" }
+        }
+      },
+      "delete": {
+        "tags": ["Messages"],
+        "summary": "Delete messages from the current mailbox scope",
+        "description": "Deletes all messages visible to the current principal, optionally filtered by search query and tag.",
+        "security": [
+          { "sessionCookie": [], "csrfToken": [] }
+        ],
+        "parameters": [
+          { "$ref": "#/components/parameters/Query" },
+          { "$ref": "#/components/parameters/Tag" }
+        ],
+        "responses": {
+          "204": {
+            "description": "Messages deleted."
+          },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "403": { "$ref": "#/components/responses/InvalidCSRF" }
+        }
+      }
+    },
+    "/api/messages/{id}": {
+      "parameters": [
+        { "$ref": "#/components/parameters/MessageID" }
+      ],
+      "get": {
+        "tags": ["Messages"],
+        "summary": "Get a single message",
+        "description": "Returns a parsed captured message with headers, text and HTML bodies, and attachments metadata.",
+        "security": [
+          { "sessionCookie": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requested message.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MessageEnvelope" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "404": { "$ref": "#/components/responses/MessageNotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["Messages"],
+        "summary": "Delete a single message",
+        "description": "Deletes a message visible to the current principal.",
+        "security": [
+          { "sessionCookie": [], "csrfToken": [] }
+        ],
+        "responses": {
+          "204": {
+            "description": "Message deleted."
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "403": { "$ref": "#/components/responses/InvalidCSRF" },
+          "404": { "$ref": "#/components/responses/MessageNotFound" }
+        }
+      }
+    },
+    "/api/messages/{id}/raw": {
+      "parameters": [
+        { "$ref": "#/components/parameters/MessageID" }
+      ],
+      "get": {
+        "tags": ["Messages"],
+        "summary": "Download the raw RFC822 message",
+        "description": "Returns the stored raw message source with a `message/rfc822` content type.",
+        "security": [
+          { "sessionCookie": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Raw RFC822 message.",
+            "content": {
+              "message/rfc822": {
+                "schema": {
+                  "type": "string",
+                  "example": "From: sender@example.test\\r\\nTo: receiver@example.test\\r\\n\\r\\nHello"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "404": { "$ref": "#/components/responses/MessageNotFound" }
+        }
+      }
+    },
+    "/api/messages/{id}/attachments/{attachmentId}": {
+      "parameters": [
+        { "$ref": "#/components/parameters/MessageID" },
+        { "$ref": "#/components/parameters/AttachmentID" }
+      ],
+      "get": {
+        "tags": ["Messages"],
+        "summary": "Download a message attachment",
+        "description": "Streams the stored attachment bytes using the original content type and a download filename.",
+        "security": [
+          { "sessionCookie": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachment content.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "404": {
+            "description": "Attachment not found.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "attachment not found" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "tags": ["Stats"],
+        "summary": "Get inbox statistics",
+        "description": "Returns aggregate counts and total stored size for the current mailbox scope.",
+        "security": [
+          { "sessionCookie": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregate inbox statistics.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Stats" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Create a session",
+        "description": "Validates admin or managed-user credentials, stores a 24 hour server-side session, sets the `mailtail_session` and `mailtail_csrf` cookies, and redirects to `/` on success.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": { "$ref": "#/components/schemas/LoginForm" }
+            }
+          }
+        },
+        "responses": {
+          "303": {
+            "description": "Login succeeded and the session cookies were set."
+          },
+          "429": {
+            "description": "Too many failed login attempts from the same client IP.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "example": "<html>Too many login attempts. Please wait and try again.</html>"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Destroy the current session",
+        "description": "Deletes the active server-side session, clears session cookies, and redirects to `/login`.",
+        "security": [
+          { "sessionCookie": [], "csrfToken": [] }
+        ],
+        "responses": {
+          "303": {
+            "description": "Logout succeeded and the browser is redirected to the login page."
+          },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "403": { "$ref": "#/components/responses/InvalidCSRF" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "mailtail_session",
+        "description": "Server-side session cookie. Required when HTTP auth is enabled."
+      },
+      "csrfToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-CSRF-Token",
+        "description": "Required on POST, PUT and DELETE requests. Use the same value as the `mailtail_csrf` cookie."
+      }
+    },
+    "parameters": {
+      "Query": {
+        "name": "q",
+        "in": "query",
+        "required": false,
+        "description": "Free-text search across subject, sender and recipients.",
+        "schema": {
+          "type": "string",
+          "example": "invoice"
+        }
+      },
+      "Tag": {
+        "name": "tag",
+        "in": "query",
+        "required": false,
+        "description": "Filter by extracted plus-address tag.",
+        "schema": {
+          "type": "string",
+          "example": "alpha"
+        }
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "description": "Opaque cursor returned by a previous list response.",
+        "schema": {
+          "type": "string",
+          "example": "MjAyNi0wNi0wMVQxODowMjo0M1oufDEy"
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "description": "Requested page size. Values above 100 are capped server-side. Values at or below 0 fall back to 25.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 25
+        }
+      },
+      "MessageID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Message identifier.",
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      "AttachmentID": {
+        "name": "attachmentId",
+        "in": "path",
+        "required": true,
+        "description": "Attachment identifier.",
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      "UserID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Managed user identifier.",
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      }
+    },
+    "responses": {
+      "AuthenticationRequired": {
+        "description": "Authentication is required.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "authentication required" }
+          }
+        }
+      },
+      "InvalidCSRF": {
+        "description": "The X-CSRF-Token header is missing or invalid.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "invalid csrf token" }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "The request could not be parsed or validated.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "AdminRequired": {
+        "description": "The current session is not an admin session.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "admin access required" }
+          }
+        }
+      },
+      "AdminOrInvalidCSRF": {
+        "description": "The current session is not allowed to perform this request or the CSRF token is invalid.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "admin access required" }
+          }
+        }
+      },
+      "MessageNotFound": {
+        "description": "Message not found.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "message not found" }
+          }
+        }
+      },
+      "UserNotFound": {
+        "description": "User not found.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "not found" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "AppInfo": {
+        "type": "object",
+        "required": ["version"],
+        "properties": {
+          "version": {
+            "type": "string",
+            "example": "0.1.0"
+          }
+        }
+      },
+      "SessionEnvelope": {
+        "type": "object",
+        "required": ["session"],
+        "properties": {
+          "session": { "$ref": "#/components/schemas/SessionPrincipal" }
+        }
+      },
+      "SessionPrincipal": {
+        "type": "object",
+        "required": ["username", "isAdmin"],
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "admin"
+          },
+          "isAdmin": {
+            "type": "boolean",
+            "example": true
+          },
+          "userId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 7
+          }
+        }
+      },
+      "SettingsEnvelope": {
+        "type": "object",
+        "required": ["settings"],
+        "properties": {
+          "settings": { "$ref": "#/components/schemas/AppSettings" }
+        }
+      },
+      "UpdateSettingsRequest": {
+        "type": "object",
+        "required": ["settings"],
+        "properties": {
+          "settings": { "$ref": "#/components/schemas/AppSettings" }
+        }
+      },
+      "AppSettings": {
+        "type": "object",
+        "required": [
+          "allowedOrigins",
+          "smtpLogVerbose",
+          "mailFailEnabled",
+          "mailFailRules",
+          "allowedRemoteIps",
+          "acceptedRcptDomains",
+          "acceptedFromDomains",
+          "autoDeleteAfterDays"
+        ],
+        "properties": {
+          "allowedOrigins": {
+            "type": "string",
+            "example": "https://mail.example.com"
+          },
+          "smtpLogVerbose": {
+            "type": "boolean",
+            "example": false
+          },
+          "mailFailEnabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "mailFailRules": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MailFailRule" }
+          },
+          "allowedRemoteIps": {
+            "type": "string",
+            "example": "127.0.0.1,10.0.0.0/8"
+          },
+          "acceptedRcptDomains": {
+            "type": "string",
+            "example": "example.test,internal.test"
+          },
+          "acceptedFromDomains": {
+            "type": "string",
+            "example": "sender.test"
+          },
+          "autoDeleteAfterDays": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 30
+          }
+        }
+      },
+      "MailFailRule": {
+        "type": "object",
+        "required": ["name", "trigger", "stage", "action", "code", "message"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "greylist"
+          },
+          "trigger": {
+            "type": "string",
+            "example": "mf-greylist"
+          },
+          "stage": {
+            "type": "string",
+            "enum": ["mailfrom", "rcpt", "data"],
+            "example": "rcpt"
+          },
+          "action": {
+            "type": "string",
+            "enum": ["reject", "greylist"],
+            "example": "greylist"
+          },
+          "allowAfter": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 1
+          },
+          "minRetryAfter": {
+            "type": "string",
+            "example": "5m"
+          },
+          "resetAfter": {
+            "type": "string",
+            "example": "1h"
+          },
+          "code": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599,
+            "example": 451
+          },
+          "enhancedCode": {
+            "type": "string",
+            "example": "4.7.1"
+          },
+          "message": {
+            "type": "string",
+            "example": "Try again later"
+          }
+        }
+      },
+      "UsersEnvelope": {
+        "type": "object",
+        "required": ["users"],
+        "properties": {
+          "users": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/User" }
+          }
+        }
+      },
+      "UserEnvelope": {
+        "type": "object",
+        "required": ["user"],
+        "properties": {
+          "user": { "$ref": "#/components/schemas/User" }
+        }
+      },
+      "CreateUserRequest": {
+        "type": "object",
+        "required": ["username", "password", "settings"],
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "qa-team"
+          },
+          "password": {
+            "type": "string",
+            "example": "change-me"
+          },
+          "settings": { "$ref": "#/components/schemas/AppSettings" }
+        }
+      },
+      "UpdateUserRequest": {
+        "type": "object",
+        "required": ["username", "password", "settings"],
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "qa-team"
+          },
+          "password": {
+            "type": "string",
+            "description": "Leave empty to keep the current password.",
+            "example": ""
+          },
+          "settings": { "$ref": "#/components/schemas/AppSettings" }
+        }
+      },
+      "MessagePage": {
+        "type": "object",
+        "required": ["messages", "availableTags", "hasMore"],
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Message" }
+          },
+          "availableTags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "example": "MjAyNi0wNi0wMVQxODowMjo0M1oufDEy"
+          },
+          "hasMore": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "MessageEnvelope": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "$ref": "#/components/schemas/Message" }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "required": [
+          "id",
+          "receivedAt",
+          "mailFrom",
+          "rcptTo",
+          "headerFrom",
+          "headerTo",
+          "subject",
+          "messageId",
+          "helo",
+          "remoteIp",
+          "size"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "example": 12
+          },
+          "ownerUserId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 7
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-06-01T18:02:43Z"
+          },
+          "mailFrom": {
+            "type": "string",
+            "example": "sender@example.test"
+          },
+          "rcptTo": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": ["receiver@example.test"]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": ["alpha"]
+          },
+          "headerFrom": {
+            "type": "string",
+            "example": "Sender <sender@example.test>"
+          },
+          "headerTo": {
+            "type": "string",
+            "example": "Receiver <receiver@example.test>"
+          },
+          "subject": {
+            "type": "string",
+            "example": "Test message"
+          },
+          "messageId": {
+            "type": "string",
+            "example": "<abc@example.test>"
+          },
+          "helo": {
+            "type": "string",
+            "example": "mail.example.test"
+          },
+          "remoteIp": {
+            "type": "string",
+            "example": "127.0.0.1"
+          },
+          "size": {
+            "type": "integer",
+            "example": 259
+          },
+          "raw": {
+            "type": "string",
+            "example": "From: sender@example.test\r\nTo: receiver@example.test\r\n\r\nHello"
+          },
+          "textBody": {
+            "type": "string",
+            "example": "Hello"
+          },
+          "htmlBody": {
+            "type": "string",
+            "example": "<p>Hello</p>"
+          },
+          "headers": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Header" }
+          },
+          "attachments": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Attachment" }
+          }
+        }
+      },
+      "Header": {
+        "type": "object",
+        "required": ["key", "value"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "Subject"
+          },
+          "value": {
+            "type": "string",
+            "example": "Test message"
+          }
+        }
+      },
+      "Attachment": {
+        "type": "object",
+        "required": ["id", "messageId", "fileName", "contentType", "contentId", "size", "inline"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "example": 21
+          },
+          "messageId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 12
+          },
+          "fileName": {
+            "type": "string",
+            "example": "report.pdf"
+          },
+          "contentType": {
+            "type": "string",
+            "example": "application/pdf"
+          },
+          "contentId": {
+            "type": "string",
+            "example": "cid:report"
+          },
+          "size": {
+            "type": "integer",
+            "example": 4096
+          },
+          "inline": {
+            "type": "boolean",
+            "example": false
+          }
+        }
+      },
+      "Stats": {
+        "type": "object",
+        "required": ["messageCount", "totalSize"],
+        "properties": {
+          "messageCount": {
+            "type": "integer",
+            "format": "int64",
+            "example": 42
+          },
+          "totalSize": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1048576
+          },
+          "latestReceivedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-06-01T18:02:43Z"
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "required": ["id", "username", "settings"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "example": 7
+          },
+          "username": {
+            "type": "string",
+            "example": "qa-team"
+          },
+          "settings": { "$ref": "#/components/schemas/AppSettings" },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-06-01T18:02:43Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-06-02T09:15:00Z"
+          }
+        }
+      },
+      "LoginForm": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "admin"
+          },
+          "password": {
+            "type": "string",
+            "example": "change-me"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "message not found"
+          }
+        }
+      }
+    }
+  }
+}

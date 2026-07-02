@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MailTail API Docs</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4efe5;
+      --panel: #fffaf2;
+      --panel-strong: #fff;
+      --text: #1f2a24;
+      --muted: #5f6f65;
+      --line: #d9cfbf;
+      --accent: #0f766e;
+      --accent-soft: #d9f1ee;
+      --danger: #9f1239;
+      --shadow: 0 18px 45px rgba(31, 42, 36, 0.08);
+      --mono: "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+      --sans: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 28rem),
+        linear-gradient(180deg, #fbf7ee 0%, var(--bg) 100%);
+      color: var(--text);
+    }
+    a { color: var(--accent); }
+    .page {
+      width: min(1200px, calc(100vw - 2rem));
+      margin: 0 auto;
+      padding: 2rem 0 4rem;
+    }
+    .hero, .layout > * {
+      background: rgba(255, 250, 242, 0.88);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(217, 207, 191, 0.9);
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      padding: 2rem;
+      border-radius: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .eyebrow {
+      margin: 0 0 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 0.75rem;
+      color: var(--accent);
+      font-family: Arial, sans-serif;
+      font-weight: 700;
+    }
+    h1, h2, h3 {
+      margin: 0;
+      font-weight: 700;
+    }
+    h1 {
+      font-size: clamp(2rem, 4vw, 3.5rem);
+      line-height: 1;
+      margin-bottom: 0.75rem;
+    }
+    .hero p {
+      margin: 0.35rem 0 0;
+      max-width: 70ch;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 1rem;
+    }
+    .heroActions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+      font-family: Arial, sans-serif;
+    }
+    .heroActions a {
+      text-decoration: none;
+      padding: 0.7rem 1rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      color: var(--text);
+      font-weight: 600;
+    }
+    .heroActions a.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+      gap: 1.5rem;
+      align-items: start;
+    }
+    .sidebar {
+      position: sticky;
+      top: 1rem;
+      padding: 1rem;
+      border-radius: 1.25rem;
+    }
+    .sidebar h2 {
+      font-size: 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .sidebar nav {
+      display: grid;
+      gap: 0.4rem;
+      font-family: Arial, sans-serif;
+      font-size: 0.95rem;
+    }
+    .sidebar nav a {
+      text-decoration: none;
+      color: var(--muted);
+      padding: 0.45rem 0.55rem;
+      border-radius: 0.8rem;
+    }
+    .sidebar nav a:hover {
+      background: rgba(15, 118, 110, 0.08);
+      color: var(--text);
+    }
+    .content {
+      display: grid;
+      gap: 1rem;
+    }
+    .panel {
+      padding: 1.25rem;
+      border-radius: 1.25rem;
+    }
+    .metaGrid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.9rem;
+      margin-top: 1rem;
+    }
+    .metaCard {
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      padding: 0.9rem 1rem;
+    }
+    .metaCard strong, .metaCard span {
+      display: block;
+    }
+    .metaCard strong {
+      font-family: Arial, sans-serif;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+    .metaCard span {
+      line-height: 1.5;
+    }
+    .tagList, .securityList {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.9rem;
+    }
+    .tagChip {
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid rgba(15, 118, 110, 0.2);
+      font: 600 0.78rem Arial, sans-serif;
+      padding: 0.35rem 0.6rem;
+    }
+    .operation {
+      overflow: hidden;
+    }
+    .operationHeader {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.7rem;
+      align-items: center;
+      margin-bottom: 0.9rem;
+    }
+    .verb {
+      min-width: 5.2rem;
+      text-align: center;
+      font: 700 0.8rem Arial, sans-serif;
+      padding: 0.45rem 0.65rem;
+      border-radius: 999px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #fff;
+    }
+    .verb-get { background: #0f766e; }
+    .verb-post { background: #2563eb; }
+    .verb-put { background: #b45309; }
+    .verb-delete { background: #9f1239; }
+    .path {
+      font-family: var(--mono);
+      font-size: 1rem;
+      word-break: break-word;
+    }
+    .summary {
+      width: 100%;
+      margin-top: -0.15rem;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .section {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid rgba(217, 207, 191, 0.9);
+    }
+    .section h3 {
+      font-size: 1rem;
+      margin-bottom: 0.75rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.7rem 0.55rem;
+      border-bottom: 1px solid rgba(217, 207, 191, 0.9);
+      vertical-align: top;
+    }
+    th {
+      font: 700 0.78rem Arial, sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    code, pre {
+      font-family: var(--mono);
+    }
+    pre {
+      margin: 0;
+      overflow: auto;
+      background: #18231f;
+      color: #edf6f3;
+      border-radius: 1rem;
+      padding: 1rem;
+      font-size: 0.85rem;
+      line-height: 1.55;
+    }
+    .muted {
+      color: var(--muted);
+    }
+    .statusList {
+      display: grid;
+      gap: 0.9rem;
+    }
+    .statusBlock {
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      overflow: hidden;
+      background: var(--panel-strong);
+    }
+    .statusBlock header {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      align-items: center;
+      padding: 0.85rem 1rem;
+      background: rgba(15, 118, 110, 0.06);
+      border-bottom: 1px solid var(--line);
+    }
+    .statusBlock strong {
+      font-family: Arial, sans-serif;
+      font-size: 0.9rem;
+    }
+    .statusBlock div {
+      padding: 1rem;
+      display: grid;
+      gap: 0.75rem;
+    }
+    .error {
+      color: var(--danger);
+      font-family: Arial, sans-serif;
+      font-weight: 700;
+    }
+    @media (max-width: 960px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        position: static;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <p class="eyebrow">OpenAPI Reference</p>
+      <h1 id="title">MailTail API</h1>
+      <p id="intro">Loading API reference…</p>
+      <div class="heroActions">
+        <a class="primary" href="/api/openapi.json">Download OpenAPI JSON</a>
+        <a href="/">Back to MailTail</a>
+      </div>
+      <div class="metaGrid" id="meta"></div>
+    </section>
+    <div class="layout">
+      <aside class="sidebar">
+        <h2>Operations</h2>
+        <nav id="nav"></nav>
+      </aside>
+      <section class="content">
+        <article class="panel" id="authPanel">
+          <p class="eyebrow">Authentication</p>
+          <h2>Session and CSRF</h2>
+          <p class="muted">Loading authentication details…</p>
+        </article>
+        <div id="operations"></div>
+      </section>
+    </div>
+  </main>
+  <script>
+    const docsState = {
+      spec: null,
+      dereferencedSchemas: new Map()
+    };
+
+    function slugify(value) {
+      return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function dereference(schema) {
+      if (!schema) {
+        return null;
+      }
+      if (schema.$ref) {
+        const ref = schema.$ref;
+        if (docsState.dereferencedSchemas.has(ref)) {
+          return docsState.dereferencedSchemas.get(ref);
+        }
+        const path = ref.replace(/^#\//, "").split("/");
+        let current = docsState.spec;
+        for (const segment of path) {
+          current = current?.[segment];
+        }
+        const resolved = dereference(current);
+        docsState.dereferencedSchemas.set(ref, resolved);
+        return resolved;
+      }
+      return schema;
+    }
+
+    function summarizeSchema(schema, depth = 0) {
+      const resolved = dereference(schema);
+      if (!resolved || depth > 2) {
+        return "object";
+      }
+      if (resolved.enum?.length) {
+        return resolved.enum.map((item) => JSON.stringify(item)).join(" | ");
+      }
+      if (resolved.oneOf?.length) {
+        return resolved.oneOf.map((item) => summarizeSchema(item, depth + 1)).join(" | ");
+      }
+      if (resolved.type === "array") {
+        return `${summarizeSchema(resolved.items, depth + 1)}[]`;
+      }
+      if (resolved.type === "object" || resolved.properties) {
+        const properties = resolved.properties ?? {};
+        const required = new Set(resolved.required ?? []);
+        const lines = Object.entries(properties).map(([name, value]) => {
+          const suffix = required.has(name) ? "" : "?";
+          return `${"  ".repeat(depth)}${name}${suffix}: ${summarizeSchema(value, depth + 1)}`;
+        });
+        return lines.length ? `{\n${lines.join("\n")}\n${"  ".repeat(Math.max(0, depth - 1))}}` : "object";
+      }
+      if (resolved.format) {
+        return `${resolved.type} (${resolved.format})`;
+      }
+      return resolved.type || "object";
+    }
+
+    function schemaExample(schema) {
+      const resolved = dereference(schema);
+      if (!resolved) {
+        return null;
+      }
+      if (resolved.example !== undefined) {
+        return resolved.example;
+      }
+      if (resolved.default !== undefined) {
+        return resolved.default;
+      }
+      if (resolved.enum?.length) {
+        return resolved.enum[0];
+      }
+      if (resolved.oneOf?.length) {
+        return schemaExample(resolved.oneOf[0]);
+      }
+      if (resolved.type === "array") {
+        const item = schemaExample(resolved.items);
+        return item === null ? [] : [item];
+      }
+      if (resolved.type === "object" || resolved.properties) {
+        const properties = resolved.properties ?? {};
+        const output = {};
+        for (const [name, value] of Object.entries(properties)) {
+          const example = schemaExample(value);
+          if (example !== null) {
+            output[name] = example;
+          }
+        }
+        return output;
+      }
+      switch (resolved.type) {
+        case "string":
+          if (resolved.format === "date-time") return "2026-01-02T15:04:05Z";
+          if (resolved.format === "binary") return "<binary>";
+          return "string";
+        case "integer":
+        case "number":
+          return 0;
+        case "boolean":
+          return false;
+        default:
+          return null;
+      }
+    }
+
+    function renderMeta(spec) {
+      const meta = document.getElementById("meta");
+      const tagNames = (spec.tags || []).map((tag) => tag.name).join(", ");
+      const serverUrls = (spec.servers || []).map((server) => server.url).join(", ");
+      const cards = [
+        ["Version", spec.info?.version || "-"],
+        ["Servers", serverUrls || "/"],
+        ["Tags", tagNames || "General"],
+        ["OpenAPI", spec.openapi || "-"]
+      ];
+      meta.innerHTML = cards.map(([label, value]) => `
+        <div class="metaCard">
+          <strong>${escapeHtml(label)}</strong>
+          <span>${escapeHtml(value)}</span>
+        </div>
+      `).join("");
+    }
+
+    function renderAuth(spec) {
+      const securitySchemes = spec.components?.securitySchemes || {};
+      const authPanel = document.getElementById("authPanel");
+      const schemeItems = Object.entries(securitySchemes).map(([name, scheme]) => `
+        <div class="metaCard">
+          <strong>${escapeHtml(name)}</strong>
+          <span>${escapeHtml(scheme.description || `${scheme.type} ${scheme.in || ""}`.trim())}</span>
+        </div>
+      `).join("");
+      authPanel.innerHTML = `
+        <p class="eyebrow">Authentication</p>
+        <h2>Session and CSRF</h2>
+        <p class="muted">
+          MailTail uses a cookie-backed session. When HTTP auth is enabled, log in through <code>POST /auth/login</code>
+          and send the <code>mailtail_session</code> cookie on every API request. Mutating requests also require the
+          <code>X-CSRF-Token</code> header, which mirrors the <code>mailtail_csrf</code> cookie value.
+        </p>
+        <div class="metaGrid">${schemeItems}</div>
+      `;
+    }
+
+    function flattenOperations(spec) {
+      const operations = [];
+      for (const [path, pathItem] of Object.entries(spec.paths || {})) {
+        for (const method of ["get", "post", "put", "delete"]) {
+          const operation = pathItem?.[method];
+          if (!operation) {
+            continue;
+          }
+          operations.push({
+            ...operation,
+            path,
+            method: method.toUpperCase(),
+            tags: operation.tags?.length ? operation.tags : ["General"],
+            parameters: [...(pathItem.parameters || []), ...(operation.parameters || [])]
+          });
+        }
+      }
+      operations.sort((left, right) => {
+        if (left.tags[0] === right.tags[0]) {
+          if (left.path === right.path) {
+            return left.method.localeCompare(right.method);
+          }
+          return left.path.localeCompare(right.path);
+        }
+        return left.tags[0].localeCompare(right.tags[0]);
+      });
+      return operations;
+    }
+
+    function renderNav(operations) {
+      const nav = document.getElementById("nav");
+      nav.innerHTML = operations.map((operation) => {
+        const id = slugify(`${operation.method}-${operation.path}`);
+        return `<a href="#${id}">${escapeHtml(operation.method)} ${escapeHtml(operation.path)}</a>`;
+      }).join("");
+    }
+
+    function renderParameterTable(parameters) {
+      if (!parameters.length) {
+        return `<p class="muted">No parameters.</p>`;
+      }
+      return `
+        <table>
+          <thead>
+            <tr><th>Name</th><th>In</th><th>Type</th><th>Required</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            ${parameters.map((parameter) => {
+              const resolvedParameter = dereference(parameter) || parameter;
+              const schema = summarizeSchema(resolvedParameter.schema);
+              return `<tr>
+                <td><code>${escapeHtml(resolvedParameter.name)}</code></td>
+                <td>${escapeHtml(resolvedParameter.in)}</td>
+                <td><code>${escapeHtml(schema)}</code></td>
+                <td>${resolvedParameter.required ? "Yes" : "No"}</td>
+                <td>${escapeHtml(resolvedParameter.description || "")}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function renderRequestBody(operation) {
+      const requestBody = operation.requestBody;
+      if (!requestBody) {
+        return `<p class="muted">No request body.</p>`;
+      }
+      const entries = Object.entries(requestBody.content || {});
+      if (!entries.length) {
+        return `<p class="muted">No request body schema.</p>`;
+      }
+      return entries.map(([contentType, mediaType]) => {
+        const example = mediaType.example ?? schemaExample(mediaType.schema);
+        return `
+          <div class="statusBlock">
+            <header>
+              <strong>${escapeHtml(contentType)}</strong>
+              <span>${requestBody.required ? "required" : "optional"}</span>
+            </header>
+            <div>
+              <p class="muted">Schema</p>
+              <pre>${escapeHtml(summarizeSchema(mediaType.schema))}</pre>
+              ${example === null ? "" : `<p class="muted">Example</p><pre>${escapeHtml(JSON.stringify(example, null, 2))}</pre>`}
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderResponses(operation) {
+      const responses = Object.entries(operation.responses || {});
+      if (!responses.length) {
+        return `<p class="muted">No documented responses.</p>`;
+      }
+      return `<div class="statusList">${responses.map(([status, response]) => {
+        const resolvedResponse = dereference(response) || response;
+        const contentEntries = Object.entries(resolvedResponse.content || {});
+        return `
+          <section class="statusBlock">
+            <header>
+              <strong>${escapeHtml(status)}</strong>
+              <span>${escapeHtml(resolvedResponse.description || "")}</span>
+            </header>
+            <div>
+              ${contentEntries.length ? contentEntries.map(([contentType, mediaType]) => {
+                const example = mediaType.example ?? schemaExample(mediaType.schema);
+                return `
+                  <div>
+                    <p class="muted">${escapeHtml(contentType)}</p>
+                    <pre>${escapeHtml(summarizeSchema(mediaType.schema))}</pre>
+                    ${example === null ? "" : `<pre>${escapeHtml(JSON.stringify(example, null, 2))}</pre>`}
+                  </div>
+                `;
+              }).join("") : `<p class="muted">No response body.</p>`}
+            </div>
+          </section>
+        `;
+      }).join("")}</div>`;
+    }
+
+    function renderSecurity(operation) {
+      if (!operation.security?.length) {
+        return `<p class="muted">No extra security requirements beyond the current session state.</p>`;
+      }
+      return `<div class="securityList">${operation.security.map((requirement) => {
+        return Object.keys(requirement).map((name) => `<span class="tagChip">${escapeHtml(name)}</span>`).join("");
+      }).join("")}</div>`;
+    }
+
+    function renderOperations(spec) {
+      const operations = flattenOperations(spec);
+      renderNav(operations);
+      const container = document.getElementById("operations");
+      container.innerHTML = operations.map((operation) => {
+        const id = slugify(`${operation.method}-${operation.path}`);
+        return `
+          <article class="panel operation" id="${id}">
+            <div class="operationHeader">
+              <span class="verb verb-${operation.method.toLowerCase()}">${escapeHtml(operation.method)}</span>
+              <code class="path">${escapeHtml(operation.path)}</code>
+              <div class="tagList">${operation.tags.map((tag) => `<span class="tagChip">${escapeHtml(tag)}</span>`).join("")}</div>
+              <p class="summary">${escapeHtml(operation.summary || operation.description || "")}</p>
+            </div>
+            <div class="section">
+              <h3>Description</h3>
+              <p class="muted">${escapeHtml(operation.description || "No additional description.")}</p>
+            </div>
+            <div class="section">
+              <h3>Security</h3>
+              ${renderSecurity(operation)}
+            </div>
+            <div class="section">
+              <h3>Parameters</h3>
+              ${renderParameterTable(operation.parameters || [])}
+            </div>
+            <div class="section">
+              <h3>Request Body</h3>
+              ${renderRequestBody(operation)}
+            </div>
+            <div class="section">
+              <h3>Responses</h3>
+              ${renderResponses(operation)}
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    async function init() {
+      try {
+        const response = await fetch("/api/openapi.json", { credentials: "same-origin" });
+        if (!response.ok) {
+          throw new Error(`Failed to load spec: ${response.status}`);
+        }
+        docsState.spec = await response.json();
+        document.getElementById("title").textContent = docsState.spec.info?.title || "MailTail API";
+        document.getElementById("intro").textContent = docsState.spec.info?.description || "";
+        renderMeta(docsState.spec);
+        renderAuth(docsState.spec);
+        renderOperations(docsState.spec);
+      } catch (error) {
+        document.getElementById("intro").innerHTML = `<span class="error">${escapeHtml(error.message || "Failed to load API documentation.")}</span>`;
+        document.getElementById("authPanel").innerHTML = `<p class="error">API documentation could not be loaded.</p>`;
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

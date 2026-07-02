@@ -1344,6 +1344,10 @@ export function App() {
                       <InfoIcon />
                       <span>About</span>
                     </button>
+                    <a className="ghostButton compactButton toolbarButton userMenuAction" href="/api/docs" target="_blank" rel="noreferrer">
+                      <DocsIcon />
+                      <span>API Docs</span>
+                    </a>
                     <button className="ghostButton compactButton toolbarButton userMenuAction" type="button" onClick={() => void openSettingsPanel()}>
                       <SettingsIcon />
                       <span>Settings</span>
@@ -2957,6 +2961,16 @@ function InfoIcon() {
   return (
     <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
       <path d="M8 11V7.25M8 5.25h.01M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z" />
+    </svg>
+  );
+}
+
+function DocsIcon() {
+  return (
+    <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M4 2.5h5l3 3V13a1 1 0 0 1-1 1H4.8A1.3 1.3 0 0 1 3.5 12.7V3.8A1.3 1.3 0 0 1 4.8 2.5Z" />
+      <path d="M9 2.7V6h3.3" />
+      <path d="M5.5 8.2h5M5.5 10.2h5M5.5 12.2h3.2" />
     </svg>
   );
 }

@@ -122,17 +122,34 @@ The Git tag itself must start with `v`, for example `v0.1.0`.
 
 ## REST API
 
+MailTail now ships a spec-first OpenAPI reference that is served directly by the application:
+
+- `GET /api/openapi.json` returns the current OpenAPI document
+- `GET /api/docs` renders the interactive API reference used from the user menu in the web UI
+
+The OpenAPI document is checked in automated tests against the implemented HTTP operations so the build fails if the spec drifts from the server.
+
+Core endpoints currently covered by the spec include:
+
+- `GET /api/app`
+- `GET /api/session`
 - `GET /api/messages`
-- `GET /api/messages?q=invoice&limit=25`
-- `GET /api/messages?q=invoice&cursor=<cursor>`
 - `GET /api/messages/{id}`
 - `GET /api/messages/{id}/raw`
 - `GET /api/messages/{id}/attachments/{attachmentId}`
+- `DELETE /api/messages`
+- `DELETE /api/messages/{id}`
 - `GET /api/settings`
 - `PUT /api/settings`
-- `DELETE /api/messages/{id}`
-- `DELETE /api/messages`
+- `GET /api/admin/mailbox-settings`
+- `PUT /api/admin/mailbox-settings`
+- `GET /api/admin/users`
+- `POST /api/admin/users`
+- `PUT /api/admin/users/{id}`
+- `DELETE /api/admin/users/{id}`
 - `GET /api/stats`
+- `POST /auth/login`
+- `POST /auth/logout`
 
 ### REST API authentication
 
@@ -188,100 +205,7 @@ curl -i -b cookies.txt \
   -H "X-CSRF-Token: ${csrf_token}"
 ```
 
-### REST API response examples
-
-`GET /api/messages`
-
-```json
-{
-  "hasMore": true,
-  "nextCursor": "MjAyNi0wNi0wMVQxODowMjo0M1oufDEy",
-  "messages": [
-    {
-      "id": 12,
-      "subject": "Test message",
-      "mailFrom": "sender@example.test",
-      "rcptTo": ["receiver@example.test"],
-      "receivedAt": "2026-06-01T18:02:43Z",
-      "size": 259
-    }
-  ]
-}
-```
-
-Notes:
-
-- search always runs across the full inbox, not just the currently loaded page
-- pagination is cursor-based and sorted by `receivedAt DESC, id DESC`
-- the default page size is `25`
-- `limit` can be overridden per request and is capped server-side
-
-`GET /api/messages/{id}`
-
-```json
-{
-  "message": {
-    "id": 12,
-    "subject": "Test message",
-    "messageId": "<abc@example.test>",
-    "mailFrom": "sender@example.test",
-    "rcptTo": ["receiver@example.test"],
-    "textBody": "Hello",
-    "htmlBody": "<p>Hello</p>",
-    "headers": [
-      { "key": "Subject", "value": "Test message" }
-    ],
-    "attachments": [],
-    "rawSize": 259
-  }
-}
-```
-
-`GET /api/stats`
-
-```json
-{
-  "messageCount": 1,
-  "totalSize": 259
-}
-```
-
-`GET /api/settings`
-
-```json
-{
-  "settings": {
-    "allowedOrigins": "https://mailtail.example.com",
-    "smtpLogVerbose": false,
-    "mailFailEnabled": true,
-    "mailFailRules": [
-      {
-        "name": "greylist",
-        "trigger": "mf-greylist",
-        "stage": "rcpt",
-        "action": "greylist",
-        "allowAfter": 1,
-        "minRetryAfter": "5m",
-        "resetAfter": "1h",
-        "code": 451,
-        "enhancedCode": "4.7.1",
-        "message": "Try again later"
-      }
-    ],
-    "allowedRemoteIps": "127.0.0.1,::1",
-    "acceptedRcptDomains": "example.test,internal.test",
-    "acceptedFromDomains": "sender.test"
-  }
-}
-```
-
-Error format:
-
-```json
-{
-  "error": "message not found"
-}
-```
+For request and response schemas, auth requirements, parameters and status codes, use the built-in OpenAPI reference instead of the README so the documentation stays aligned with the implementation.
 
 ## Example SMTP test
 
