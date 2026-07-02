@@ -21,7 +21,7 @@ import {
 } from "./api";
 import type { AppSettings, MailFailRule, Message, SessionInfo, Stats, User } from "./types";
 
-type TabKey = "html" | "text" | "headers" | "raw";
+type TabKey = "html" | "text" | "headers" | "raw" | "attachments";
 type MailFailSettingsScope = "user" | "adminMailbox";
 type SettingsTab = "instance" | "adminMailbox" | "users" | "delivery" | "retention";
 type SettingsSubTab = "general" | "rules";
@@ -117,9 +117,10 @@ export function App() {
   const [nextCursor, setNextCursor] = useState("");
   const [hasMore, setHasMore] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("html");
-  const [attachmentsExpanded, setAttachmentsExpanded] = useState(true);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [copiedHeaderKey, setCopiedHeaderKey] = useState<string | null>(null);
   const [copiedPaneKey, setCopiedPaneKey] = useState<TabKey | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -204,10 +205,6 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    setAttachmentsExpanded(true);
-  }, [selectedMessage?.id]);
-
-  useEffect(() => {
     void loadOverview(query, {
       preferredId: selectedIdRef.current,
       forceDetail: true,
@@ -219,6 +216,10 @@ export function App() {
         return;
       }
 
+      if (!autoRefreshEnabled) {
+        return;
+      }
+
       void loadOverview(queryRef.current, {
         preferredId: selectedIdRef.current,
         setBusy: false
@@ -226,7 +227,7 @@ export function App() {
     }, 15000);
 
     return () => window.clearInterval(timer);
-  }, [query]);
+  }, [autoRefreshEnabled, query]);
 
   async function loadOverview(
     search: string,
@@ -280,6 +281,7 @@ export function App() {
       } else {
         setSelectedMessage(null);
       }
+      setLastSyncAt(new Date().toISOString());
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -1013,7 +1015,8 @@ export function App() {
     return [
       ...contentTabs,
       { key: "headers", label: "Headers" },
-      { key: "raw", label: "Raw" }
+      { key: "raw", label: "Raw RFC822" },
+      ...(selectedMessage?.attachments?.length ? [{ key: "attachments" as const, label: "Attachments" }] : [])
     ];
   }, [selectedMessage]);
 
@@ -1026,6 +1029,8 @@ export function App() {
 
   const hasMessages = messages.length > 0;
   const hasAttachments = Boolean(selectedMessage?.attachments?.length);
+  const statusTone = error ? "issue" : loading ? "syncing" : "connected";
+  const statusLabel = error ? "Sync issue" : loading ? "Syncing" : "Connected";
   const smtpExampleDomain = useMemo(
     () =>
       resolveExampleDomain([
@@ -1052,7 +1057,7 @@ export function App() {
   const smtpExampleSender = `sender@${smtpExampleDomain}`;
   const mailFailExampleRecipient = `user+mf-greylist@${mailFailExampleDomain}`;
   const paneCopyValue = currentPaneCopyValue(activeTab, selectedMessage);
-  const paneCopyLabel = activeTab === "headers" ? "Copy all" : "Copy all";
+  const paneCopyLabel = activeTab === "attachments" ? "Copy names" : "Copy all";
   const hasActiveSearch = query.length > 0;
   const adminSettingsTabs: Array<{ key: SettingsTab; label: string }> = [
     { key: "instance", label: "Instance" },
@@ -1074,41 +1079,58 @@ export function App() {
     adminMailboxLimitAcceptedFromDomains
   ].filter(Boolean).length;
   const enabledUserFilters = [limitAllowedRemoteIps, limitAcceptedRcptDomains, limitAcceptedFromDomains].filter(Boolean).length;
+  const selectedMessageBadges = selectedMessage ? buildMessageBadges(selectedMessage) : [];
+  const sidebarDiagnostics = [
+    { label: "Messages", value: String(stats.messageCount) },
+    { label: "Database size", value: formatBytes(stats.totalSize) },
+    { label: "Last received", value: stats.latestReceivedAt ? formatDate(stats.latestReceivedAt) : "Waiting" },
+    { label: "Version", value: version || "-" },
+    { label: "Session", value: session?.username || "-" },
+    { label: "Auto refresh", value: autoRefreshEnabled ? "15s" : "Paused" }
+  ];
 
   return (
     <div className={settingsOpen ? "shell settingsMode" : "shell"}>
       <header className="workspaceHeader">
         <div className="workspaceHeaderCard">
           <div className="workspaceTopRow">
-            <div className="workspaceTitleRow">
-              <div className="workspaceTitle">
-                <p className="eyebrow">SMTP Test Inbox</p>
-                <h1>MailTail</h1>
+            <div className="brandLockup">
+              <div className="brandMark" aria-hidden="true">
+                <MailIcon />
               </div>
-              <div className="statsRow">
-                <div className="statPill">
-                  <span>Messages</span>
-                  <strong>{stats.messageCount}</strong>
-                </div>
-                <div className="statPill">
-                  <span>Size</span>
-                  <strong>{formatBytes(stats.totalSize)}</strong>
-                </div>
+              <div className="workspaceTitle">
+                <p className="eyebrow">SMTP Debugger</p>
+                <h1>MailTail</h1>
               </div>
             </div>
 
-            <label className="searchField workspaceSearchField">
+            <label className="searchField workspaceSearchField searchFieldLarge">
+              <span className="searchFieldIcon" aria-hidden="true">
+                <SearchIcon />
+              </span>
               <input
                 aria-label="Search subject, from, to"
                 value={queryInput}
                 onChange={(event) => setQueryInput(event.target.value)}
-                placeholder="Search subject, from, to"
+                placeholder="Search messages, senders, recipients"
               />
             </label>
 
             <div className="topToolbar">
+              <div className={`toolbarStatus toolbarStatus${statusTone === "connected" ? "Success" : statusTone === "syncing" ? "Warning" : "Danger"}`}>
+                <span className="toolbarStatusDot" aria-hidden="true" />
+                <span>{statusLabel}</span>
+              </div>
+              <label className="toolbarToggle">
+                <input
+                  type="checkbox"
+                  checked={autoRefreshEnabled}
+                  onChange={(event) => setAutoRefreshEnabled(event.target.checked)}
+                />
+                <span>Auto refresh</span>
+              </label>
               <button
-                className="ghostButton compactButton"
+                className="primaryButton compactButton"
                 onClick={() =>
                   void loadOverview(queryRef.current, {
                     preferredId: selectedIdRef.current,
@@ -1118,21 +1140,38 @@ export function App() {
               >
                 Refresh
               </button>
-              <button className="ghostButton compactButton" onClick={() => void openSettingsPanel()}>
-                Settings
+              <button className="ghostButton compactButton toolbarButton" onClick={() => void openSettingsPanel()}>
+                <SettingsIcon />
+                <span>Settings</span>
               </button>
-              <button className="dangerButton compactButton" disabled={!hasMessages} onClick={() => void handleClearInbox()}>
-                Clear all messages
-              </button>
-              <button className="ghostButton compactButton" onClick={() => void handleLogout()}>
-                Logout
-              </button>
+              <details className="userMenu">
+                <summary className="ghostButton compactButton userMenuTrigger">
+                  <span>{session?.username || "User"}</span>
+                  <span className="userMenuCaret" aria-hidden="true">▼</span>
+                </summary>
+                <div className="userMenuPanel">
+                  <button className="ghostButton compactButton" type="button" onClick={() => void handleLogout()}>
+                    Logout
+                  </button>
+                </div>
+              </details>
             </div>
           </div>
         </div>
       </header>
 
       <aside className="sidebar">
+        <div className="sidebarSectionHeader">
+          <div>
+            <p className="eyebrow">Captured messages</p>
+            <h2>Inbox</h2>
+          </div>
+          <div className="sidebarSectionMeta">
+            <span>{messages.length} loaded</span>
+            <span>{hasMore ? "More available" : "Live tail"}</span>
+          </div>
+        </div>
+
         <div className="messageList">
           {messages.map((message) => (
             <button
@@ -1144,13 +1183,17 @@ export function App() {
                 <strong className="messageSubject">{message.subject || "(no subject)"}</strong>
                 <span className="messageTime">{formatTime(message.receivedAt)}</span>
               </div>
-              <div className="messageMeta">
-                <span className="messageMetaLabel">From</span>
+              <div className="messageMetaCompact">
                 <span className="messageLine">{message.headerFrom || message.mailFrom}</span>
+                <span className="messageRecipient">{primaryRecipient(message)}</span>
               </div>
-              <div className="messageMeta">
-                <span className="messageMetaLabel">Rcpt</span>
-                <span className="mutedText messageLine">{message.headerTo || message.rcptTo.join(", ")}</span>
+              <div className="messageBadgeRow">
+                {buildMessageBadges(message).map((badge) => (
+                  <span key={badge.label} className={`messageBadge messageBadge${badge.tone}`}>
+                    {badge.icon}
+                    <span>{badge.label}</span>
+                  </span>
+                ))}
               </div>
             </button>
           ))}
@@ -1167,37 +1210,89 @@ export function App() {
           ) : null}
         </div>
 
-        <div className="listMeta sidebarListMeta">
-          <span>{messages.length} loaded</span>
-          <span>{hasMore ? "More available" : selectedMessage ? `#${selectedMessage.id}` : "No selection"}</span>
-        </div>
-
         <div className="sidebarFooter">
+          <section className="diagnosticsCard">
+            <div className="diagnosticsCardHeader">
+              <div>
+                <p className="eyebrow">Runtime</p>
+                <h3>Diagnostics</h3>
+              </div>
+              <span className="diagnosticsStamp">{lastSyncAt ? `Synced ${formatTime(lastSyncAt)}` : "Waiting"}</span>
+            </div>
+            <dl className="diagnosticsList">
+              {sidebarDiagnostics.map((item) => (
+                <div key={item.label}>
+                  <dt>{item.label}</dt>
+                  <dd>{item.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
           {!session?.isAdmin && settingsLoaded && currentSettings.mailFailEnabled ? (
             <div className="sidebarNotice">
               <span className="statusDot" aria-hidden="true" />
-              <span>MailFail enabled for this user</span>
+              <span>MailFail rules active for this mailbox</span>
             </div>
           ) : null}
-          <div className="sidebarVersion">{version ? `Version ${version}` : "\u00A0"}</div>
+          <button className="dangerButton compactButton" disabled={!hasMessages} onClick={() => void handleClearInbox()}>
+            Delete all messages
+          </button>
         </div>
       </aside>
 
       <main className={settingsOpen ? "contentPane settingsPagePane" : "contentPane"}>
         {!settingsOpen && selectedMessage ? (
           <section className="messageWorkspace">
-            <div className="heroCard compactHero">
+            <div className="heroCard compactHero messageHeroCard">
               <div className="heroCopy">
-                <p className="eyebrow">Current message</p>
-                <h2>{selectedMessage.subject}</h2>
-                <div className="metaGrid">
-                  <span>From: {selectedMessage.headerFrom || "-"}</span>
-                  <span>To: {selectedMessage.headerTo || "-"}</span>
-                  <span>Received: {formatDate(selectedMessage.receivedAt)}</span>
-                  <span>Size: {formatBytes(selectedMessage.size)}</span>
-                  <span>HELO: {selectedMessage.helo || "-"}</span>
-                  <span>Remote IP: {selectedMessage.remoteIp || "-"}</span>
+                <p className="eyebrow">Message detail</p>
+                <h2>{selectedMessage.subject || "(no subject)"}</h2>
+                <div className="heroBadgeRow">
+                  {selectedMessageBadges.map((badge) => (
+                    <span key={badge.label} className={`messageBadge messageBadge${badge.tone}`}>
+                      {badge.icon}
+                      <span>{badge.label}</span>
+                    </span>
+                  ))}
                 </div>
+                <dl className="messageInfoPanel">
+                  <div>
+                    <dt>From</dt>
+                    <dd>{selectedMessage.headerFrom || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>To</dt>
+                    <dd>{selectedMessage.headerTo || primaryRecipient(selectedMessage)}</dd>
+                  </div>
+                  <div>
+                    <dt>Envelope MAIL FROM</dt>
+                    <dd>{selectedMessage.mailFrom || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Envelope RCPT TO</dt>
+                    <dd>{selectedMessage.rcptTo.join(", ") || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Remote IP</dt>
+                    <dd>{selectedMessage.remoteIp || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>HELO</dt>
+                    <dd>{selectedMessage.helo || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Message size</dt>
+                    <dd>{formatBytes(selectedMessage.size)}</dd>
+                  </div>
+                  <div>
+                    <dt>Received</dt>
+                    <dd>{formatDate(selectedMessage.receivedAt)}</dd>
+                  </div>
+                  <div>
+                    <dt>Message ID</dt>
+                    <dd>{selectedMessage.messageId || "-"}</dd>
+                  </div>
+                </dl>
               </div>
 
               <div className="heroActions">
@@ -1208,13 +1303,13 @@ export function App() {
                 >
                   Download EML
                 </a>
-                <button className="ghostButton compactButton" onClick={() => void handleDeleteCurrent()}>
+                <button className="dangerButton compactButton" onClick={() => void handleDeleteCurrent()}>
                   Delete message
                 </button>
               </div>
             </div>
 
-            <div className={hasAttachments && attachmentsExpanded ? "detailGrid hasAttachments" : "detailGrid"}>
+            <div className="detailGrid">
               <section className="viewerCard">
                 <div className="viewerHeader">
                   <div className="tabs">
@@ -1244,6 +1339,30 @@ export function App() {
                     sandbox=""
                     srcDoc={content.html}
                   />
+                ) : activeTab === "attachments" ? (
+                  hasAttachments ? (
+                    <div className="attachmentViewport">
+                      <div className="attachmentList attachmentListWide">
+                        {selectedMessage.attachments?.map((attachment) => (
+                          <a
+                            key={attachment.id}
+                            className="attachmentItem"
+                            href={attachmentUrl(selectedMessage.id, attachment.id)}
+                          >
+                            <div className="attachmentMeta">
+                              <strong>{attachment.fileName}</strong>
+                              <span>{attachment.contentType}</span>
+                            </div>
+                            <span className="attachmentStats">
+                              {attachment.inline ? "Inline" : "Attachment"} · {formatBytes(attachment.size)}
+                            </span>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="emptyState">No attachments available.</p>
+                  )
                 ) : activeTab === "headers" ? (
                   <div className="headersList">
                     {(selectedMessage.headers ?? []).length ? (
@@ -1276,39 +1395,6 @@ export function App() {
                   <pre className="codeBlock">{content[activeTab]}</pre>
                 )}
               </section>
-
-              {hasAttachments ? (
-                <section className={attachmentsExpanded ? "attachmentsCard" : "attachmentsToggleCard"}>
-                  <div className="attachmentsHeader">
-                    <h3>Attachments</h3>
-                    <div className="attachmentsHeaderActions">
-                      <span>{selectedMessage.attachments?.length ?? 0}</span>
-                      <button
-                        className="ghostButton compactButton attachmentsToggle"
-                        onClick={() => setAttachmentsExpanded((current) => !current)}
-                      >
-                        {attachmentsExpanded ? "Collapse" : "Expand"}
-                      </button>
-                    </div>
-                  </div>
-                  {attachmentsExpanded ? (
-                    <div className="attachmentList">
-                      {selectedMessage.attachments?.map((attachment) => (
-                        <a
-                          key={attachment.id}
-                          className="attachmentItem"
-                          href={attachmentUrl(selectedMessage.id, attachment.id)}
-                        >
-                          <strong>{attachment.fileName}</strong>
-                          <span>
-                            {attachment.contentType} · {formatBytes(attachment.size)}
-                          </span>
-                        </a>
-                      ))}
-                    </div>
-                  ) : null}
-                </section>
-              ) : null}
             </div>
           </section>
         ) : !settingsOpen ? (
@@ -2402,9 +2488,49 @@ function currentPaneCopyValue(activeTab: TabKey, message: Message | null): strin
       return (message.headers ?? []).map((header) => `${header.key}: ${header.value}`).join("\n");
     case "raw":
       return message.raw ?? "";
+    case "attachments":
+      return (message.attachments ?? [])
+        .map((attachment) => `${attachment.fileName} (${attachment.contentType}, ${formatBytes(attachment.size)})`)
+        .join("\n");
     default:
       return "";
   }
+}
+
+type MessageBadge = {
+  label: string;
+  tone: "Neutral" | "Info" | "Success" | "Warning" | "Danger";
+  icon: ReturnType<typeof HtmlIcon> | null;
+};
+
+function buildMessageBadges(message: Message): MessageBadge[] {
+  const badges: MessageBadge[] = [];
+  const hasHtml = Boolean(message.htmlBody?.trim());
+  const hasText = Boolean(message.textBody?.trim());
+  const attachments = message.attachments ?? [];
+  const inlineImages = attachments.filter((attachment) => attachment.inline).length;
+
+  if (hasHtml) {
+    badges.push({ label: "HTML", tone: "Info", icon: <HtmlIcon /> });
+  }
+  if (hasText) {
+    badges.push({ label: "Text", tone: "Neutral", icon: <TextIcon /> });
+  }
+  if (attachments.length > 0) {
+    badges.push({ label: "Attachment", tone: "Warning", icon: <AttachmentIcon /> });
+  }
+  if (inlineImages > 0) {
+    badges.push({ label: "Inline Images", tone: "Warning", icon: <ImageIcon /> });
+  }
+  if ((hasHtml && hasText) || attachments.length > 0) {
+    badges.push({ label: "Multipart", tone: "Success", icon: null });
+  }
+
+  return badges;
+}
+
+function primaryRecipient(message: Message): string {
+  return message.headerTo || message.rcptTo[0] || "-";
 }
 
 function normalizeSettingsDraft(settings: AppSettings): AppSettings {
@@ -2599,6 +2725,67 @@ function CheckIcon() {
   return (
     <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
       <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="7" cy="7" r="4.5" />
+      <path d="M10.5 10.5 14 14" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="2.2" />
+      <path d="M8 1.8v1.7M8 12.5v1.7M14.2 8h-1.7M3.5 8H1.8M12.8 3.2l-1.2 1.2M4.4 11.6l-1.2 1.2M12.8 12.8l-1.2-1.2M4.4 4.4 3.2 3.2" />
+    </svg>
+  );
+}
+
+function MailIcon() {
+  return (
+    <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2 4.5h12v7H2z" />
+      <path d="M2.5 5 8 9l5.5-4" />
+    </svg>
+  );
+}
+
+function HtmlIcon() {
+  return (
+    <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="m5.5 4.5-3 3.5 3 3.5M10.5 4.5l3 3.5-3 3.5M8.8 3l-1.6 10" />
+    </svg>
+  );
+}
+
+function TextIcon() {
+  return (
+    <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3 4h10M5 7.5h6M5 11h6" />
+    </svg>
+  );
+}
+
+function AttachmentIcon() {
+  return (
+    <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M10.8 5.1 6.3 9.6a2.4 2.4 0 1 0 3.4 3.4l4-4a4 4 0 1 0-5.6-5.6L3.7 7.8" />
+    </svg>
+  );
+}
+
+function ImageIcon() {
+  return (
+    <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
+      <circle cx="6" cy="6.2" r="1" />
+      <path d="m4 11 2.2-2.2 1.9 1.9 2.2-2.7L12 11" />
     </svg>
   );
 }

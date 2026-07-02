@@ -1553,3 +1553,733 @@ select {
     align-self: flex-end;
   }
 }
+
+/* MailTail redesign */
+
+:root {
+  color-scheme: dark;
+  color: #e6edf7;
+  background:
+    radial-gradient(circle at top left, rgb(51 116 255 / 7%), transparent 22%),
+    linear-gradient(180deg, #0a0f16 0%, #0b1118 48%, #0a1017 100%);
+  --bg: #0b1118;
+  --bg-elevated: rgb(14 20 29 / 96%);
+  --bg-panel: rgb(11 17 25 / 96%);
+  --bg-panel-2: rgb(15 21 31 / 94%);
+  --border: rgb(255 255 255 / 6%);
+  --border-strong: rgb(255 255 255 / 10%);
+  --text: #e6edf7;
+  --text-muted: rgb(230 237 247 / 64%);
+  --text-subtle: rgb(230 237 247 / 42%);
+  --accent: #4f8cff;
+  --accent-soft: rgb(79 140 255 / 12%);
+  --success: #4dc67d;
+  --warning: #f2b45c;
+  --danger: #ef6b73;
+  --shadow-lg: 0 8px 24px rgb(0 0 0 / 16%);
+  --shadow-md: 0 4px 14px rgb(0 0 0 / 12%);
+  --radius-xl: 12px;
+  --radius-lg: 10px;
+  --radius-md: 8px;
+}
+
+body {
+  background: transparent;
+  color: var(--text);
+  font-feature-settings: "cv02" 1, "cv11" 1;
+}
+
+.shell {
+  gap: 0;
+  grid-template-columns: 360px minmax(0, 1fr);
+}
+
+.workspaceHeader,
+.sidebar,
+.contentPane {
+  padding: 14px 16px;
+}
+
+.workspaceHeader {
+  padding-bottom: 0;
+}
+
+.workspaceHeaderCard,
+.brand,
+.searchCard,
+.heroCard,
+.viewerCard,
+.attachmentsCard,
+.statTile,
+.settingsPanel,
+.createUserDialog {
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-xl);
+  box-shadow: none;
+}
+
+.workspaceHeaderCard {
+  padding: 12px 14px;
+}
+
+.workspaceTopRow {
+  display: grid;
+  grid-template-columns: auto minmax(320px, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.brandLockup {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.brandMark {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(79 140 255 / 10%);
+  border: 1px solid rgb(79 140 255 / 16%);
+  color: #9cc0ff;
+}
+
+.brandMark .copyIcon,
+.toolbarButton .copyIcon,
+.searchFieldIcon .copyIcon,
+.messageBadge .copyIcon {
+  width: 15px;
+  height: 15px;
+}
+
+.workspaceTitle h1 {
+  font-size: 1.2rem;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.workspaceTitle .eyebrow,
+.sidebarSectionHeader .eyebrow,
+.diagnosticsCard .eyebrow,
+.messageHeroCard .eyebrow,
+.settingsPageTitle .eyebrow {
+  color: #8fb6ff;
+  letter-spacing: 0.14em;
+}
+
+.searchFieldLarge {
+  position: relative;
+  gap: 0;
+}
+
+.searchFieldLarge input {
+  min-height: 44px;
+  padding: 0 16px 0 42px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: rgb(9 14 21 / 94%);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.searchFieldLarge input::placeholder {
+  color: var(--text-subtle);
+}
+
+.searchFieldIcon {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  display: inline-flex;
+}
+
+.topToolbar {
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.ghostButton,
+.dangerButton,
+.tab,
+.primaryButton,
+.settingsTabButton,
+.settingsSubTabButton {
+  border-radius: 10px;
+}
+
+.ghostButton,
+.tab,
+.toolbarToggle,
+.userMenuTrigger {
+  background: rgb(255 255 255 / 3%);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.ghostButton:hover,
+.tab:hover,
+.toolbarToggle:hover,
+.userMenuTrigger:hover {
+  border-color: rgb(79 140 255 / 18%);
+  background: rgb(79 140 255 / 7%);
+}
+
+.primaryButton {
+  border: 1px solid rgb(79 140 255 / 22%);
+  background: rgb(79 140 255 / 16%);
+  color: white;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: #c7dbff;
+}
+
+.primaryButton:hover {
+  background: rgb(79 140 255 / 22%);
+}
+
+.dangerButton {
+  background: rgb(239 107 115 / 10%);
+  border: 1px solid rgb(239 107 115 / 20%);
+  color: #ffb6bc;
+}
+
+.toolbarButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbarStatus,
+.toolbarToggle,
+.userMenuTrigger {
+  min-height: 36px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.toolbarStatus {
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgb(255 255 255 / 2%);
+  color: var(--text-muted);
+}
+
+.toolbarStatusSuccess {
+  color: #b9f1cd;
+}
+
+.toolbarStatusWarning {
+  color: #ffd598;
+}
+
+.toolbarStatusDanger {
+  color: #ffb8be;
+}
+
+.toolbarStatusDot,
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 4px rgb(255 255 255 / 5%);
+}
+
+.toolbarToggle input {
+  accent-color: var(--accent);
+}
+
+.userMenu {
+  position: relative;
+}
+
+.userMenu summary {
+  list-style: none;
+}
+
+.userMenu summary::-webkit-details-marker {
+  display: none;
+}
+
+.userMenuCaret {
+  font-size: 0.7rem;
+  color: var(--text-subtle);
+}
+
+.userMenuPanel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 160px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: rgb(13 19 29 / 98%);
+  box-shadow: none;
+  display: grid;
+  gap: 6px;
+  z-index: 6;
+}
+
+.sidebar {
+  background: transparent;
+  border-right: 1px solid var(--border);
+  gap: 12px;
+}
+
+.sidebarSectionHeader,
+.diagnosticsCardHeader,
+.viewerHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.sidebarSectionHeader h2,
+.diagnosticsCardHeader h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.sidebarSectionMeta {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  color: var(--text-subtle);
+  font-size: 0.78rem;
+}
+
+.messageList {
+  gap: 6px;
+}
+
+.messageItem {
+  padding: 10px 10px 9px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  gap: 6px;
+}
+
+.messageItem:hover,
+.messageItem.active {
+  transform: none;
+  border-color: rgb(79 140 255 / 14%);
+  background: rgb(79 140 255 / 7%);
+  box-shadow: none;
+}
+
+.messageSubject {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.messageTime {
+  color: var(--text-subtle);
+  font-size: 0.72rem;
+}
+
+.messageMetaCompact {
+  display: grid;
+  gap: 3px;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+}
+
+.messageRecipient {
+  color: var(--text-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.messageBadgeRow,
+.heroBadgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.messageBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+}
+
+.messageBadgeNeutral {
+  color: #dbe6f7;
+  background: rgb(255 255 255 / 5%);
+  border-color: rgb(255 255 255 / 8%);
+}
+
+.messageBadgeInfo {
+  color: #9cc0ff;
+  background: rgb(79 140 255 / 12%);
+  border-color: rgb(79 140 255 / 22%);
+}
+
+.messageBadgeSuccess {
+  color: #b8efca;
+  background: rgb(77 198 125 / 12%);
+  border-color: rgb(77 198 125 / 22%);
+}
+
+.messageBadgeWarning {
+  color: #ffd79c;
+  background: rgb(242 180 92 / 12%);
+  border-color: rgb(242 180 92 / 22%);
+}
+
+.messageBadgeDanger {
+  color: #ffb4bb;
+  background: rgb(239 107 115 / 12%);
+  border-color: rgb(239 107 115 / 22%);
+}
+
+.diagnosticsCard {
+  padding: 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: transparent;
+  box-shadow: none;
+  display: grid;
+  gap: 10px;
+}
+
+.diagnosticsStamp,
+.sidebarVersion {
+  color: var(--text-subtle);
+  font-size: 0.78rem;
+}
+
+.diagnosticsList,
+.messageInfoPanel {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.diagnosticsList div,
+.messageInfoPanel div {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.diagnosticsList dt,
+.messageInfoPanel dt {
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+}
+
+.diagnosticsList dd,
+.messageInfoPanel dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.contentPane {
+  gap: 12px;
+}
+
+.messageWorkspace {
+  gap: 12px;
+}
+
+.messageHeroCard {
+  padding: 16px 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+}
+
+.messageHeroCard h2 {
+  font-size: clamp(1.35rem, 1.9vw, 1.9rem);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+  margin: 0 0 10px;
+}
+
+.messageInfoPanel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.detailGrid {
+  min-height: 0;
+}
+
+.viewerCard {
+  padding: 14px;
+  gap: 12px;
+}
+
+.tabs {
+  gap: 6px;
+}
+
+.tab {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+}
+
+.tab.active {
+  background: rgb(79 140 255 / 16%);
+  border-color: rgb(79 140 255 / 24%);
+  color: #b7d0ff;
+  font-weight: 600;
+}
+
+.viewerCopyButton {
+  min-height: 38px;
+}
+
+.htmlFrame,
+.codeBlock,
+.headersList,
+.attachmentViewport {
+  background: rgb(8 12 19 / 72%);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.htmlFrame {
+  padding: 0;
+  min-height: 560px;
+}
+
+.codeBlock,
+.headerValue,
+.commandSnippet,
+.attachmentStats {
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+}
+
+.headersList {
+  gap: 10px;
+}
+
+.headerRow {
+  grid-template-columns: 180px minmax(0, 1fr);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.headerKey {
+  color: var(--text-subtle);
+}
+
+.headerValue {
+  color: #dbe6f7;
+}
+
+.attachmentListWide {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.attachmentItem {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgb(255 255 255 / 2%);
+  padding: 12px;
+  transition: border-color 140ms ease, transform 140ms ease, background 140ms ease;
+}
+
+.attachmentItem:hover {
+  transform: none;
+  border-color: rgb(79 140 255 / 16%);
+  background: rgb(79 140 255 / 7%);
+}
+
+.attachmentMeta {
+  display: grid;
+  gap: 4px;
+}
+
+.attachmentMeta span,
+.attachmentStats,
+.emptyCopy,
+.emptyState,
+.settingsCardLead,
+.settingsLead,
+.settingsField small {
+  color: var(--text-muted);
+}
+
+.emptyHero {
+  padding: 18px 20px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-shadow: none;
+}
+
+.commandSnippet {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgb(8 12 18 / 78%);
+}
+
+.settingsPageHeader {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settingsPageTitle h2 {
+  font-size: 2rem;
+  letter-spacing: -0.04em;
+}
+
+.settingsTabs {
+  gap: 8px;
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.settingsTabButton {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  background: rgb(255 255 255 / 2%);
+  color: var(--text-muted);
+}
+
+.settingsTabButton.active {
+  color: #b7d0ff;
+  border-color: rgb(79 140 255 / 22%);
+  background: rgb(79 140 255 / 10%);
+}
+
+.settingsSubTabs {
+  border: 1px solid var(--border);
+  background: rgb(255 255 255 / 3%);
+}
+
+.settingsSubTabButton.active {
+  background: rgb(79 140 255 / 12%);
+  color: #b7d0ff;
+}
+
+.settingsField,
+.settingsCard,
+.settingsStat,
+.rulesCatalogItem,
+.rulesGuidanceCallout,
+.emptyListCard {
+  border-radius: var(--radius-lg);
+  border-color: var(--border);
+  background: rgb(255 255 255 / 2.5%);
+  box-shadow: none;
+}
+
+.settingsField input,
+.settingsField textarea,
+.settingsField select {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgb(8 12 19 / 74%);
+  color: var(--text);
+}
+
+.settingsField textarea {
+  min-height: 104px;
+}
+
+.settingsCardHeader h3 {
+  font-size: 1.02rem;
+}
+
+.settingsDefinitionList div {
+  grid-template-columns: 180px minmax(0, 1fr);
+  border-bottom-color: var(--border);
+}
+
+.flashBanner {
+  border-radius: 10px;
+}
+
+@media (width <= 1280px) {
+  .workspaceTopRow {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .topToolbar {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .messageHeroCard {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (width <= 980px) {
+  .workspaceHeader,
+  .sidebar,
+  .contentPane {
+    padding: 14px;
+  }
+
+  .topToolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .topToolbar > * {
+    justify-content: center;
+  }
+
+  .diagnosticsList div,
+  .messageInfoPanel div,
+  .settingsDefinitionList div {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .messageHeroCard,
+  .emptyHero,
+  .workspaceHeaderCard,
+  .viewerCard {
+    padding: 14px;
+  }
+}
+
+@media (width <= 640px) {
+  .topToolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .messageBadgeRow,
+  .heroBadgeRow {
+    gap: 6px;
+  }
+
+  .headerRow {
+    grid-template-columns: 1fr;
+  }
+}
