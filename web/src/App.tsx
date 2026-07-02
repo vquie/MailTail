@@ -126,6 +126,7 @@ export function App() {
   const [copiedHeaderKey, setCopiedHeaderKey] = useState<string | null>(null);
   const [copiedPaneKey, setCopiedPaneKey] = useState<TabKey | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>("instance");
   const [adminMailboxSubTab, setAdminMailboxSubTab] = useState<SettingsSubTab>("general");
   const [userEditorSubTab, setUserEditorSubTab] = useState<SettingsSubTab>("general");
@@ -403,6 +404,11 @@ export function App() {
     } finally {
       setSettingsLoading(false);
     }
+  }
+
+  function openAboutPanel() {
+    userMenuRef.current?.removeAttribute("open");
+    setAboutOpen(true);
   }
 
   async function handleSaveSettings() {
@@ -1315,6 +1321,10 @@ export function App() {
                     <span className="userMenuCaret" aria-hidden="true">▼</span>
                   </summary>
                   <div className="userMenuPanel">
+                    <button className="ghostButton compactButton toolbarButton userMenuAction" type="button" onClick={openAboutPanel}>
+                      <InfoIcon />
+                      <span>About</span>
+                    </button>
                     <button className="ghostButton compactButton toolbarButton userMenuAction" type="button" onClick={() => void openSettingsPanel()}>
                       <SettingsIcon />
                       <span>Settings</span>
@@ -1750,32 +1760,6 @@ export function App() {
                         </div>
                       </section>
 
-                      <section className="settingsField settingsCard">
-                        <div className="settingsCardHeader">
-                          <div>
-                            <h3>Instance overview</h3>
-                            <p className="settingsCardLead">Useful runtime details for the current workspace.</p>
-                          </div>
-                        </div>
-                        <dl className="settingsDefinitionList">
-                          <div>
-                            <dt>Version</dt>
-                            <dd>{version || "-"}</dd>
-                          </div>
-                          <div>
-                            <dt>Signed in as</dt>
-                            <dd>{session?.username || "-"}</dd>
-                          </div>
-                          <div>
-                            <dt>Local users</dt>
-                            <dd>{managedUsers.length}</dd>
-                          </div>
-                          <div>
-                            <dt>Admin mailbox</dt>
-                            <dd>{adminMailboxEnabled ? "Enabled" : "Disabled"}</dd>
-                          </div>
-                        </dl>
-                      </section>
                     </div>
                   ) : null}
 
@@ -2467,6 +2451,44 @@ export function App() {
           </div>
         ) : null}
 
+        {aboutOpen ? (
+          <div className="settingsOverlay" onClick={() => setAboutOpen(false)}>
+            <section className="settingsPanel aboutPanel" onClick={(event) => event.stopPropagation()}>
+              <div className="settingsPanelHeader">
+                <div className="settingsPageTitle">
+                  <p className="eyebrow">About</p>
+                  <h2>MailTail</h2>
+                  <p className="settingsLead">Useful runtime details for the current workspace.</p>
+                </div>
+                <button className="ghostButton compactButton settingsToolbarCloseButton" type="button" onClick={() => setAboutOpen(false)}>
+                  Close
+                </button>
+              </div>
+
+              <section className="settingsField settingsCard">
+                <dl className="settingsDefinitionList">
+                  <div>
+                    <dt>Version</dt>
+                    <dd>{version || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Signed in as</dt>
+                    <dd>{session?.username || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Local users</dt>
+                    <dd>{managedUsers.length}</dd>
+                  </div>
+                  <div>
+                    <dt>Admin mailbox</dt>
+                    <dd>{adminMailboxEnabled ? "Enabled" : "Disabled"}</dd>
+                  </div>
+                </dl>
+              </section>
+            </section>
+          </div>
+        ) : null}
+
       </main>
     </div>
   );
@@ -2811,6 +2833,14 @@ function ChevronIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 16 16" aria-hidden="true">
       <path d="m4.5 6 3.5 4 3.5-4" />
+    </svg>
+  );
+}
+
+function InfoIcon() {
+  return (
+    <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M8 11V7.25M8 5.25h.01M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z" />
     </svg>
   );
 }

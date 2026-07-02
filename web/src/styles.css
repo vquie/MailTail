@@ -822,6 +822,10 @@ select {
   gap: 16px;
 }
 
+.aboutPanel {
+  width: min(560px, 100%);
+}
+
 .settingsPageShell {
   width: 100%;
   max-width: none;
