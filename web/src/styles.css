@@ -2053,10 +2053,54 @@ body {
   margin: 0 0 10px;
 }
 
-.messageInfoPanel {
+.messageInfoGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
+}
+
+.messageInfoList {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.messageInfoRow {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  min-width: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid rgb(255 255 255 / 4%);
+}
+
+.messageInfoRow:first-child {
+  padding-top: 0;
+}
+
+.messageInfoRow:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.messageInfoRow dt {
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.messageInfoRow dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .detailGrid {
@@ -2386,7 +2430,7 @@ body {
   align-items: flex-start;
 }
 
-.messageInfoPanel dd,
+.messageInfoRow dd,
 .diagnosticsList dd,
 .headerValue {
   overflow-wrap: anywhere;
@@ -2589,13 +2633,13 @@ body {
     font-size: 1.18rem;
   }
 
-  .messageInfoPanel,
+  .messageInfoGrid,
   .diagnosticsList,
   .settingsDefinitionList {
     gap: 8px;
   }
 
-  .messageInfoPanel div,
+  .messageInfoRow,
   .diagnosticsList div,
   .settingsDefinitionList div,
   .headerRow {
@@ -2626,6 +2670,10 @@ body {
   .messageBadgeRow,
   .heroBadgeRow {
     gap: 4px;
+  }
+
+  .messageInfoGrid {
+    grid-template-columns: 1fr;
   }
 
   .messageBadge {

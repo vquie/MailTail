@@ -1247,52 +1247,48 @@ export function App() {
               <div className="heroCopy">
                 <p className="eyebrow">Message detail</p>
                 <h2>{selectedMessage.subject || "(no subject)"}</h2>
-                <div className="heroBadgeRow">
-                  {selectedMessageBadges.map((badge) => (
-                    <span key={badge.label} className={`messageBadge messageBadge${badge.tone}`}>
-                      {badge.icon}
-                      <span>{badge.label}</span>
-                    </span>
-                  ))}
+                <div className="messageInfoGrid">
+                  <dl className="messageInfoList">
+                    <div className="messageInfoRow">
+                      <dt>From</dt>
+                      <dd>{selectedMessage.headerFrom || "-"}</dd>
+                    </div>
+                    <div className="messageInfoRow">
+                      <dt>To</dt>
+                      <dd>{selectedMessage.headerTo || primaryRecipient(selectedMessage)}</dd>
+                    </div>
+                    <div className="messageInfoRow">
+                      <dt>Envelope MAIL FROM</dt>
+                      <dd>{selectedMessage.mailFrom || "-"}</dd>
+                    </div>
+                    <div className="messageInfoRow">
+                      <dt>Envelope RCPT TO</dt>
+                      <dd>{selectedMessage.rcptTo.join(", ") || "-"}</dd>
+                    </div>
+                  </dl>
+                  <dl className="messageInfoList">
+                    <div className="messageInfoRow">
+                      <dt>Remote IP</dt>
+                      <dd>{selectedMessage.remoteIp || "-"}</dd>
+                    </div>
+                    <div className="messageInfoRow">
+                      <dt>HELO</dt>
+                      <dd>{selectedMessage.helo || "-"}</dd>
+                    </div>
+                    <div className="messageInfoRow">
+                      <dt>Message size</dt>
+                      <dd>{formatBytes(selectedMessage.size)}</dd>
+                    </div>
+                    <div className="messageInfoRow">
+                      <dt>Received</dt>
+                      <dd>{formatDate(selectedMessage.receivedAt)}</dd>
+                    </div>
+                    <div className="messageInfoRow">
+                      <dt>Message ID</dt>
+                      <dd>{selectedMessage.messageId || "-"}</dd>
+                    </div>
+                  </dl>
                 </div>
-                <dl className="messageInfoPanel">
-                  <div>
-                    <dt>From</dt>
-                    <dd>{selectedMessage.headerFrom || "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>To</dt>
-                    <dd>{selectedMessage.headerTo || primaryRecipient(selectedMessage)}</dd>
-                  </div>
-                  <div>
-                    <dt>Envelope MAIL FROM</dt>
-                    <dd>{selectedMessage.mailFrom || "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>Envelope RCPT TO</dt>
-                    <dd>{selectedMessage.rcptTo.join(", ") || "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>Remote IP</dt>
-                    <dd>{selectedMessage.remoteIp || "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>HELO</dt>
-                    <dd>{selectedMessage.helo || "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>Message size</dt>
-                    <dd>{formatBytes(selectedMessage.size)}</dd>
-                  </div>
-                  <div>
-                    <dt>Received</dt>
-                    <dd>{formatDate(selectedMessage.receivedAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>Message ID</dt>
-                    <dd>{selectedMessage.messageId || "-"}</dd>
-                  </div>
-                </dl>
               </div>
 
               <div className="heroActions">
