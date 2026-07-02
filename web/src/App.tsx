@@ -118,6 +118,7 @@ export function App() {
   const [hasMore, setHasMore] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("html");
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [sidebarDiagnosticsOpen, setSidebarDiagnosticsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
@@ -1379,32 +1380,51 @@ export function App() {
         </div>
 
         <div className="sidebarFooter">
-          <section className="diagnosticsCard">
-            <div className="diagnosticsCardHeader">
-              <div>
-                <p className="eyebrow">Runtime</p>
-                <h3>Diagnostics</h3>
-              </div>
-              <span className="diagnosticsStamp">{lastSyncAt ? `Synced ${formatTime(lastSyncAt)}` : "Waiting"}</span>
-            </div>
-            <dl className="diagnosticsList">
-              {sidebarDiagnostics.map((item) => (
-                <div key={item.label}>
-                  <dt>{item.label}</dt>
-                  <dd>{item.value}</dd>
+          <div className={sidebarDiagnosticsOpen ? "sidebarUtilityPanel open" : "sidebarUtilityPanel"}>
+            <button
+              className={sidebarDiagnosticsOpen ? "ghostButton compactButton sidebarUtilityToggle open" : "ghostButton compactButton sidebarUtilityToggle"}
+              type="button"
+              aria-expanded={sidebarDiagnosticsOpen}
+              aria-label={sidebarDiagnosticsOpen ? "Hide details" : "Show details"}
+              onClick={() => setSidebarDiagnosticsOpen((current) => !current)}
+            >
+              <span className="sidebarUtilityMeta">
+                <span className="sidebarUtilityLabel">Details</span>
+                <ChevronIcon className="sidebarUtilityChevron" />
+              </span>
+            </button>
+
+            {sidebarDiagnosticsOpen ? (
+              <div className="sidebarUtilityContent">
+                <section className="diagnosticsCard">
+                  <div className="diagnosticsCardHeader">
+                    <div>
+                      <p className="eyebrow">Runtime</p>
+                      <h3>Diagnostics</h3>
+                    </div>
+                    <span className="diagnosticsStamp">{lastSyncAt ? `Synced ${formatTime(lastSyncAt)}` : "Waiting"}</span>
+                  </div>
+                  <dl className="diagnosticsList">
+                    {sidebarDiagnostics.map((item) => (
+                      <div key={item.label}>
+                        <dt>{item.label}</dt>
+                        <dd>{item.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+                <div className="supportLinks">
+                  <a className="ghostButton compactButton toolbarButton supportLink" href={repoUrl} target="_blank" rel="noreferrer">
+                    <GitHubIcon />
+                    <span>GitHub repo</span>
+                  </a>
+                  <a className="ghostButton compactButton toolbarButton supportLink" href={issuesUrl} target="_blank" rel="noreferrer">
+                    <GitHubIcon />
+                    <span>Report a bug</span>
+                  </a>
                 </div>
-              ))}
-            </dl>
-          </section>
-          <div className="supportLinks">
-            <a className="ghostButton compactButton toolbarButton supportLink" href={repoUrl} target="_blank" rel="noreferrer">
-              <GitHubIcon />
-              <span>GitHub repo</span>
-            </a>
-            <a className="ghostButton compactButton toolbarButton supportLink" href={issuesUrl} target="_blank" rel="noreferrer">
-              <GitHubIcon />
-              <span>Report a bug</span>
-            </a>
+              </div>
+            ) : null}
           </div>
           {!session?.isAdmin && settingsLoaded && currentSettings.mailFailEnabled ? (
             <div className="sidebarNotice">
@@ -2773,6 +2793,14 @@ function GitHubIcon() {
   return (
     <svg className="copyIcon" viewBox="0 0 16 16" aria-hidden="true">
       <path d="M8 1.5a6.5 6.5 0 0 0-2 12.7c.3.1.4-.1.4-.3v-1.2c-1.7.4-2.1-.8-2.1-.8-.3-.8-.7-1-1-1.1-.2-.1-.5-.3 0-.3.5 0 1 .5 1.2.7.5.8 1.3.6 1.7.5.1-.4.2-.6.4-.8-1.5-.2-3.1-.8-3.1-3.3 0-.7.2-1.3.7-1.8-.1-.2-.3-.9.1-1.8 0 0 .6-.2 1.9.7a6 6 0 0 1 3.5 0c1.3-.9 1.9-.7 1.9-.7.4.9.2 1.6.1 1.8.4.5.7 1.1.7 1.8 0 2.6-1.6 3.1-3.1 3.3.2.2.5.6.5 1.3v1.9c0 .2.1.4.4.3A6.5 6.5 0 0 0 8 1.5Z" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" aria-hidden="true">
+      <path d="m4.5 6 3.5 4 3.5-4" />
     </svg>
   );
 }

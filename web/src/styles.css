@@ -260,6 +260,60 @@ select {
   margin-top: 8px;
 }
 
+.sidebarUtilityPanel {
+  display: grid;
+  gap: 8px;
+}
+
+.ghostButton.sidebarUtilityToggle {
+  width: fit-content;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  min-height: 0;
+  justify-content: center;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 1.5%);
+}
+
+.sidebarUtilityMeta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.sidebarUtilityLabel {
+  font-size: 0.64rem;
+  font-weight: 500;
+  color: var(--text-subtle);
+  line-height: 1;
+}
+
+.sidebarUtilityChevron {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  width: 10px;
+  height: 10px;
+  color: rgb(230 237 247 / 55%);
+  transform: rotate(180deg);
+  transition: transform 140ms ease;
+}
+
+.sidebarUtilityToggle.open .sidebarUtilityChevron {
+  transform: rotate(0deg);
+}
+
+.sidebarUtilityContent {
+  display: grid;
+  gap: 8px;
+}
+
 .sidebarNotice {
   display: inline-flex;
   align-items: center;
