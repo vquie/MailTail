@@ -2306,8 +2306,20 @@ body {
 }
 
 .settingsPageHeader {
-  padding-bottom: 8px;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 3.8%), rgb(255 255 255 / 2.2%)),
+    var(--bg-elevated);
   border-bottom: 1px solid var(--border);
+}
+
+.settingsPageToolbar {
+  margin-top: 0;
+  margin-right: 0;
+  padding-top: 0;
+  align-self: start;
 }
 
 .settingsPageTitle h2 {
@@ -2318,7 +2330,7 @@ body {
 .settingsTabs {
   gap: 8px;
   border-bottom: 0;
-  padding-bottom: 0;
+  padding: 0 6px;
 }
 
 .settingsTabButton {
@@ -2355,6 +2367,45 @@ body {
   border-color: var(--border);
   background: rgb(255 255 255 / 2.5%);
   box-shadow: none;
+}
+
+.settingsCard,
+.createUserDialog {
+  padding: 18px 20px;
+  gap: 16px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 3.8%), rgb(255 255 255 / 2.2%)),
+    var(--bg-elevated);
+}
+
+.settingsField {
+  padding: 16px 18px;
+  gap: 10px;
+}
+
+.settingsGrid > .settingsField,
+.adminMailboxGrid > .settingsField,
+.adminEditorGrid > .settingsField,
+.settingsCardBody > .settingsField,
+.settingsCardBody > .nestedSettingsField,
+.mailFailEditorGrid > .settingsField,
+.mailFailManagerLayout .settingsField,
+.rulesWorkspace .settingsField:not(.settingsCard),
+.adminUserLayout .settingsField:not(.settingsCard) {
+  border-color: rgb(255 255 255 / 4%);
+  background: linear-gradient(180deg, rgb(255 255 255 / 2.2%), rgb(255 255 255 / 1.2%));
+}
+
+.settingsCardHeader {
+  padding-bottom: 14px;
+}
+
+.settingsCardBody {
+  gap: 16px;
+}
+
+.nestedSettingsField {
+  padding: 14px 16px;
 }
 
 .settingsField input,
