@@ -1164,8 +1164,10 @@ export function App() {
 
     const activeRules = (activeScope === "adminMailbox" ? adminMailboxDraft : settingsDraft).mailFailRules ?? [];
     const selectedRule = selectedMailFailRuleIndex !== null ? activeRules[selectedMailFailRuleIndex] : null;
+    const scopeChanged = mailFailManagerScope !== activeScope;
+    const invalidSelection = selectedMailFailRuleIndex !== null && !selectedRule;
 
-    if (mailFailManagerScope !== activeScope || (!selectedRule && activeRules.length > 0)) {
+    if (scopeChanged || invalidSelection) {
       activateMailFailWorkspace(activeScope, activeRules.length > 0 ? { selectedIndex: 0 } : { createNew: true });
     }
   }, [
