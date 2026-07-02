@@ -67,7 +67,9 @@ func CSVList(value string) []string {
 		return nil
 	}
 
-	parts := strings.Split(value, ",")
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r'
+	})
 	values := make([]string, 0, len(parts))
 	for _, part := range parts {
 		part = strings.TrimSpace(part)

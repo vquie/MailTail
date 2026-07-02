@@ -2776,7 +2776,7 @@ function splitCSV(value: string): string[] {
   }
 
   return value
-    .split(",")
+    .split(/[\n\r,]+/)
     .map((entry) => entry.trim())
     .filter(Boolean);
 }

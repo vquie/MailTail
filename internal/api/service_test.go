@@ -123,6 +123,24 @@ func TestUpdateAdminMailboxSettingsAllowsUsersWithoutRecipientDomains(t *testing
 	}
 }
 
+func TestUpdateAdminMailboxSettingsNormalizesNewlineSeparatedRecipientDomains(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	service := NewService(store, nil, "test", nil, nil)
+	ctx := context.Background()
+
+	saved, err := service.UpdateAdminMailboxSettings(ctx, models.AppSettings{
+		AcceptedRcptDomains: "alpha.test,\nbeta.test\r\ngamma.test",
+	})
+	if err != nil {
+		t.Fatalf("save admin mailbox settings: %v", err)
+	}
+	if saved.AcceptedRcptDomains != "alpha.test,beta.test,gamma.test" {
+		t.Fatalf("unexpected saved settings: %+v", saved)
+	}
+}
+
 func TestCreateUserWithoutRecipientDomainsAllowedAlongsideScopedAdminMailbox(t *testing.T) {
 	t.Parallel()
 
