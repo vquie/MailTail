@@ -86,6 +86,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 			r.Context(),
 			principal,
 			r.URL.Query().Get("q"),
+			r.URL.Query().Get("tag"),
 			r.URL.Query().Get("cursor"),
 			limit,
 		)

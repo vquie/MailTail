@@ -18,6 +18,7 @@ export type Message = {
   receivedAt: string;
   mailFrom: string;
   rcptTo: string[];
+  tags: string[];
   headerFrom: string;
   headerTo: string;
   subject: string;
@@ -57,6 +58,7 @@ export type MailFailRule = {
 
 export type MessagePage = {
   messages: Message[];
+  availableTags: string[];
   nextCursor?: string;
   hasMore: boolean;
 };

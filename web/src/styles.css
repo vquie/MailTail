@@ -2030,7 +2030,7 @@ body {
 
 .sidebar {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   background: transparent;
   border-right: 1px solid var(--border);
   gap: 12px;
@@ -2073,6 +2073,49 @@ body {
   color: var(--text-subtle);
   font-size: 0.78rem;
   text-align: right;
+}
+
+.tagFilterPanel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: rgb(255 255 255 / 2.5%);
+}
+
+.tagFilterHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-subtle);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.tagFilterList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tagFilterChip {
+  border: 1px solid var(--tag-border, rgb(255 255 255 / 8%));
+  background: var(--tag-bg, rgb(255 255 255 / 4%));
+  color: var(--tag-text, var(--text-muted));
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.tagFilterChip:hover,
+.tagFilterChip.active {
+  border-color: var(--tag-border, rgb(79 140 255 / 22%));
+  background: color-mix(in srgb, var(--tag-bg, rgb(79 140 255 / 12%)) 86%, white 14%);
+  color: var(--tag-text, #c8dcff);
 }
 
 .messageList {
@@ -2140,6 +2183,12 @@ body {
   border: 1px solid transparent;
   font-size: 0.68rem;
   letter-spacing: 0.02em;
+}
+
+.messageBadgeTag {
+  border-color: var(--tag-border, rgb(79 140 255 / 22%));
+  background: var(--tag-bg, rgb(79 140 255 / 12%));
+  color: var(--tag-text, #c8dcff);
 }
 
 .messageBadgeNeutral {
@@ -2278,6 +2327,24 @@ body {
   font-size: 0.95rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+.tagDetailList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tagDetailPill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--tag-border, rgb(255 255 255 / 8%));
+  background: var(--tag-bg, rgb(255 255 255 / 4%));
+  color: var(--tag-text, var(--text));
+  font-size: 0.82rem;
 }
 
 .detailGrid {

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vquie/MailTail/internal/models"
 	"github.com/vquie/MailTail/internal/parser"
 	"github.com/vquie/MailTail/internal/storage"
 )
@@ -195,6 +196,7 @@ func (s *Server) persistMessage(ctx context.Context, session SessionMetadata, ra
 	parsed.ReceivedAt = time.Now().UTC()
 	parsed.MailFrom = session.MailFrom
 	parsed.RcptTo = append([]string(nil), session.RcptTo...)
+	parsed.Tags = models.ExtractTagsFromRecipients(parsed.RcptTo)
 	parsed.Helo = session.Helo
 	parsed.RemoteIP = session.RemoteIP
 	if parsed.HeaderTo == "" {

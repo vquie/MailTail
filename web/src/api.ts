@@ -16,11 +16,14 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function fetchMessages(query: string, cursor = "", limit = 25): Promise<MessagePage> {
+export async function fetchMessages(query: string, tag = "", cursor = "", limit = 25): Promise<MessagePage> {
   const params = new URLSearchParams();
   params.set("limit", String(limit));
   if (query) {
     params.set("q", query);
+  }
+  if (tag) {
+    params.set("tag", tag);
   }
   if (cursor) {
     params.set("cursor", cursor);
@@ -28,7 +31,8 @@ export async function fetchMessages(query: string, cursor = "", limit = 25): Pro
 
   const data = await request<MessagePage>(`/api/messages?${params.toString()}`);
   return {
-    messages: data.messages ?? [],
+    messages: (data.messages ?? []).map(normalizeMessage),
+    availableTags: data.availableTags ?? [],
     nextCursor: data.nextCursor,
     hasMore: data.hasMore ?? false
   };
@@ -36,7 +40,7 @@ export async function fetchMessages(query: string, cursor = "", limit = 25): Pro
 
 export async function fetchMessage(id: number): Promise<Message> {
   const data = await request<{ message: Message }>(`/api/messages/${id}`);
-  return data.message;
+  return normalizeMessage(data.message);
 }
 
 export async function fetchStats(): Promise<Stats> {
@@ -163,4 +167,14 @@ function readCookie(name: string): string {
     }
   }
   return "";
+}
+
+function normalizeMessage(message: Message): Message {
+  return {
+    ...message,
+    rcptTo: message.rcptTo ?? [],
+    tags: message.tags ?? [],
+    headers: message.headers ?? [],
+    attachments: message.attachments ?? []
+  };
 }

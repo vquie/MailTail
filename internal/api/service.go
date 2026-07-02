@@ -32,9 +32,10 @@ func NewService(store storage.Store, parser *parser.Service, version string, run
 	return &Service{store: store, parser: parser, version: version, runtime: runtime, policy: policy}
 }
 
-func (s *Service) ListMessages(ctx context.Context, principal models.SessionPrincipal, query, cursor string, limit int) (models.MessagePage, error) {
+func (s *Service) ListMessages(ctx context.Context, principal models.SessionPrincipal, query, tag, cursor string, limit int) (models.MessagePage, error) {
 	page, err := s.store.ListMessages(ctx, models.MessageFilter{
 		Query:       query,
+		Tag:         tag,
 		Limit:       limit,
 		Cursor:      cursor,
 		OwnerUserID: principal.UserID,

@@ -8,6 +8,7 @@ type Message struct {
 	ReceivedAt  time.Time    `json:"receivedAt"`
 	MailFrom    string       `json:"mailFrom"`
 	RcptTo      []string     `json:"rcptTo"`
+	Tags        []string     `json:"tags,omitempty"`
 	HeaderFrom  string       `json:"headerFrom"`
 	HeaderTo    string       `json:"headerTo"`
 	Subject     string       `json:"subject"`
@@ -43,6 +44,7 @@ type StoredMessage struct {
 	ReceivedAt  time.Time
 	MailFrom    string
 	RcptTo      []string
+	Tags        []string
 	HeaderFrom  string
 	HeaderTo    string
 	Subject     string
@@ -68,6 +70,7 @@ type StoredAttachment struct {
 
 type MessageFilter struct {
 	Query       string
+	Tag         string
 	Limit       int
 	Cursor      string
 	OwnerUserID int64
@@ -75,9 +78,10 @@ type MessageFilter struct {
 }
 
 type MessagePage struct {
-	Messages   []Message `json:"messages"`
-	NextCursor string    `json:"nextCursor,omitempty"`
-	HasMore    bool      `json:"hasMore"`
+	Messages      []Message `json:"messages"`
+	AvailableTags []string  `json:"availableTags,omitempty"`
+	NextCursor    string    `json:"nextCursor,omitempty"`
+	HasMore       bool      `json:"hasMore"`
 }
 
 type Stats struct {
@@ -91,14 +95,14 @@ type AppInfo struct {
 }
 
 type AppSettings struct {
-	AllowedOrigins      string `json:"allowedOrigins"`
-	SMTPLogVerbose      bool   `json:"smtpLogVerbose"`
-	MailFailEnabled     bool   `json:"mailFailEnabled"`
+	AllowedOrigins      string         `json:"allowedOrigins"`
+	SMTPLogVerbose      bool           `json:"smtpLogVerbose"`
+	MailFailEnabled     bool           `json:"mailFailEnabled"`
 	MailFailRules       []MailFailRule `json:"mailFailRules,omitempty"`
-	AllowedRemoteIPs    string `json:"allowedRemoteIps"`
-	AcceptedRcptDomains string `json:"acceptedRcptDomains"`
-	AcceptedFromDomains string `json:"acceptedFromDomains"`
-	AutoDeleteAfterDays int    `json:"autoDeleteAfterDays"`
+	AllowedRemoteIPs    string         `json:"allowedRemoteIps"`
+	AcceptedRcptDomains string         `json:"acceptedRcptDomains"`
+	AcceptedFromDomains string         `json:"acceptedFromDomains"`
+	AutoDeleteAfterDays int            `json:"autoDeleteAfterDays"`
 }
 
 type MailFailRule struct {

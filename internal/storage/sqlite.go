@@ -103,6 +103,9 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 	if err := store.applySchemaUpgrades(); err != nil {
 		return nil, fmt.Errorf("apply schema upgrades: %w", err)
 	}
+	if err := store.backfillMessageTags(); err != nil {
+		return nil, fmt.Errorf("backfill message tags: %w", err)
+	}
 
 	if _, err := db.Exec(`INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')`); err != nil {
 		return nil, fmt.Errorf("rebuild message search index: %w", err)
@@ -153,6 +156,13 @@ func (s *SQLiteStore) applySchemaUpgrades() error {
 	indexStatements := []string{
 		`CREATE INDEX IF NOT EXISTS idx_messages_owner_received_at ON messages(owner_user_id, received_at DESC, id DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_messages_expires_at ON messages(expires_at)`,
+		`CREATE TABLE IF NOT EXISTS message_tags (
+			message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+			tag TEXT NOT NULL,
+			PRIMARY KEY (message_id, tag)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_message_tags_tag_message_id ON message_tags(tag, message_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_message_tags_message_id ON message_tags(message_id)`,
 	}
 	for _, statement := range indexStatements {
 		if _, err := s.db.Exec(statement); err != nil {
@@ -214,6 +224,10 @@ func (s *SQLiteStore) CreateMessage(ctx context.Context, message models.StoredMe
 	if err != nil {
 		return 0, err
 	}
+	message.Tags = models.NormalizeTags(message.Tags)
+	if len(message.Tags) == 0 {
+		message.Tags = models.ExtractTagsFromRecipients(message.RcptTo)
+	}
 
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO messages (
@@ -260,6 +274,15 @@ func (s *SQLiteStore) CreateMessage(ctx context.Context, message models.StoredMe
 			boolToInt(attachment.Inline),
 			attachment.Content,
 		); err != nil {
+			return 0, err
+		}
+	}
+
+	for _, tag := range message.Tags {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO message_tags (message_id, tag)
+			VALUES (?, ?)
+		`, messageID, tag); err != nil {
 			return 0, err
 		}
 	}
@@ -773,6 +796,10 @@ func (s *SQLiteStore) ListMessages(ctx context.Context, filter models.MessageFil
 			args = append(args, term, term, term)
 		}
 	}
+	if tag := strings.ToLower(strings.TrimSpace(filter.Tag)); tag != "" {
+		clauses = append(clauses, `EXISTS (SELECT 1 FROM message_tags WHERE message_tags.message_id = messages.id AND message_tags.tag = ?)`)
+		args = append(args, tag)
+	}
 
 	if filter.Cursor != "" {
 		cursorTime, cursorID, err := decodeMessageCursor(filter.Cursor)
@@ -808,6 +835,14 @@ func (s *SQLiteStore) ListMessages(ctx context.Context, filter models.MessageFil
 	}
 
 	page := models.MessagePage{Messages: messages}
+	if err := s.hydrateTagsForMessages(ctx, page.Messages); err != nil {
+		return models.MessagePage{}, err
+	}
+	availableTags, err := s.listAvailableTags(ctx, filter)
+	if err != nil {
+		return models.MessagePage{}, err
+	}
+	page.AvailableTags = availableTags
 	if len(messages) > limit {
 		page.HasMore = true
 		page.Messages = messages[:limit]
@@ -867,6 +902,11 @@ func (s *SQLiteStore) GetMessage(ctx context.Context, id int64, principal models
 	if err := hydrateMessage(&msg, receivedAt, rcptJSON, headersJSON); err != nil {
 		return models.Message{}, err
 	}
+	messages := []models.Message{msg}
+	if err := s.hydrateTagsForMessages(ctx, messages); err != nil {
+		return models.Message{}, err
+	}
+	msg = messages[0]
 
 	attachments, err := s.listAttachments(ctx, msg.ID)
 	if err != nil {
@@ -1066,6 +1106,149 @@ func hydrateMessage(msg *models.Message, receivedAt, rcptJSON, headersJSON strin
 		return err
 	}
 	return nil
+}
+
+func (s *SQLiteStore) hydrateTagsForMessages(ctx context.Context, messages []models.Message) error {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	ids := make([]any, 0, len(messages))
+	placeholders := make([]string, 0, len(messages))
+	indexByID := make(map[int64]int, len(messages))
+	for index := range messages {
+		messages[index].Tags = nil
+		indexByID[messages[index].ID] = index
+		ids = append(ids, messages[index].ID)
+		placeholders = append(placeholders, "?")
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT message_id, tag
+		FROM message_tags
+		WHERE message_id IN (`+strings.Join(placeholders, ",")+`)
+		ORDER BY tag ASC
+	`, ids...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			messageID int64
+			tag       string
+		)
+		if err := rows.Scan(&messageID, &tag); err != nil {
+			return err
+		}
+		index, ok := indexByID[messageID]
+		if !ok {
+			continue
+		}
+		messages[index].Tags = append(messages[index].Tags, tag)
+	}
+	return rows.Err()
+}
+
+func (s *SQLiteStore) listAvailableTags(ctx context.Context, filter models.MessageFilter) ([]string, error) {
+	query := `
+		SELECT DISTINCT message_tags.tag
+		FROM message_tags
+		JOIN messages ON messages.id = message_tags.message_id
+	`
+	args := make([]any, 0, 1)
+	clauses := make([]string, 0, 1)
+	if !filter.IncludeAll {
+		clauses = append(clauses, `messages.owner_user_id = ?`)
+		args = append(args, filter.OwnerUserID)
+	}
+	if len(clauses) > 0 {
+		query += ` WHERE ` + strings.Join(clauses, ` AND `)
+	}
+	query += ` ORDER BY message_tags.tag ASC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tags := make([]string, 0)
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, err
+		}
+		tags = append(tags, tag)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return tags, nil
+}
+
+func (s *SQLiteStore) backfillMessageTags() error {
+	rows, err := s.db.Query(`
+		SELECT id, rcpt_to_json
+		FROM messages
+		WHERE NOT EXISTS (
+			SELECT 1 FROM message_tags WHERE message_tags.message_id = messages.id
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type candidate struct {
+		id   int64
+		tags []string
+	}
+
+	candidates := make([]candidate, 0)
+	for rows.Next() {
+		var (
+			id       int64
+			rcptJSON string
+			rcptTo   []string
+		)
+		if err := rows.Scan(&id, &rcptJSON); err != nil {
+			return err
+		}
+		if err := json.Unmarshal([]byte(rcptJSON), &rcptTo); err != nil {
+			return err
+		}
+		tags := models.ExtractTagsFromRecipients(rcptTo)
+		if len(tags) == 0 {
+			continue
+		}
+		candidates = append(candidates, candidate{id: id, tags: tags})
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, candidate := range candidates {
+		for _, tag := range candidate.tags {
+			if _, err := tx.Exec(`
+				INSERT OR IGNORE INTO message_tags (message_id, tag)
+				VALUES (?, ?)
+			`, candidate.id, tag); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 func scanUser(scanner interface{ Scan(dest ...any) error }) (models.User, error) {

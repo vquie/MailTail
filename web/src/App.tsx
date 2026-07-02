@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import {
   attachmentUrl,
   clearInbox,
@@ -114,6 +115,8 @@ export function App() {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [queryInput, setQueryInput] = useState("");
+  const [selectedTag, setSelectedTag] = useState("");
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [hasMore, setHasMore] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("html");
@@ -153,6 +156,7 @@ export function App() {
     [managedUsers, selectedManagedUserId]
   );
   const queryRef = useRef(query);
+  const selectedTagRef = useRef(selectedTag);
   const messagesRef = useRef(messages);
   const selectedIdRef = useRef<number | null>(selectedId);
   const selectedMessageRef = useRef<Message | null>(selectedMessage);
@@ -163,6 +167,10 @@ export function App() {
   useEffect(() => {
     queryRef.current = query;
   }, [query]);
+
+  useEffect(() => {
+    selectedTagRef.current = selectedTag;
+  }, [selectedTag]);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -230,7 +238,7 @@ export function App() {
     }, 15000);
 
     return () => window.clearInterval(timer);
-  }, [autoRefreshEnabled, query]);
+  }, [autoRefreshEnabled, query, selectedTag]);
 
   async function loadOverview(
     search: string,
@@ -247,13 +255,17 @@ export function App() {
       }
       const resetList = options.resetList ?? false;
       const [page, currentStats, appInfo] = await Promise.all([
-        fetchMessages(search, "", defaultPageSize),
+        fetchMessages(search, selectedTagRef.current, "", defaultPageSize),
         fetchStats(),
         fetchAppInfo()
       ]);
       const loadedMore = messagesRef.current.length > page.messages.length;
       const messageList = resetList ? page.messages : mergeMessages(page.messages, messagesRef.current);
       setMessages(messageList);
+      setAvailableTags(page.availableTags ?? []);
+      if (selectedTagRef.current && !(page.availableTags ?? []).includes(selectedTagRef.current)) {
+        setSelectedTag("");
+      }
       setStats(currentStats);
       setVersion(appInfo.version);
       setNextCursor(resetList || !loadedMore ? page.nextCursor ?? "" : nextCursorRef.current);
@@ -324,8 +336,9 @@ export function App() {
 
     try {
       setLoadingMore(true);
-      const page = await fetchMessages(queryRef.current, nextCursorRef.current, defaultPageSize);
+      const page = await fetchMessages(queryRef.current, selectedTagRef.current, nextCursorRef.current, defaultPageSize);
       setMessages((current) => mergeMessages(current, page.messages));
+      setAvailableTags(page.availableTags ?? []);
       setNextCursor(page.nextCursor ?? "");
       setHasMore(page.hasMore);
       setError(null);
@@ -359,6 +372,7 @@ export function App() {
     await clearInbox();
     setQueryInput("");
     setQuery("");
+    setSelectedTag("");
     await loadOverview("", { preferredId: null, forceDetail: true, resetList: true });
   }
 
@@ -1230,7 +1244,7 @@ export function App() {
   const mailFailExampleRecipient = `user+mf-greylist@${mailFailExampleDomain}`;
   const paneCopyValue = currentPaneCopyValue(activeTab, selectedMessage);
   const paneCopyLabel = activeTab === "attachments" ? "Copy names" : "Copy all";
-  const hasActiveSearch = query.length > 0;
+  const hasActiveSearch = query.length > 0 || selectedTag.length > 0;
   const adminSettingsTabs: Array<{ key: SettingsTab; label: string }> = [
     { key: "instance", label: "Instance" },
     { key: "adminMailbox", label: "Admin mailbox" },
@@ -1260,7 +1274,8 @@ export function App() {
     { label: "Last received", value: stats.latestReceivedAt ? formatDate(stats.latestReceivedAt) : "Waiting" },
     { label: "Version", value: version || "-" },
     { label: "Session", value: session?.username || "-" },
-    { label: "Auto refresh", value: autoRefreshEnabled ? "15s" : "Paused" }
+    { label: "Auto refresh", value: autoRefreshEnabled ? "15s" : "Paused" },
+    { label: "Active tag", value: selectedTag || "All" }
   ];
 
   return (
@@ -1352,6 +1367,33 @@ export function App() {
           </div>
         </div>
 
+        <div className="tagFilterPanel">
+          <div className="tagFilterHeader">
+            <span>Tags</span>
+            <span>{availableTags.length ? `${availableTags.length} available` : "No plus tags yet"}</span>
+          </div>
+          <div className="tagFilterList" role="list" aria-label="Message tags">
+            <button
+              className={selectedTag === "" ? "tagFilterChip active" : "tagFilterChip"}
+              type="button"
+              onClick={() => setSelectedTag("")}
+            >
+              All mail
+            </button>
+            {availableTags.map((tag) => (
+              <button
+                key={tag}
+                className={selectedTag === tag ? "tagFilterChip active" : "tagFilterChip"}
+                type="button"
+                onClick={() => setSelectedTag(tag)}
+                style={buildTagColorStyle(tag)}
+              >
+                +{tag}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="messageList">
           {messages.map((message) => (
             <button
@@ -1369,7 +1411,11 @@ export function App() {
               </div>
               <div className="messageBadgeRow">
                 {buildMessageBadges(message).map((badge) => (
-                  <span key={badge.label} className={`messageBadge messageBadge${badge.tone}`}>
+                  <span
+                    key={badge.label}
+                    className={badge.tag ? "messageBadge messageBadgeTag" : `messageBadge messageBadge${badge.tone}`}
+                    style={badge.tag ? buildTagColorStyle(badge.tag) : undefined}
+                  >
                     {badge.icon}
                     <span>{badge.label}</span>
                   </span>
@@ -1380,7 +1426,7 @@ export function App() {
           {!loading && messages.length === 0 ? (
             <div className="emptyListCard">
               <strong>{hasActiveSearch ? "No matching messages" : "Inbox is empty"}</strong>
-              <p>{hasActiveSearch ? `No results for "${query}".` : "No messages captured yet."}</p>
+              <p>{hasActiveSearch ? describeEmptyState(query, selectedTag) : "No messages captured yet."}</p>
             </div>
           ) : null}
           {hasMore ? (
@@ -1474,6 +1520,22 @@ export function App() {
                         <div className="messageInfoRow">
                           <dt>Envelope RCPT TO</dt>
                           <dd>{selectedMessage.rcptTo.join(", ") || primaryRecipient(selectedMessage) || "-"}</dd>
+                        </div>
+                        <div className="messageInfoRow">
+                          <dt>Tags</dt>
+                          <dd>
+                            {selectedMessage.tags.length ? (
+                              <span className="tagDetailList">
+                                {selectedMessage.tags.map((tag) => (
+                                  <span key={tag} className="tagDetailPill" style={buildTagColorStyle(tag)}>
+                                    +{tag}
+                                  </span>
+                                ))}
+                              </span>
+                            ) : (
+                              "No plus tag"
+                            )}
+                          </dd>
                         </div>
                         <div className="messageInfoRow">
                           <dt>Remote IP</dt>
@@ -2558,6 +2620,7 @@ type MessageBadge = {
   label: string;
   tone: "Neutral" | "Info" | "Success" | "Warning" | "Danger";
   icon: ReturnType<typeof HtmlIcon> | null;
+  tag?: string;
 };
 
 function buildMessageBadges(message: Message): MessageBadge[] {
@@ -2566,6 +2629,14 @@ function buildMessageBadges(message: Message): MessageBadge[] {
   const hasText = Boolean(message.textBody?.trim());
   const attachments = message.attachments ?? [];
   const inlineImages = attachments.filter((attachment) => attachment.inline).length;
+  const tags = message.tags ?? [];
+
+  if (tags.length > 0) {
+    badges.push({ label: `+${tags[0]}`, tone: "Info", icon: null, tag: tags[0] });
+    if (tags.length > 1) {
+      badges.push({ label: `+${tags.length - 1} more`, tone: "Neutral", icon: null });
+    }
+  }
 
   if (hasHtml) {
     badges.push({ label: "HTML", tone: "Info", icon: <HtmlIcon /> });
@@ -2588,6 +2659,41 @@ function buildMessageBadges(message: Message): MessageBadge[] {
 
 function primaryRecipient(message: Message): string {
   return message.headerTo || message.rcptTo[0] || "-";
+}
+
+function describeEmptyState(query: string, tag: string): string {
+  const filters: string[] = [];
+  if (query) {
+    filters.push(`search "${query}"`);
+  }
+  if (tag) {
+    filters.push(`tag "+${tag}"`);
+  }
+  if (filters.length === 0) {
+    return "No messages captured yet.";
+  }
+  return `No results for ${filters.join(" and ")}.`;
+}
+
+function buildTagColorStyle(tag: string): CSSProperties {
+  const normalized = tag.trim().toLowerCase();
+  const hash = hashString(normalized)
+  const hue = hash % 360;
+  const borderHue = (hue + 12) % 360;
+
+  return {
+    "--tag-bg": `hsla(${hue} 70% 56% / 0.18)`,
+    "--tag-border": `hsla(${borderHue} 78% 68% / 0.34)`,
+    "--tag-text": `hsl(${hue} 85% 82%)`
+  } as CSSProperties;
+}
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
 }
 
 function normalizeSettingsDraft(settings: AppSettings): AppSettings {
