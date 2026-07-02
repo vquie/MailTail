@@ -843,6 +843,10 @@ select {
   grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
 }
 
+.settingsCardGridWide {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .settingsGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -969,14 +973,6 @@ select {
   gap: 10px;
 }
 
-.flashStackOverlay {
-  position: fixed;
-  top: 88px;
-  right: 24px;
-  z-index: 45;
-  width: min(420px, calc(100vw - 32px));
-}
-
 .flashBanner {
   display: flex;
   align-items: flex-start;
@@ -1078,11 +1074,11 @@ select {
 }
 
 .settingsDefinitionList dt {
-  color: rgb(248 243 234 / 62%);
+  color: var(--text-subtle);
 }
 
 .settingsDefinitionList dd {
-  color: #dce7f9;
+  color: var(--text);
 }
 
 .platformSettingsRow {
@@ -1149,11 +1145,11 @@ select {
 .ruleChip {
   display: inline-flex;
   align-items: center;
-  padding: 6px 10px;
+  padding: 4px 9px;
   border-radius: 999px;
-  border: 1px solid rgb(255 255 255 / 8%);
-  background: rgb(255 255 255 / 6%);
-  color: rgb(248 243 234 / 82%);
+  border: 1px solid var(--border);
+  background: rgb(255 255 255 / 4%);
+  color: var(--text-muted);
   font-size: 0.8rem;
 }
 
@@ -1164,12 +1160,10 @@ select {
 
 .rulesWorkspace > .settingsCard,
 .rulesWorkspace > .rulesOverviewGrid > .settingsCard,
-.rulesWorkspace > .rulesComposerLayout > .settingsCard {
-  border-color: rgb(255 255 255 / 14%);
-  background: linear-gradient(180deg, rgb(52 58 74 / 86%), rgb(38 43 56 / 88%));
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 4%),
-    0 0 0 1px rgb(255 255 255 / 3%);
+.rulesWorkspace > .mailFailWorkspaceLayout > .settingsCard {
+  border-color: var(--border);
+  background: var(--bg-panel-2);
+  box-shadow: none;
 }
 
 .rulesOverviewGrid {
@@ -1187,9 +1181,10 @@ select {
   min-height: 100%;
 }
 
-.rulesComposerLayout {
+.rulesComposerLayout,
+.mailFailWorkspaceLayout {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+  grid-template-columns: minmax(0, 1.45fr) minmax(420px, 1fr);
   gap: 14px;
   align-items: start;
 }
@@ -1200,6 +1195,7 @@ select {
 
 .settingsSidebarStack {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   align-content: start;
 }
@@ -1211,19 +1207,21 @@ select {
 
 .rulesCatalogCard,
 .rulesGuidanceCard,
-.rulesOverviewCard {
+.rulesOverviewCard,
+.mailFailEditorCard {
   position: relative;
 }
 
 .rulesCatalogCard::before,
 .rulesGuidanceCard::before,
-.rulesOverviewCard::before {
+.rulesOverviewCard::before,
+.mailFailEditorCard::before {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 3%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 2%);
 }
 
 .rulesCatalogList {
@@ -1234,9 +1232,9 @@ select {
 }
 
 .rulesCatalogItem {
-  border: 1px solid rgb(255 255 255 / 14%);
-  background: linear-gradient(180deg, rgb(61 66 82 / 92%), rgb(48 52 66 / 94%));
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgb(255 255 255 / 2%);
+  border-radius: 10px;
   padding: 12px;
   text-align: left;
   color: inherit;
@@ -1245,17 +1243,19 @@ select {
   gap: 8px;
   align-content: start;
   min-height: 128px;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
-  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+  box-shadow: none;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
 }
 
 .rulesCatalogItem:hover {
-  border-color: rgb(240 179 111 / 42%);
-  background: linear-gradient(180deg, rgb(68 74 92 / 96%), rgb(53 58 74 / 96%));
+  border-color: rgb(79 140 255 / 24%);
+  background: rgb(79 140 255 / 8%);
   transform: translateY(-1px);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 4%),
-    0 10px 24px rgb(0 0 0 / 18%);
+}
+
+.rulesCatalogItem.active {
+  border-color: rgb(79 140 255 / 26%);
+  background: rgb(79 140 255 / 10%);
 }
 
 .rulesCatalogItemTop,
@@ -1268,7 +1268,7 @@ select {
 }
 
 .rulesCatalogMeta {
-  color: rgb(248 243 234 / 62%);
+  color: var(--text-subtle);
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1277,7 +1277,7 @@ select {
 .rulesCatalogItem p,
 .rulesGuidanceCallout p {
   margin: 0;
-  color: rgb(248 243 234 / 74%);
+  color: var(--text-muted);
   line-height: 1.5;
 }
 
@@ -1285,14 +1285,24 @@ select {
   display: grid;
   gap: 6px;
   padding: 12px;
-  border-radius: 8px;
-  border: 1px solid rgb(255 255 255 / 13%);
-  background: linear-gradient(180deg, rgb(61 66 82 / 80%), rgb(48 52 66 / 88%));
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgb(255 255 255 / 2%);
 }
 
 .rulesGuidanceCallout strong {
-  color: #f8f3ea;
+  color: var(--text);
+}
+
+.mailFailEditorCard {
+  display: grid;
+  gap: 14px;
+}
+
+.mailFailEditorGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .adminSectionHeader {
@@ -1393,6 +1403,8 @@ select {
   .platformSettingsRow,
   .adminUserLayout,
   .rulesComposerLayout,
+  .mailFailWorkspaceLayout,
+  .settingsSidebarStack,
   .mailFailManagerLayout,
   .createUserGrid,
   .adminMailboxGrid,
@@ -2637,6 +2649,10 @@ body {
   .diagnosticsList,
   .settingsDefinitionList {
     gap: 8px;
+  }
+
+  .mailFailEditorGrid {
+    grid-template-columns: 1fr;
   }
 
   .messageInfoRow,
