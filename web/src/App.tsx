@@ -119,6 +119,7 @@ export function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("html");
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const [sidebarDiagnosticsOpen, setSidebarDiagnosticsOpen] = useState(false);
+  const [messageDetailsOpen, setMessageDetailsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
@@ -1441,66 +1442,75 @@ export function App() {
       <main className={settingsOpen ? "contentPane settingsPagePane" : "contentPane"}>
         {!settingsOpen && selectedMessage ? (
           <section className="messageWorkspace">
-            <div className="heroCard compactHero messageHeroCard">
-              <div className="heroCopy">
-                <p className="eyebrow">Message detail</p>
-                <h2>{selectedMessage.subject || "(no subject)"}</h2>
-                <div className="messageInfoGrid">
-                  <dl className="messageInfoList">
-                    <div className="messageInfoRow">
-                      <dt>From</dt>
-                      <dd>{selectedMessage.headerFrom || "-"}</dd>
-                    </div>
-                    <div className="messageInfoRow">
-                      <dt>To</dt>
-                      <dd>{selectedMessage.headerTo || primaryRecipient(selectedMessage)}</dd>
-                    </div>
-                    <div className="messageInfoRow">
-                      <dt>Envelope MAIL FROM</dt>
-                      <dd>{selectedMessage.mailFrom || "-"}</dd>
-                    </div>
-                    <div className="messageInfoRow">
-                      <dt>Envelope RCPT TO</dt>
-                      <dd>{selectedMessage.rcptTo.join(", ") || "-"}</dd>
-                    </div>
-                  </dl>
-                  <dl className="messageInfoList">
-                    <div className="messageInfoRow">
-                      <dt>Remote IP</dt>
-                      <dd>{selectedMessage.remoteIp || "-"}</dd>
-                    </div>
-                    <div className="messageInfoRow">
-                      <dt>HELO</dt>
-                      <dd>{selectedMessage.helo || "-"}</dd>
-                    </div>
-                    <div className="messageInfoRow">
-                      <dt>Message size</dt>
-                      <dd>{formatBytes(selectedMessage.size)}</dd>
-                    </div>
-                    <div className="messageInfoRow">
-                      <dt>Received</dt>
-                      <dd>{formatDate(selectedMessage.receivedAt)}</dd>
-                    </div>
-                    <div className="messageInfoRow">
-                      <dt>Message ID</dt>
-                      <dd>{selectedMessage.messageId || "-"}</dd>
-                    </div>
-                  </dl>
+            <div className={messageDetailsOpen ? "messageDetailPanel open" : "messageDetailPanel"}>
+              <div className="messageDetailSummary">
+                <div className="messageDetailSummaryCopy">
+                  <p className="eyebrow">Message</p>
+                  <h2>{selectedMessage.subject || "(no subject)"}</h2>
                 </div>
-              </div>
-
-              <div className="heroActions">
-                <a
-                  className="ghostButton compactButton toolbarLink"
-                  href={rawMessageUrl(selectedMessage.id)}
-                  download={buildEMLFileName(selectedMessage)}
+                <button
+                  className={messageDetailsOpen ? "ghostButton compactButton sidebarUtilityToggle messageDetailToggle open" : "ghostButton compactButton sidebarUtilityToggle messageDetailToggle"}
+                  type="button"
+                  aria-expanded={messageDetailsOpen}
+                  aria-label={messageDetailsOpen ? "Hide message details" : "Show message details"}
+                  onClick={() => setMessageDetailsOpen((current) => !current)}
                 >
-                  Download EML
-                </a>
-                <button className="dangerButton compactButton" onClick={() => void handleDeleteCurrent()}>
-                  Delete message
+                  <span className="sidebarUtilityMeta">
+                    <span className="sidebarUtilityLabel">Details</span>
+                    <ChevronIcon className="sidebarUtilityChevron" />
+                  </span>
                 </button>
               </div>
+
+              {messageDetailsOpen ? (
+                <div className="heroCard compactHero messageHeroCard">
+                  <div className="heroCopy">
+                    <div className="messageInfoGrid">
+                      <dl className="messageInfoList">
+                        <div className="messageInfoRow">
+                          <dt>Envelope MAIL FROM</dt>
+                          <dd>{selectedMessage.mailFrom || "-"}</dd>
+                        </div>
+                        <div className="messageInfoRow">
+                          <dt>Envelope RCPT TO</dt>
+                          <dd>{selectedMessage.rcptTo.join(", ") || primaryRecipient(selectedMessage) || "-"}</dd>
+                        </div>
+                        <div className="messageInfoRow">
+                          <dt>Remote IP</dt>
+                          <dd>{selectedMessage.remoteIp || "-"}</dd>
+                        </div>
+                      </dl>
+                      <dl className="messageInfoList">
+                        <div className="messageInfoRow">
+                          <dt>HELO</dt>
+                          <dd>{selectedMessage.helo || "-"}</dd>
+                        </div>
+                        <div className="messageInfoRow">
+                          <dt>Message size</dt>
+                          <dd>{formatBytes(selectedMessage.size)}</dd>
+                        </div>
+                        <div className="messageInfoRow">
+                          <dt>Received</dt>
+                          <dd>{formatDate(selectedMessage.receivedAt)}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                  </div>
+
+                  <div className="heroActions">
+                    <a
+                      className="ghostButton compactButton toolbarLink"
+                      href={rawMessageUrl(selectedMessage.id)}
+                      download={buildEMLFileName(selectedMessage)}
+                    >
+                      Download EML
+                    </a>
+                    <button className="dangerButton compactButton" onClick={() => void handleDeleteCurrent()}>
+                      Delete message
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="detailGrid">
