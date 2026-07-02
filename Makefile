@@ -14,6 +14,7 @@ APP_VERSION ?= dev
 DOCKER_IMAGE ?= mailtail:dev
 DOCKER_CONTAINER ?= mailtail
 DOCKER_VOLUME ?= mailtail-data
+NODE_BUILD_IMAGE ?= node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd
 HTTP_PORT ?= 8080
 SMTP_PORT ?= 8025
 MEGALINTER_IMAGE ?= oxsecurity/megalinter:v9
@@ -75,13 +76,25 @@ lint:
 lint-fix:
 	docker run $(MEGALINTER_COMMON_ARGS) $(MEGALINTER_COMMON_ENV) -e APPLY_FIXES=all $(MEGALINTER_IMAGE)
 
-build: setup build-web
+build: test build-web
 	env $(GO_ENV) $(GO) build -ldflags "-X main.version=$(APP_VERSION)" -o $(APP) ./cmd/mailtail
 
 build-web:
-	cd $(WEB_DIR) && $(NPM) run build
+	@if node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit((major === 20 && minor >= 19) || major >= 22 ? 0 : 1)' >/dev/null 2>&1; then \
+		cd $(WEB_DIR) && $(NPM) run build; \
+	else \
+		printf "%s\n" "Local Node.js is too old for Vite; building frontend assets in Docker using $(NODE_BUILD_IMAGE)."; \
+		docker run --rm \
+			--user $$(id -u):$$(id -g) \
+			-v "$(CURDIR)/$(WEB_DIR):/src/web" \
+			-w /src/web \
+			-e HOME=/tmp \
+			-e npm_config_cache=/tmp/npm-cache \
+			$(NODE_BUILD_IMAGE) \
+			sh -lc 'npm ci && npm run build'; \
+	fi
 
-run: build-web
+run: build
 	MAILTAIL_DATA_DIR=$(DATA_DIR) \
 	MAILTAIL_HTTP_ADDR=$(HTTP_ADDR) \
 	MAILTAIL_SMTP_ADDR=$(SMTP_ADDR) \
@@ -99,7 +112,7 @@ dev-web:
 
 dev: run
 
-docker-build:
+docker-build: test
 	docker build --build-arg APP_VERSION=$(APP_VERSION) -t $(DOCKER_IMAGE) .
 
 docker-run: docker-build

@@ -46,6 +46,8 @@ make docker-run
 
 `make lint` runs MegaLinter in Docker. `make lint-fix` enables automatic fixes where supported by the active linters.
 If `.env` exists in the project root, `make run` and `make docker-run` load it automatically.
+`make build`, `make run`, and `make docker-build` run `go test ./...` first, so OpenAPI drift and other backend test failures block artifact creation.
+If the local Node.js version is too old for the current Vite toolchain, `make build-web` automatically falls back to an official `node:24-alpine` Docker build so the frontend build path still works.
 
 ### Start the backend
 
