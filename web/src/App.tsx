@@ -778,11 +778,13 @@ export function App() {
     enabled: boolean;
     onToggle: (enabled: boolean) => void;
     exampleRecipient: string;
+    showGuidancePanel?: boolean;
   }) {
     const scopedSettings = currentScopedSettings(options.scope);
     const rules = scopedSettings.mailFailRules ?? [];
     const uniqueStages = Array.from(new Set(rules.map((rule) => rule.stage.toUpperCase())));
     const uniqueActions = Array.from(new Set(rules.map((rule) => rule.action)));
+    const showGuidancePanel = options.showGuidancePanel ?? true;
 
     return (
       <div className="rulesWorkspace">
@@ -823,7 +825,7 @@ export function App() {
               </section>
             </div>
 
-            <div className="rulesComposerLayout">
+            <div className={showGuidancePanel ? "rulesComposerLayout" : "rulesComposerLayout rulesComposerLayoutSingle"}>
               <section className="settingsField settingsCard rulesCatalogCard">
                 <div className="settingsCardHeader">
                   <div>
@@ -874,37 +876,39 @@ export function App() {
                 )}
               </section>
 
-              <section className="settingsField settingsCard rulesGuidanceCard">
-                <div className="settingsCardHeader">
-                  <div>
-                    <h3>How this works</h3>
-                    <p className="settingsCardLead">Rules are designed for test scenarios where you need deterministic SMTP failures.</p>
+              {showGuidancePanel ? (
+                <section className="settingsField settingsCard rulesGuidanceCard">
+                  <div className="settingsCardHeader">
+                    <div>
+                      <h3>How this works</h3>
+                      <p className="settingsCardLead">Rules are designed for test scenarios where you need deterministic SMTP failures.</p>
+                    </div>
+                    <button className="dangerButton compactButton" type="button" onClick={() => openMailFailManager(options.scope)}>
+                      Open rule editor
+                    </button>
                   </div>
-                  <button className="dangerButton compactButton" type="button" onClick={() => openMailFailManager(options.scope)}>
-                    Open rule editor
-                  </button>
-                </div>
 
-                <dl className="settingsDefinitionList">
-                  <div>
-                    <dt>Example recipient</dt>
-                    <dd>{options.exampleRecipient}</dd>
-                  </div>
-                  <div>
-                    <dt>Trigger match</dt>
-                    <dd>Matches the plus-address fragment after `+`.</dd>
-                  </div>
-                  <div>
-                    <dt>Typical use</dt>
-                    <dd>Model rejects, greylisting or quota responses per mailbox.</dd>
-                  </div>
-                </dl>
+                  <dl className="settingsDefinitionList">
+                    <div>
+                      <dt>Example recipient</dt>
+                      <dd>{options.exampleRecipient}</dd>
+                    </div>
+                    <div>
+                      <dt>Trigger match</dt>
+                      <dd>Matches the plus-address fragment after `+`.</dd>
+                    </div>
+                    <div>
+                      <dt>Typical use</dt>
+                      <dd>Model rejects, greylisting or quota responses per mailbox.</dd>
+                    </div>
+                  </dl>
 
-                <div className="rulesGuidanceCallout">
-                  <strong>Recommended flow</strong>
-                  <p>Keep a small reusable rule set per mailbox, then open the editor only when you need to adjust SMTP codes, timing or response text.</p>
-                </div>
-              </section>
+                  <div className="rulesGuidanceCallout">
+                    <strong>Recommended flow</strong>
+                    <p>Keep a small reusable rule set per mailbox, then open the editor only when you need to adjust SMTP codes, timing or response text.</p>
+                  </div>
+                </section>
+              ) : null}
             </div>
           </>
         ) : (
@@ -913,6 +917,65 @@ export function App() {
             <p>Enable MailFail first if this mailbox should answer with rule-based SMTP responses.</p>
           </div>
         )}
+      </div>
+    );
+  }
+
+  function renderRulesSidebar(options: {
+    scope: MailFailSettingsScope;
+    exampleRecipient: string;
+    summary: Array<{ label: string; value: string | number }>;
+  }) {
+    return (
+      <div className="settingsSidebarStack">
+        <section className="settingsField settingsCard rulesGuidanceCard">
+          <div className="settingsCardHeader">
+            <div>
+              <h3>How this works</h3>
+              <p className="settingsCardLead">Use Rules when this mailbox needs reproducible SMTP failures and retries for tests.</p>
+            </div>
+            <button className="dangerButton compactButton" type="button" onClick={() => openMailFailManager(options.scope)}>
+              Open rule editor
+            </button>
+          </div>
+
+          <dl className="settingsDefinitionList">
+            <div>
+              <dt>Example recipient</dt>
+              <dd>{options.exampleRecipient}</dd>
+            </div>
+            <div>
+              <dt>Trigger match</dt>
+              <dd>Matches the plus-address fragment after `+`.</dd>
+            </div>
+            <div>
+              <dt>Typical use</dt>
+              <dd>Model rejects, greylisting or quota responses per mailbox.</dd>
+            </div>
+          </dl>
+
+          <div className="rulesGuidanceCallout">
+            <strong>Recommended flow</strong>
+            <p>Keep a tight rule catalog here, then use the editor only for detailed SMTP response tuning.</p>
+          </div>
+        </section>
+
+        <section className="settingsField settingsCard">
+          <div className="settingsCardHeader">
+            <div>
+              <h3>Mailbox summary</h3>
+              <p className="settingsCardLead">Quick state of the mailbox-specific delivery rules.</p>
+            </div>
+          </div>
+          <dl className="settingsDefinitionList">
+            {options.summary.map((item) => (
+              <div key={item.label}>
+                <dt>{item.label}</dt>
+                <dd>{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
       </div>
     );
   }
@@ -1584,38 +1647,55 @@ export function App() {
                                       ? cloneMailFailRules(defaultMailFailRulesTemplate)
                                       : current.mailFailRules
                                 })),
-                              exampleRecipient: `admin+mf-greylist@${mailFailExampleDomain}`
+                              exampleRecipient: `admin+mf-greylist@${mailFailExampleDomain}`,
+                              showGuidancePanel: false
                             })
                           ) : null}
                         </div>
                       </section>
 
-                      <section className="settingsField settingsCard">
-                        <div className="settingsCardHeader">
-                          <div>
-                            <h3>Mailbox summary</h3>
-                            <p className="settingsCardLead">Quick state of the admin-specific delivery rules.</p>
-                          </div>
-                        </div>
-                        <dl className="settingsDefinitionList">
-                          <div>
-                            <dt>Status</dt>
-                            <dd>{adminMailboxEnabled ? "Enabled" : "Disabled"}</dd>
-                          </div>
-                          <div>
-                            <dt>MailFail rules</dt>
-                            <dd>{adminMailboxDraft.mailFailEnabled ? adminMailboxDraft.mailFailRules.length : 0}</dd>
-                          </div>
-                          <div>
-                            <dt>Active filters</dt>
-                            <dd>{enabledAdminMailboxFilters}</dd>
-                          </div>
-                          <div>
-                            <dt>Auto-delete</dt>
-                            <dd>{adminMailboxAutoDeleteEnabled ? `${adminMailboxDraft.autoDeleteAfterDays || defaultAutoDeleteDays} days` : "Off"}</dd>
-                          </div>
-                        </dl>
-                      </section>
+                      {adminMailboxSubTab === "rules"
+                        ? renderRulesSidebar({
+                            scope: "adminMailbox",
+                            exampleRecipient: `admin+mf-greylist@${mailFailExampleDomain}`,
+                            summary: [
+                              { label: "Status", value: adminMailboxEnabled ? "Enabled" : "Disabled" },
+                              { label: "MailFail rules", value: adminMailboxDraft.mailFailEnabled ? adminMailboxDraft.mailFailRules.length : 0 },
+                              { label: "Active filters", value: enabledAdminMailboxFilters },
+                              {
+                                label: "Auto-delete",
+                                value: adminMailboxAutoDeleteEnabled ? `${adminMailboxDraft.autoDeleteAfterDays || defaultAutoDeleteDays} days` : "Off"
+                              }
+                            ]
+                          })
+                        : (
+                          <section className="settingsField settingsCard">
+                            <div className="settingsCardHeader">
+                              <div>
+                                <h3>Mailbox summary</h3>
+                                <p className="settingsCardLead">Quick state of the admin-specific delivery rules.</p>
+                              </div>
+                            </div>
+                            <dl className="settingsDefinitionList">
+                              <div>
+                                <dt>Status</dt>
+                                <dd>{adminMailboxEnabled ? "Enabled" : "Disabled"}</dd>
+                              </div>
+                              <div>
+                                <dt>MailFail rules</dt>
+                                <dd>{adminMailboxDraft.mailFailEnabled ? adminMailboxDraft.mailFailRules.length : 0}</dd>
+                              </div>
+                              <div>
+                                <dt>Active filters</dt>
+                                <dd>{enabledAdminMailboxFilters}</dd>
+                              </div>
+                              <div>
+                                <dt>Auto-delete</dt>
+                                <dd>{adminMailboxAutoDeleteEnabled ? `${adminMailboxDraft.autoDeleteAfterDays || defaultAutoDeleteDays} days` : "Off"}</dd>
+                              </div>
+                            </dl>
+                          </section>
+                        )}
                     </div>
                   ) : null}
 
