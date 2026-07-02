@@ -1424,16 +1424,6 @@ export function App() {
                     ))}
                   </dl>
                 </section>
-                <div className="supportLinks">
-                  <a className="ghostButton compactButton toolbarButton supportLink" href={repoUrl} target="_blank" rel="noreferrer">
-                    <GitHubIcon />
-                    <span>GitHub repo</span>
-                  </a>
-                  <a className="ghostButton compactButton toolbarButton supportLink" href={issuesUrl} target="_blank" rel="noreferrer">
-                    <GitHubIcon />
-                    <span>Report a bug</span>
-                  </a>
-                </div>
               </div>
             ) : null}
           </div>
@@ -1644,14 +1634,6 @@ export function App() {
                 </div>
                 <div className="settingsPageToolbar">
                   <div className="settingsSupportLinks">
-                    <a className="ghostButton compactButton toolbarButton settingsSupportLink" href={repoUrl} target="_blank" rel="noreferrer">
-                      <GitHubIcon />
-                      <span>vquie/MailTail</span>
-                    </a>
-                    <a className="ghostButton compactButton toolbarButton settingsSupportLink" href={issuesUrl} target="_blank" rel="noreferrer">
-                      <GitHubIcon />
-                      <span>Report a bug</span>
-                    </a>
                     <button className="ghostButton compactButton settingsToolbarCloseButton" type="button" onClick={() => setSettingsOpen(false)}>
                       Close
                     </button>
@@ -2484,6 +2466,16 @@ export function App() {
                     <dd>{adminMailboxEnabled ? "Enabled" : "Disabled"}</dd>
                   </div>
                 </dl>
+                <div className="settingsCardActions">
+                  <a className="ghostButton compactButton toolbarButton settingsSupportLink" href={repoUrl} target="_blank" rel="noreferrer">
+                    <GitHubIcon />
+                    <span>vquie/MailTail</span>
+                  </a>
+                  <a className="ghostButton compactButton toolbarButton settingsSupportLink" href={issuesUrl} target="_blank" rel="noreferrer">
+                    <GitHubIcon />
+                    <span>Report a bug</span>
+                  </a>
+                </div>
               </section>
             </section>
           </div>
