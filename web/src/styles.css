@@ -1011,7 +1011,8 @@ select {
 }
 
 .settingsCardPrimary {
-  min-height: 100%;
+  min-height: 0;
+  align-self: start;
 }
 
 .settingsCardHeader {
