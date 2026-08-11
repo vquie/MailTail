@@ -1973,21 +1973,13 @@ export function App() {
                           : "settingsCardGrid settingsCardGridAdmin"
                       }
                     >
-                      <section
-                        className={
-                          adminMailboxSubTab === "rules"
-                            ? "settingsField settingsCard settingsCardPrimary rulesHostCard"
-                            : "settingsField settingsCard settingsCardPrimary"
-                        }
-                      >
-                        {adminMailboxSubTab === "general" ? (
-                          <div className="settingsCardHeader">
-                            <div>
-                              <h3>Admin mailbox</h3>
-                              <p className="settingsCardLead">Use this when the environment admin should also receive and retain mail.</p>
-                            </div>
+                      <section className="settingsField settingsCard settingsCardPrimary">
+                        <div className="settingsCardHeader">
+                          <div>
+                            <h3>Admin mailbox</h3>
+                            <p className="settingsCardLead">Use this when the environment admin should also receive and retain mail.</p>
                           </div>
-                        ) : null}
+                        </div>
 
                         <div className="settingsCardBody">
                           <div className="settingsSubTabs" role="tablist" aria-label="Admin mailbox sections">

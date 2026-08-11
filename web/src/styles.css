@@ -3314,14 +3314,6 @@ body {
 }
 
 /* Mailbox rules are one focused workflow: controls, list, editor. */
-.rulesHostCard {
-  padding: 12px 14px 14px;
-}
-
-.rulesHostCard > .settingsCardBody {
-  gap: 12px;
-}
-
 .rulesWorkspaceFocused {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -3466,10 +3458,6 @@ body {
 }
 
 @media (width <= 640px) {
-  .rulesHostCard {
-    padding: 10px;
-  }
-
   .rulesSenderControl {
     grid-template-columns: minmax(0, 1fr);
   }
