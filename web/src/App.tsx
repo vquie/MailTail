@@ -430,7 +430,7 @@ export function App() {
     setAboutOpen(true);
   }
 
-  async function handleSaveSettings() {
+  async function handleSaveSettings(settingsToSave: AppSettings = settingsDraft) {
     if (session?.isAdmin) {
       await handleSaveManagedUser();
       return;
@@ -439,7 +439,7 @@ export function App() {
     try {
       setSettingsSaving(true);
       clearSettingsFlash();
-      const saved = await updateSettings(buildSettingsPayload(settingsDraft, {
+      const saved = await updateSettings(buildSettingsPayload(settingsToSave, {
         limitAllowedRemoteIps,
         limitAcceptedRcptDomains,
         limitAcceptedFromDomains,
@@ -472,14 +472,14 @@ export function App() {
     applySettingsToggles(normalized);
   }
 
-  async function handleSaveManagedUser() {
+  async function handleSaveManagedUser(settingsToSave: AppSettings = settingsDraft) {
     try {
       setSettingsSaving(true);
       clearSettingsFlash();
       const payload = {
         username: managedUsername.trim(),
         password: managedPassword,
-        settings: buildSettingsPayload(settingsDraft, {
+        settings: buildSettingsPayload(settingsToSave, {
           limitAllowedRemoteIps,
           limitAcceptedRcptDomains,
           limitAcceptedFromDomains,
@@ -537,13 +537,13 @@ export function App() {
     setAdminMailboxAutoDeleteEnabled(settings.autoDeleteAfterDays > 0);
   }
 
-  async function handleSaveAdminMailboxSettings() {
+  async function handleSaveAdminMailboxSettings(settingsToSave: AppSettings = adminMailboxDraft) {
     try {
       setSettingsSaving(true);
       clearSettingsFlash();
       const saved = await updateAdminMailboxSettings(
         adminMailboxEnabled
-          ? buildSettingsPayload(adminMailboxDraft, {
+          ? buildSettingsPayload(settingsToSave, {
               limitAllowedRemoteIps: adminMailboxLimitRemoteIps,
               limitAcceptedRcptDomains: adminMailboxLimitAcceptedRcptDomains,
               limitAcceptedFromDomains: adminMailboxLimitAcceptedFromDomains,
@@ -721,13 +721,23 @@ export function App() {
   }
 
   function handleStartNewMailFailRule(scope: MailFailSettingsScope) {
+    if (mailFailManagerScope === scope && stageMailFailRuleForSave(scope) === null) {
+      return;
+    }
     setMailFailManagerScope(scope);
     setSelectedMailFailRuleIndex(null);
     setMailFailRuleDraft(createDefaultMailFailRule());
   }
 
   function handleSelectMailFailRule(scope: MailFailSettingsScope, index: number) {
-    const rules = currentScopedSettings(scope).mailFailRules ?? [];
+    if (mailFailManagerScope === scope && selectedMailFailRuleIndex === index) {
+      return;
+    }
+    const stagedSettings = mailFailManagerScope === scope ? stageMailFailRuleForSave(scope) : currentScopedSettings(scope);
+    if (!stagedSettings) {
+      return;
+    }
+    const rules = stagedSettings.mailFailRules ?? [];
     const rule = rules[index];
     if (!rule) {
       return;
@@ -738,6 +748,10 @@ export function App() {
   }
 
   function handleImportMailFailTemplate(scope: MailFailSettingsScope) {
+    const existingRules = currentScopedSettings(scope).mailFailRules ?? [];
+    if (existingRules.length > 0 && !window.confirm("Replace the current rule catalog with the example rules?")) {
+      return;
+    }
     updateScopedSettings(scope, (current) => ({
       ...current,
       mailFailEnabled: true,
@@ -768,17 +782,47 @@ export function App() {
     setMailFailRuleDraft(cloneMailFailRule(nextRules[nextIndex]));
   }
 
-  function handleSaveMailFailRule(scope: MailFailSettingsScope) {
-    const normalizedRule = normalizeMailFailRuleDraft(mailFailRuleDraft);
+  function updateMailFailRuleEditor(scope: MailFailSettingsScope, update: (rule: MailFailRule) => MailFailRule) {
+    const scopedSettings = currentScopedSettings(scope);
+    const selectedRule =
+      selectedMailFailRuleIndex !== null ? scopedSettings.mailFailRules?.[selectedMailFailRuleIndex] : null;
+    const nextRule = update(cloneMailFailRule(selectedRule ?? mailFailRuleDraft));
+    setMailFailRuleDraft(nextRule);
+
+    if (selectedMailFailRuleIndex !== null && selectedRule) {
+      updateScopedSettings(scope, (current) => {
+        const nextRules = [...(current.mailFailRules ?? [])];
+        nextRules[selectedMailFailRuleIndex] = nextRule;
+        return { ...current, mailFailRules: nextRules };
+      });
+    }
+  }
+
+  function stageMailFailRuleForSave(scope: MailFailSettingsScope): AppSettings | null {
+    const scopedSettings = currentScopedSettings(scope);
+    if (mailFailManagerScope !== scope) {
+      return scopedSettings;
+    }
+
+    const hasPendingRule = selectedMailFailRuleIndex !== null || hasMailFailRuleDraftChanges(mailFailRuleDraft);
+    if (!hasPendingRule) {
+      return scopedSettings;
+    }
+
+    const sourceRule =
+      selectedMailFailRuleIndex !== null
+        ? scopedSettings.mailFailRules?.[selectedMailFailRuleIndex] ?? mailFailRuleDraft
+        : mailFailRuleDraft;
+    const normalizedRule = normalizeMailFailRuleDraft(sourceRule);
     if (!normalizedRule.trigger) {
       showSettingsError("MailFail rules require a trigger.");
-      return;
+      return null;
     }
     if (!isReportAction(normalizedRule.action) && !normalizedRule.message) {
       showSettingsError("MailFail rules require a reply message.");
-      return;
+      return null;
     }
-    const rules = currentScopedSettings(scope).mailFailRules ?? [];
+    const rules = scopedSettings.mailFailRules ?? [];
     const nextRules = [...rules];
 
     if (selectedMailFailRuleIndex === null) {
@@ -788,14 +832,70 @@ export function App() {
       nextRules[selectedMailFailRuleIndex] = normalizedRule;
     }
 
-    updateScopedSettings(scope, (current) => ({
-      ...current,
+    const nextSettings = {
+      ...scopedSettings,
       mailFailEnabled: true,
       mailFailRules: nextRules
-    }));
+    };
+    updateScopedSettings(scope, () => nextSettings);
     setMailFailManagerScope(scope);
     setMailFailRuleDraft(normalizedRule);
-    showSettingsNotice("Rule saved. Save the parent settings to apply it.");
+    return nextSettings;
+  }
+
+  async function handleSaveActiveSettings() {
+    if (session?.isAdmin) {
+      if (activeSettingsTab === "instance") {
+        await handleSaveGlobalSettings();
+        return;
+      }
+      if (activeSettingsTab === "adminMailbox") {
+        const settingsToSave =
+          adminMailboxSubTab === "rules" ? stageMailFailRuleForSave("adminMailbox") : adminMailboxDraft;
+        if (settingsToSave) {
+          await handleSaveAdminMailboxSettings(settingsToSave);
+        }
+        return;
+      }
+      if (activeSettingsTab === "users" && selectedManagedUserId) {
+        const settingsToSave = userEditorSubTab === "rules" ? stageMailFailRuleForSave("user") : settingsDraft;
+        if (settingsToSave) {
+          await handleSaveManagedUser(settingsToSave);
+        }
+      }
+      return;
+    }
+
+    await handleSaveSettings();
+  }
+
+  function handleSettingsSubTabChange(scope: MailFailSettingsScope, nextTab: SettingsSubTab) {
+    const currentTab = scope === "adminMailbox" ? adminMailboxSubTab : userEditorSubTab;
+    if (currentTab === "rules" && nextTab !== "rules" && stageMailFailRuleForSave(scope) === null) {
+      return;
+    }
+    if (scope === "adminMailbox") {
+      setAdminMailboxSubTab(nextTab);
+    } else {
+      setUserEditorSubTab(nextTab);
+    }
+  }
+
+  function handleSettingsSectionChange(nextTab: SettingsTab) {
+    if (nextTab === activeSettingsTab) {
+      return;
+    }
+    if (
+      activeSettingsTab === "adminMailbox" &&
+      adminMailboxSubTab === "rules" &&
+      stageMailFailRuleForSave("adminMailbox") === null
+    ) {
+      return;
+    }
+    if (activeSettingsTab === "users" && userEditorSubTab === "rules" && stageMailFailRuleForSave("user") === null) {
+      return;
+    }
+    setActiveSettingsTab(nextTab);
   }
 
   function handleToggleAutoDelete(enabled: boolean) {
@@ -828,7 +928,9 @@ export function App() {
         ? 0
         : null;
     const editorDraft = isActiveScope
-      ? mailFailRuleDraft
+      ? selectedMailFailRuleIndex !== null && rules[selectedMailFailRuleIndex]
+        ? cloneMailFailRule(rules[selectedMailFailRuleIndex])
+        : mailFailRuleDraft
       : resolvedRuleIndex !== null
         ? cloneMailFailRule(rules[resolvedRuleIndex])
         : createDefaultMailFailRule();
@@ -949,7 +1051,7 @@ export function App() {
                 <div className="settingsCardHeader">
                   <div>
                     <h3>{resolvedRuleIndex === null ? "Create rule" : "Edit rule"}</h3>
-                    <p className="settingsCardLead">Edit SMTP behavior directly in this page. Changes are stored in the draft until you save the parent settings.</p>
+                    <p className="settingsCardLead">Rule edits are included automatically when you save this mailbox.</p>
                   </div>
                   <div className="settingsCardActions">
                     {resolvedRuleIndex !== null ? (
@@ -957,16 +1059,18 @@ export function App() {
                         Delete rule
                       </button>
                     ) : null}
-                    <button className="dangerButton compactButton" type="button" onClick={() => handleSaveMailFailRule(options.scope)}>
-                      Save rule
-                    </button>
                   </div>
                 </div>
 
-                <div className="mailFailEditorGrid">
+                <div className="mailFailEditorGrid" key={`${options.scope}-${resolvedRuleIndex ?? "new"}`}>
                   <label className="settingsField">
                     <span>Name</span>
-                    <input value={editorDraft.name} onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, name: event.target.value }))} />
+                    <input
+                      value={editorDraft.name}
+                      onChange={(event) =>
+                        updateMailFailRuleEditor(options.scope, (current) => ({ ...current, name: event.target.value }))
+                      }
+                    />
                     <small>Shown in the UI. If empty, the trigger becomes the display name.</small>
                   </label>
 
@@ -974,7 +1078,9 @@ export function App() {
                     <span>Trigger</span>
                     <input
                       value={editorDraft.trigger}
-                      onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, trigger: event.target.value }))}
+                      onChange={(event) =>
+                        updateMailFailRuleEditor(options.scope, (current) => ({ ...current, trigger: event.target.value }))
+                      }
                       placeholder="mf-greylist"
                     />
                     <small>Example recipient: <code>{options.exampleRecipient}</code></small>
@@ -986,7 +1092,7 @@ export function App() {
                       value={editorDraft.action}
                       onChange={(event) => {
                         const action = event.target.value as MailFailRule["action"];
-                        setMailFailRuleDraft((current) => ({
+                        updateMailFailRuleEditor(options.scope, (current) => ({
                           ...current,
                           action,
                           stage: isReportAction(action) ? "data" : current.stage,
@@ -1012,7 +1118,10 @@ export function App() {
                       <select
                         value={editorDraft.stage}
                         onChange={(event) =>
-                          setMailFailRuleDraft((current) => ({ ...current, stage: event.target.value as MailFailRule["stage"] }))
+                          updateMailFailRuleEditor(options.scope, (current) => ({
+                            ...current,
+                            stage: event.target.value as MailFailRule["stage"]
+                          }))
                         }
                       >
                         <option value="mailfrom">MAIL FROM</option>
@@ -1031,7 +1140,12 @@ export function App() {
                           min={editorDraft.action === "async-bounce" ? 500 : 400}
                           max={599}
                           value={editorDraft.code}
-                          onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, code: Number.parseInt(event.target.value || "550", 10) }))}
+                          onChange={(event) =>
+                            updateMailFailRuleEditor(options.scope, (current) => ({
+                              ...current,
+                              code: Number.parseInt(event.target.value || "550", 10)
+                            }))
+                          }
                         />
                       </label>
 
@@ -1039,7 +1153,9 @@ export function App() {
                         <span>Enhanced status code</span>
                         <input
                           value={editorDraft.enhancedCode}
-                          onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, enhancedCode: event.target.value }))}
+                          onChange={(event) =>
+                            updateMailFailRuleEditor(options.scope, (current) => ({ ...current, enhancedCode: event.target.value }))
+                          }
                           placeholder="4.7.1 or 5.1.1"
                         />
                       </label>
@@ -1051,7 +1167,9 @@ export function App() {
                       <span>Reply message</span>
                       <input
                         value={editorDraft.message}
-                        onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, message: event.target.value }))}
+                        onChange={(event) =>
+                          updateMailFailRuleEditor(options.scope, (current) => ({ ...current, message: event.target.value }))
+                        }
                         placeholder="Try again later"
                       />
                     </label>
@@ -1072,7 +1190,7 @@ export function App() {
                           step={1}
                           value={editorDraft.allowAfter}
                           onChange={(event) =>
-                            setMailFailRuleDraft((current) => ({
+                            updateMailFailRuleEditor(options.scope, (current) => ({
                               ...current,
                               allowAfter: Math.max(1, Number.parseInt(event.target.value || "1", 10))
                             }))
@@ -1085,7 +1203,9 @@ export function App() {
                         <span>Minimum retry delay</span>
                         <input
                           value={editorDraft.minRetryAfter}
-                          onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, minRetryAfter: event.target.value }))}
+                          onChange={(event) =>
+                            updateMailFailRuleEditor(options.scope, (current) => ({ ...current, minRetryAfter: event.target.value }))
+                          }
                           placeholder="5m"
                         />
                         <small>Leave empty to allow the retry immediately after the attempt threshold.</small>
@@ -1095,7 +1215,9 @@ export function App() {
                         <span>Reset after</span>
                         <input
                           value={editorDraft.resetAfter}
-                          onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, resetAfter: event.target.value }))}
+                          onChange={(event) =>
+                            updateMailFailRuleEditor(options.scope, (current) => ({ ...current, resetAfter: event.target.value }))
+                          }
                           placeholder="1h"
                         />
                         <small>Defaults to 1h if left empty.</small>
@@ -1107,7 +1229,7 @@ export function App() {
                 {showGuidancePanel ? (
                   <div className="rulesGuidanceCallout">
                     <strong>How this works</strong>
-                    <p>Rules match the plus-address fragment after `+`. Report actions run after the message is accepted and are delivered asynchronously through the configured outbound SMTP relay.</p>
+                    <p>Rules match the plus-address fragment after `+`. Report actions run after acceptance and use the instance-wide outbound delivery mode.</p>
                   </div>
                 ) : null}
               </section>
@@ -1304,14 +1426,14 @@ export function App() {
   const paneCopyValue = currentPaneCopyValue(activeTab, selectedMessage);
   const paneCopyLabel = activeTab === "attachments" ? "Copy names" : "Copy all";
   const hasActiveSearch = query.length > 0 || selectedTag.length > 0;
-  const adminSettingsTabs: Array<{ key: SettingsTab; label: string }> = [
-    { key: "instance", label: "Instance" },
-    { key: "adminMailbox", label: "Admin mailbox" },
-    { key: "users", label: "Users & mailboxes" }
+  const adminSettingsTabs: Array<{ key: SettingsTab; label: string; description: string }> = [
+    { key: "instance", label: "Instance", description: "Platform and diagnostics" },
+    { key: "adminMailbox", label: "Admin mailbox", description: "Delivery policy and reports" },
+    { key: "users", label: "Users & mailboxes", description: "Local accounts and policies" }
   ];
-  const userSettingsTabs: Array<{ key: SettingsTab; label: string }> = [
-    { key: "delivery", label: "Delivery & rules" },
-    { key: "retention", label: "Retention" }
+  const userSettingsTabs: Array<{ key: SettingsTab; label: string; description: string }> = [
+    { key: "delivery", label: "Delivery & rules", description: "SMTP policy and MailFail" },
+    { key: "retention", label: "Retention", description: "Message lifecycle" }
   ];
   const settingsTabs = session?.isAdmin ? adminSettingsTabs : userSettingsTabs;
   const settingsSubTabs: Array<{ key: SettingsSubTab; label: string }> = [
@@ -1324,6 +1446,37 @@ export function App() {
     adminMailboxLimitAcceptedFromDomains
   ].filter(Boolean).length;
   const enabledUserFilters = [limitAllowedRemoteIps, limitAcceptedRcptDomains, limitAcceptedFromDomains].filter(Boolean).length;
+  const activeSettingsContext = (() => {
+    if (!session?.isAdmin) {
+      return activeSettingsTab === "retention"
+        ? { title: "Retention", description: "Control the lifecycle of captured messages." }
+        : { title: "Delivery & rules", description: "Manage the complete policy for your mailbox." };
+    }
+    if (activeSettingsTab === "instance") {
+      return { title: "Instance", description: "Platform-wide access and SMTP diagnostics." };
+    }
+    if (activeSettingsTab === "adminMailbox") {
+      return {
+        title: adminMailboxSubTab === "rules" ? "Admin mailbox rules" : "Admin mailbox policy",
+        description:
+          adminMailboxSubTab === "rules"
+            ? "Edit report and SMTP response rules, then save the mailbox once."
+            : "Configure delivery boundaries and retention for the admin mailbox."
+      };
+    }
+    return {
+      title: selectedManagedUserId ? managedUsername || "User mailbox" : "Users & mailboxes",
+      description: selectedManagedUserId
+        ? userEditorSubTab === "rules"
+          ? "Edit this user's rules and save the complete mailbox once."
+          : "Manage credentials, delivery boundaries and retention."
+        : "Select a user or create a new local mailbox."
+    };
+  })();
+  const canSaveActiveSettings =
+    !settingsLoading &&
+    !settingsSaving &&
+    (!session?.isAdmin || activeSettingsTab !== "users" || selectedManagedUserId !== null);
   const selectedMessageBadges = selectedMessage ? buildMessageBadges(selectedMessage) : [];
   const repoUrl = "https://github.com/vquie/MailTail";
   const issuesUrl = "https://github.com/vquie/MailTail/issues/new/choose";
@@ -1773,20 +1926,45 @@ export function App() {
                 </div>
               ) : null}
 
-              <div className="settingsTabs" role="tablist" aria-label="Settings sections">
-                {settingsTabs.map((tab) => (
-                  <button
-                    key={tab.key}
-                    className={activeSettingsTab === tab.key ? "settingsTabButton active" : "settingsTabButton"}
-                    onClick={() => setActiveSettingsTab(tab.key)}
-                    type="button"
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+              <div className="settingsWorkspaceShell">
+                <aside className="settingsNavigation" aria-label="Settings navigation">
+                  <div className="settingsNavigationHeader">
+                    <span>Workspace</span>
+                    <small>Choose a context. Your position stays visible while you work.</small>
+                  </div>
+                  <div className="settingsTabs" role="tablist" aria-label="Settings sections">
+                    {settingsTabs.map((tab) => (
+                      <button
+                        key={tab.key}
+                        className={activeSettingsTab === tab.key ? "settingsTabButton active" : "settingsTabButton"}
+                        onClick={() => handleSettingsSectionChange(tab.key)}
+                        type="button"
+                      >
+                        <strong>{tab.label}</strong>
+                        <small>{tab.description}</small>
+                      </button>
+                    ))}
+                  </div>
+                </aside>
 
-              {settingsLoading ? <p className="emptyState">Loading settings...</p> : null}
+                <div className="settingsWorkspaceMain">
+                  <div className="settingsContextBar">
+                    <div>
+                      <span className="settingsContextLabel">Current context</span>
+                      <strong>{activeSettingsContext.title}</strong>
+                      <small>{activeSettingsContext.description}</small>
+                    </div>
+                    <button
+                      className="dangerButton settingsSaveButton"
+                      disabled={!canSaveActiveSettings}
+                      onClick={() => void handleSaveActiveSettings()}
+                      type="button"
+                    >
+                      {settingsSaving ? "Saving…" : "Save changes"}
+                    </button>
+                  </div>
+
+                  {settingsLoading ? <p className="emptyState settingsLoadingState">Loading settings...</p> : null}
 
               {!settingsLoading && session?.isAdmin ? (
                 <div className="adminSettingsLayout">
@@ -1798,14 +1976,6 @@ export function App() {
                             <h3>Platform settings</h3>
                             <p className="settingsCardLead">Instance-wide configuration for API access and SMTP diagnostics.</p>
                           </div>
-                          <button
-                            className="ghostButton compactButton"
-                            disabled={settingsSaving}
-                            onClick={() => void handleSaveGlobalSettings()}
-                            type="button"
-                          >
-                            {settingsSaving ? "Saving..." : "Save platform settings"}
-                          </button>
                         </div>
 
                         <div className="settingsCardBody">
@@ -1884,14 +2054,6 @@ export function App() {
                             <h3>Admin mailbox</h3>
                             <p className="settingsCardLead">Use this when the environment admin should also receive and retain mail.</p>
                           </div>
-                          <button
-                            className="ghostButton compactButton"
-                            disabled={settingsSaving}
-                            onClick={() => void handleSaveAdminMailboxSettings()}
-                            type="button"
-                          >
-                            {settingsSaving ? "Saving..." : "Save admin mailbox"}
-                          </button>
                         </div>
 
                         <div className="settingsCardBody">
@@ -1900,7 +2062,7 @@ export function App() {
                               <button
                                 key={tab.key}
                                 className={adminMailboxSubTab === tab.key ? "settingsSubTabButton active" : "settingsSubTabButton"}
-                                onClick={() => setAdminMailboxSubTab(tab.key)}
+                                onClick={() => handleSettingsSubTabChange("adminMailbox", tab.key)}
                                 type="button"
                               >
                                 {tab.label}
@@ -2126,6 +2288,9 @@ export function App() {
                                   setSelectedManagedUserId(user.id);
                                   setUserEditorSubTab("general");
                                   applyManagedUserDraft(user);
+                                  setMailFailManagerScope(null);
+                                  setSelectedMailFailRuleIndex(null);
+                                  setMailFailRuleDraft(createDefaultMailFailRule());
                                 }}
                                 type="button"
                               >
@@ -2161,16 +2326,6 @@ export function App() {
                                 Delete user
                               </button>
                             ) : null}
-                            {selectedManagedUserId ? (
-                              <button
-                                className="dangerButton compactButton"
-                                disabled={settingsSaving}
-                                onClick={() => void handleSaveManagedUser()}
-                                type="button"
-                              >
-                                {settingsSaving ? "Saving..." : "Save user"}
-                              </button>
-                            ) : null}
                           </div>
                         </div>
 
@@ -2181,7 +2336,7 @@ export function App() {
                                 <button
                                   key={tab.key}
                                   className={userEditorSubTab === tab.key ? "settingsSubTabButton active" : "settingsSubTabButton"}
-                                  onClick={() => setUserEditorSubTab(tab.key)}
+                                  onClick={() => handleSettingsSubTabChange("user", tab.key)}
                                   type="button"
                                 >
                                   {tab.label}
@@ -2323,14 +2478,6 @@ export function App() {
                             <h3>Delivery policies</h3>
                             <p className="settingsCardLead">Control MailFail and sender or recipient restrictions for your mailbox.</p>
                           </div>
-                          <button
-                            className="dangerButton compactButton"
-                            disabled={settingsLoading || settingsSaving}
-                            onClick={() => void handleSaveSettings()}
-                            type="button"
-                          >
-                            {settingsSaving ? "Saving..." : "Save settings"}
-                          </button>
                         </div>
 
                         <div className="settingsGrid">
@@ -2450,14 +2597,6 @@ export function App() {
                             <h3>Retention</h3>
                             <p className="settingsCardLead">Configure how long captured messages stay in your mailbox.</p>
                           </div>
-                          <button
-                            className="dangerButton compactButton"
-                            disabled={settingsLoading || settingsSaving}
-                            onClick={() => void handleSaveSettings()}
-                            type="button"
-                          >
-                            {settingsSaving ? "Saving..." : "Save settings"}
-                          </button>
                         </div>
 
                         <div className="settingsField nestedSettingsField toggleField">
@@ -2514,6 +2653,8 @@ export function App() {
                   ) : null}
                 </div>
               ) : null}
+                </div>
+              </div>
             </section>
           </div>
         ) : null}
@@ -2863,7 +3004,20 @@ function normalizeExampleDomainToken(token: string): string | null {
 }
 
 function cloneMailFailRule(rule: MailFailRule): MailFailRule {
-  return { ...rule };
+  return {
+    ...emptyMailFailRule,
+    ...rule,
+    name: rule.name ?? "",
+    trigger: rule.trigger ?? "",
+    stage: rule.stage ?? emptyMailFailRule.stage,
+    action: rule.action ?? emptyMailFailRule.action,
+    allowAfter: rule.allowAfter ?? emptyMailFailRule.allowAfter,
+    minRetryAfter: rule.minRetryAfter ?? "",
+    resetAfter: rule.resetAfter ?? "",
+    code: rule.code ?? emptyMailFailRule.code,
+    enhancedCode: rule.enhancedCode ?? "",
+    message: rule.message ?? ""
+  };
 }
 
 function cloneMailFailRules(rules: MailFailRule[]): MailFailRule[] {
@@ -2874,20 +3028,45 @@ function createDefaultMailFailRule(): MailFailRule {
   return cloneMailFailRule(emptyMailFailRule);
 }
 
+function hasMailFailRuleDraftChanges(rule: MailFailRule): boolean {
+  return (
+    (rule.name ?? "").trim() !== "" ||
+    (rule.trigger ?? "").trim() !== "" ||
+    (rule.message ?? "").trim() !== "" ||
+    rule.action !== emptyMailFailRule.action ||
+    rule.stage !== emptyMailFailRule.stage ||
+    rule.code !== emptyMailFailRule.code ||
+    (rule.enhancedCode ?? "").trim() !== "" ||
+    rule.allowAfter !== emptyMailFailRule.allowAfter ||
+    (rule.minRetryAfter ?? "").trim() !== "" ||
+    (rule.resetAfter ?? "").trim() !== emptyMailFailRule.resetAfter
+  );
+}
+
 function normalizeMailFailRuleDraft(rule: MailFailRule): MailFailRule {
-  const reportAction = isReportAction(rule.action);
+  const normalizedInput = cloneMailFailRule(rule);
+  const reportAction = isReportAction(normalizedInput.action);
   return {
-    ...rule,
-    name: rule.name.trim(),
-    trigger: rule.trigger.trim(),
-    stage: reportAction ? "data" : rule.stage,
-    action: rule.action,
-    allowAfter: rule.action === "greylist" ? Math.max(1, rule.allowAfter || 1) : 1,
-    minRetryAfter: rule.action === "greylist" ? rule.minRetryAfter.trim() : "",
-    resetAfter: rule.action === "greylist" ? rule.resetAfter.trim() : "",
-    code: reportAction && rule.action !== "async-bounce" ? 0 : Math.max(rule.action === "async-bounce" ? 500 : 400, Math.min(599, rule.code || 550)),
-    enhancedCode: rule.action === "async-bounce" ? rule.enhancedCode.trim() || "5.0.0" : rule.enhancedCode.trim(),
-    message: reportAction ? "" : rule.message.trim()
+    ...normalizedInput,
+    name: normalizedInput.name.trim(),
+    trigger: normalizedInput.trigger.trim(),
+    stage: reportAction ? "data" : normalizedInput.stage,
+    action: normalizedInput.action,
+    allowAfter: normalizedInput.action === "greylist" ? Math.max(1, normalizedInput.allowAfter || 1) : 1,
+    minRetryAfter: normalizedInput.action === "greylist" ? normalizedInput.minRetryAfter.trim() : "",
+    resetAfter: normalizedInput.action === "greylist" ? normalizedInput.resetAfter.trim() : "",
+    code:
+      reportAction && normalizedInput.action !== "async-bounce"
+        ? 0
+        : Math.max(
+            normalizedInput.action === "async-bounce" ? 500 : 400,
+            Math.min(599, normalizedInput.code || 550)
+          ),
+    enhancedCode:
+      normalizedInput.action === "async-bounce"
+        ? normalizedInput.enhancedCode.trim() || "5.0.0"
+        : normalizedInput.enhancedCode.trim(),
+    message: reportAction ? "" : normalizedInput.message.trim()
   };
 }
 

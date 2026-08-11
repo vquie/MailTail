@@ -2999,3 +2999,316 @@ body {
     justify-content: center;
   }
 }
+
+/* Settings workspace */
+
+.settingsPageShell {
+  gap: 14px;
+}
+
+.settingsPageHeader {
+  align-items: center;
+  padding: 14px 16px;
+}
+
+.settingsPageTitle {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 14px;
+}
+
+.settingsPageTitle .eyebrow {
+  grid-column: 1 / -1;
+}
+
+.settingsPageTitle h2 {
+  font-size: 1.45rem;
+}
+
+.settingsPageTitle .settingsLead {
+  font-size: 0.86rem;
+}
+
+.settingsWorkspaceShell {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  min-width: 0;
+}
+
+.settingsNavigation {
+  position: sticky;
+  top: 10px;
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 3.8%), rgb(255 255 255 / 2%)),
+    var(--bg-elevated);
+}
+
+.settingsNavigationHeader {
+  display: grid;
+  gap: 4px;
+  padding: 2px 4px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settingsNavigationHeader > span {
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.settingsNavigationHeader small,
+.settingsTabButton small,
+.settingsContextBar small {
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.settingsNavigation .settingsTabs {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+}
+
+.settingsNavigation .settingsTabButton {
+  position: relative;
+  display: grid;
+  width: 100%;
+  gap: 3px;
+  padding: 11px 12px 11px 15px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.settingsNavigation .settingsTabButton::before {
+  content: "";
+  position: absolute;
+  inset: 9px auto 9px 6px;
+  width: 3px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.settingsNavigation .settingsTabButton strong {
+  color: inherit;
+  font-size: 0.9rem;
+}
+
+.settingsNavigation .settingsTabButton small {
+  font-size: 0.75rem;
+}
+
+.settingsNavigation .settingsTabButton:hover {
+  border-color: var(--border);
+  background: rgb(255 255 255 / 3%);
+  color: var(--text);
+}
+
+.settingsNavigation .settingsTabButton.active {
+  border-color: rgb(79 140 255 / 22%);
+  background: rgb(79 140 255 / 10%);
+  color: #c7d9ff;
+}
+
+.settingsNavigation .settingsTabButton.active::before {
+  background: #6ea0ff;
+}
+
+.settingsWorkspaceMain {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.settingsContextBar {
+  position: sticky;
+  top: 8px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 68px;
+  padding: 11px 12px 11px 16px;
+  border: 1px solid rgb(79 140 255 / 20%);
+  border-radius: var(--radius-xl);
+  background: rgb(15 20 30 / 94%);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 24%);
+  backdrop-filter: blur(18px);
+}
+
+.settingsContextBar > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settingsContextBar > div > strong {
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.settingsContextLabel {
+  color: #87adfa;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settingsSaveButton {
+  flex: 0 0 auto;
+  min-width: 124px;
+  min-height: 40px;
+}
+
+.settingsLoadingState {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+}
+
+.settingsWorkspaceMain .adminSettingsLayout,
+.settingsWorkspaceMain > .settingsCardGrid {
+  min-width: 0;
+}
+
+.settingsWorkspaceMain .settingsCardHeader {
+  padding-bottom: 10px;
+}
+
+.settingsWorkspaceMain .settingsCard {
+  padding: 15px 16px;
+}
+
+.settingsWorkspaceMain .settingsField:not(.settingsCard) {
+  padding: 13px 14px;
+}
+
+.rulesWorkspace {
+  grid-template-columns: minmax(260px, 0.34fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.rulesWorkspace > .settingsCard:first-child {
+  grid-column: 1;
+}
+
+.rulesWorkspace > .rulesOverviewGrid {
+  grid-column: 2;
+  grid-template-columns: 1fr;
+}
+
+.rulesWorkspace > .mailFailWorkspaceLayout,
+.rulesWorkspace > .rulesComposerLayout {
+  grid-column: 1 / -1;
+}
+
+.rulesCatalogList {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.rulesCatalogItem {
+  min-height: 112px;
+}
+
+.settingsWorkspaceMain .settingsStatsGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settingsWorkspaceMain .settingsStatsGrid .settingsStat:last-child {
+  grid-column: 1 / -1;
+}
+
+.mailFailEditorCard {
+  position: sticky;
+  top: 92px;
+}
+
+@media (width <= 1180px) {
+  .settingsWorkspaceShell {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+
+  .rulesWorkspace,
+  .rulesWorkspace > .settingsCard:first-child,
+  .rulesWorkspace > .rulesOverviewGrid,
+  .rulesWorkspace > .mailFailWorkspaceLayout,
+  .rulesWorkspace > .rulesComposerLayout {
+    grid-template-columns: 1fr;
+    grid-column: 1;
+  }
+
+  .rulesWorkspace > .rulesOverviewGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .mailFailEditorCard {
+    position: static;
+  }
+}
+
+@media (width <= 900px) {
+  .settingsWorkspaceShell {
+    grid-template-columns: 1fr;
+  }
+
+  .settingsNavigation {
+    position: static;
+  }
+
+  .settingsNavigationHeader {
+    display: none;
+  }
+
+  .settingsNavigation .settingsTabs {
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  }
+
+  .settingsContextBar {
+    top: 4px;
+  }
+
+  .rulesWorkspace > .rulesOverviewGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (width <= 640px) {
+  .settingsPageTitle {
+    grid-template-columns: 1fr;
+  }
+
+  .settingsPageTitle .eyebrow {
+    grid-column: auto;
+  }
+
+  .settingsPageTitle .settingsLead {
+    display: none;
+  }
+
+  .settingsNavigation .settingsTabs {
+    grid-template-columns: 1fr;
+  }
+
+  .settingsContextBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settingsSaveButton {
+    width: 100%;
+  }
+}
