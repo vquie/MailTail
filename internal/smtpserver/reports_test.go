@@ -202,3 +202,37 @@ func TestMailFailReportRulesArePostAcceptActions(t *testing.T) {
 		t.Fatalf("unexpected report requests: %#v", requests)
 	}
 }
+
+func TestMailFailReportRulesDoNotRequireStageOrMessage(t *testing.T) {
+	t.Parallel()
+
+	actions := []string{"arf", "xarf-v3", "xarf-v4", "original-report", "async-bounce"}
+	for _, action := range actions {
+		action := action
+		t.Run(action, func(t *testing.T) {
+			t.Parallel()
+
+			engine, err := NewMailFailEngine([]models.MailFailRule{{
+				Name: action, Trigger: action, Action: action,
+			}}, nil)
+			if err != nil {
+				t.Fatalf("create engine without stage or message: %v", err)
+			}
+
+			recipient := "user+" + action + "@example.test"
+			if response := engine.MatchData("sender@sender.test", []string{recipient}); response != nil {
+				t.Fatalf("report rule must not reject DATA: %v", response)
+			}
+			requests := engine.MatchReports([]string{recipient})
+			if len(requests) != 1 {
+				t.Fatalf("expected one report request, got %#v", requests)
+			}
+			if requests[0].Action != action || requests[0].Message == "" {
+				t.Fatalf("unexpected report request: %#v", requests[0])
+			}
+			if action == "async-bounce" && (requests[0].Code != 550 || requests[0].EnhancedCode != "5.0.0") {
+				t.Fatalf("unexpected default bounce diagnostic: %#v", requests[0])
+			}
+		})
+	}
+}

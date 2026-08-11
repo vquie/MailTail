@@ -769,7 +769,7 @@
       },
       "MailFailRule": {
         "type": "object",
-        "required": ["name", "trigger", "stage", "action", "code", "message"],
+        "required": ["trigger", "action"],
         "properties": {
           "name": {
             "type": "string",
@@ -782,7 +782,8 @@
           "stage": {
             "type": "string",
             "enum": ["mailfrom", "rcpt", "data"],
-            "example": "rcpt"
+            "example": "rcpt",
+            "description": "Required for reject and greylist actions. Outbound report actions run after accepted DATA and ignore this field."
           },
           "action": {
             "type": "string",
@@ -796,7 +797,7 @@
               "async-bounce"
             ],
             "example": "greylist",
-            "description": "Outbound report actions are valid only at the data stage."
+            "description": "Outbound report actions run after accepted DATA and do not require a stage or report text."
           },
           "allowAfter": {
             "type": "integer",
@@ -816,7 +817,7 @@
             "minimum": 0,
             "maximum": 599,
             "example": 451,
-            "description": "SMTP response or DSN diagnostic code. Non-DSN report actions use 0."
+            "description": "Required for reject and greylist actions and optional for async-bounce diagnostics. Non-DSN report actions ignore this field."
           },
           "enhancedCode": {
             "type": "string",
@@ -824,7 +825,8 @@
           },
           "message": {
             "type": "string",
-            "example": "Try again later"
+            "example": "Try again later",
+            "description": "Required for reject and greylist actions. MailTail generates standard text for outbound report actions."
           }
         }
       },

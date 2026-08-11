@@ -23,10 +23,10 @@ func TestNormalizeUserSettingsNormalizesNewlineSeparatedLists(t *testing.T) {
 	t.Parallel()
 
 	settings := NormalizeUserSettings(models.AppSettings{
-		AllowedRemoteIPs:     "127.0.0.1\n10.0.0.0/8",
-		AcceptedRcptDomains:  "alpha.test,\nbeta.test",
-		AcceptedFromDomains:  "sender.test\r\nrelay.test",
-		AutoDeleteAfterDays:  7,
+		AllowedRemoteIPs:    "127.0.0.1\n10.0.0.0/8",
+		AcceptedRcptDomains: "alpha.test,\nbeta.test",
+		AcceptedFromDomains: "sender.test\r\nrelay.test",
+		AutoDeleteAfterDays: 7,
 	})
 
 	if settings.AllowedRemoteIPs != "127.0.0.1,10.0.0.0/8" {
@@ -37,5 +37,30 @@ func TestNormalizeUserSettingsNormalizesNewlineSeparatedLists(t *testing.T) {
 	}
 	if settings.AcceptedFromDomains != "sender.test,relay.test" {
 		t.Fatalf("unexpected AcceptedFromDomains: %q", settings.AcceptedFromDomains)
+	}
+}
+
+func TestNormalizeUserSettingsMakesReportStageAndTextImplicit(t *testing.T) {
+	t.Parallel()
+
+	settings := NormalizeUserSettings(models.AppSettings{
+		MailFailRules: []models.MailFailRule{{
+			Name:    "ARF",
+			Trigger: "mf-arf",
+			Stage:   "mailfrom",
+			Action:  "arf",
+			Message: "user-supplied report text",
+		}},
+	})
+
+	if len(settings.MailFailRules) != 1 {
+		t.Fatalf("unexpected normalized rules: %#v", settings.MailFailRules)
+	}
+	rule := settings.MailFailRules[0]
+	if rule.Stage != "data" {
+		t.Fatalf("report stage must be normalized to data, got %q", rule.Stage)
+	}
+	if rule.Message != "" {
+		t.Fatalf("report text must not be stored as user configuration, got %q", rule.Message)
 	}
 }

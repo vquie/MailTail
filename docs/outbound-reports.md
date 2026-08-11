@@ -4,7 +4,7 @@ MailTail rules can accept an inbound test message and asynchronously send a repo
 
 ## Actions
 
-All outbound actions run at the `data` stage and match the same plus-address trigger used by other MailFail rules.
+All outbound actions run after MailTail has accepted `DATA` and match the same plus-address trigger used by other MailFail rules. Their SMTP stage is implicit rather than configurable, and MailTail generates the standard human-readable report text.
 
 | Action            | Generated format                                                                    | SMTP envelope sender                |
 |-------------------|-------------------------------------------------------------------------------------|-------------------------------------|

@@ -293,7 +293,7 @@ Supported actions:
 - `async-bounce`
   Accepts the message first, then queues an RFC 3464 delivery-status notification. Its SMTP envelope sender is empty to prevent bounce loops.
 
-Report actions are supported only at the `data` stage. They are delivered to the original SMTP envelope sender and are suppressed for null reverse-path messages and messages carrying an `Auto-Submitted` header.
+Report actions run automatically after `DATA` is accepted, so their stage and human-readable report text are not configurable. They are delivered to the original SMTP envelope sender and are suppressed for null reverse-path messages and messages carrying an `Auto-Submitted` header.
 Queued reports are persisted in SQLite and retried with exponential backoff when outbound delivery is temporarily unavailable.
 
 Each mailbox can set `Report sender` in the Rules UI. If it is empty, MailTail derives `postmaster@<recipient-domain>` only when that domain is configured as an exact accepted recipient domain. Regex and catch-all recipient policies require an explicit report sender. MailTail never copies the original recipient address into the report sender.

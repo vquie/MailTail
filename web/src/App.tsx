@@ -774,7 +774,7 @@ export function App() {
       showSettingsError("MailFail rules require a trigger.");
       return;
     }
-    if (!normalizedRule.message) {
+    if (!isReportAction(normalizedRule.action) && !normalizedRule.message) {
       showSettingsError("MailFail rules require a reply message.");
       return;
     }
@@ -814,7 +814,9 @@ export function App() {
   }) {
     const scopedSettings = currentScopedSettings(options.scope);
     const rules = scopedSettings.mailFailRules ?? [];
-    const uniqueStages = Array.from(new Set(rules.map((rule) => rule.stage.toUpperCase())));
+    const uniqueStages = Array.from(
+      new Set(rules.filter((rule) => !isReportAction(rule.action)).map((rule) => rule.stage.toUpperCase()))
+    );
     const uniqueActions = Array.from(new Set(rules.map((rule) => rule.action)));
     const showGuidancePanel = options.showGuidancePanel ?? true;
     const isActiveScope = mailFailManagerScope === options.scope;
@@ -891,7 +893,7 @@ export function App() {
                 <div className="settingsCardHeader">
                   <div>
                     <h3>Rule catalog</h3>
-                    <p className="settingsCardLead">Every rule maps a trigger like `user+mf-greylist@…` to a SMTP response.</p>
+                    <p className="settingsCardLead">Every rule maps a trigger like `user+mf-greylist@…` to SMTP behavior.</p>
                   </div>
                   <div className="settingsCardActions">
                     <button
@@ -922,10 +924,14 @@ export function App() {
                         </div>
                         <div className="rulesCatalogMeta">
                           <span>{rule.trigger}</span>
-                          <span>{rule.stage.toUpperCase()}</span>
+                          {!isReportAction(rule.action) ? <span>{rule.stage.toUpperCase()}</span> : null}
                           <span>{rule.action}</span>
                         </div>
-                        <p>{rule.message || "No reply message configured."}</p>
+                        <p>
+                          {isReportAction(rule.action)
+                            ? "Generated automatically after message acceptance."
+                            : rule.message || "No reply message configured."}
+                        </p>
                       </button>
                     ))}
                   </div>
@@ -972,18 +978,21 @@ export function App() {
                     <small>Example recipient: <code>{options.exampleRecipient}</code></small>
                   </label>
 
-                  <label className="settingsField">
-                    <span>Stage</span>
-                    <select
-                      value={editorDraft.stage}
-                      disabled={isReportAction(editorDraft.action)}
-                      onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, stage: event.target.value as MailFailRule["stage"] }))}
-                    >
-                      <option value="mailfrom">MAIL FROM</option>
-                      <option value="rcpt">RCPT TO</option>
-                      <option value="data">DATA</option>
-                    </select>
-                  </label>
+                  {!isReportAction(editorDraft.action) ? (
+                    <label className="settingsField">
+                      <span>Stage</span>
+                      <select
+                        value={editorDraft.stage}
+                        onChange={(event) =>
+                          setMailFailRuleDraft((current) => ({ ...current, stage: event.target.value as MailFailRule["stage"] }))
+                        }
+                      >
+                        <option value="mailfrom">MAIL FROM</option>
+                        <option value="rcpt">RCPT TO</option>
+                        <option value="data">DATA</option>
+                      </select>
+                    </label>
+                  ) : null}
 
                   <label className="settingsField">
                     <span>Action</span>
@@ -996,7 +1005,8 @@ export function App() {
                           action,
                           stage: isReportAction(action) ? "data" : current.stage,
                           code: action === "async-bounce" ? 550 : current.code,
-                          enhancedCode: action === "async-bounce" ? current.enhancedCode || "5.0.0" : current.enhancedCode
+                          enhancedCode: action === "async-bounce" ? current.enhancedCode || "5.0.0" : current.enhancedCode,
+                          message: isReportAction(action) ? "" : current.message
                         }));
                       }}
                     >
@@ -1034,14 +1044,21 @@ export function App() {
                     </>
                   ) : null}
 
-                  <label className="settingsField mailFailMessageField">
-                    <span>{isReportAction(editorDraft.action) ? "Human-readable report text" : "Message"}</span>
-                    <input
-                      value={editorDraft.message}
-                      onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, message: event.target.value }))}
-                      placeholder="Try again later"
-                    />
-                  </label>
+                  {!isReportAction(editorDraft.action) ? (
+                    <label className="settingsField mailFailMessageField">
+                      <span>Reply message</span>
+                      <input
+                        value={editorDraft.message}
+                        onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, message: event.target.value }))}
+                        placeholder="Try again later"
+                      />
+                    </label>
+                  ) : (
+                    <div className="settingsField mailFailMessageField">
+                      <span>Post-accept action</span>
+                      <small>MailTail runs this action after accepting DATA and generates the standard report text automatically.</small>
+                    </div>
+                  )}
 
                   {editorDraft.action === "greylist" ? (
                     <>
@@ -2868,7 +2885,7 @@ function normalizeMailFailRuleDraft(rule: MailFailRule): MailFailRule {
     resetAfter: rule.action === "greylist" ? rule.resetAfter.trim() : "",
     code: reportAction && rule.action !== "async-bounce" ? 0 : Math.max(rule.action === "async-bounce" ? 500 : 400, Math.min(599, rule.code || 550)),
     enhancedCode: rule.action === "async-bounce" ? rule.enhancedCode.trim() || "5.0.0" : rule.enhancedCode.trim(),
-    message: rule.message.trim()
+    message: reportAction ? "" : rule.message.trim()
   };
 }
 
