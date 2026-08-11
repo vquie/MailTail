@@ -146,7 +146,7 @@ export function App() {
   const [managedUsers, setManagedUsers] = useState<User[]>([]);
   const [selectedManagedUserId, setSelectedManagedUserId] = useState<number | null>(null);
   const [createUserOpen, setCreateUserOpen] = useState(false);
-  const [mailFailManagerScope, setMailFailManagerScope] = useState<MailFailSettingsScope>("user");
+  const [mailFailManagerScope, setMailFailManagerScope] = useState<MailFailSettingsScope | null>(null);
   const [selectedMailFailRuleIndex, setSelectedMailFailRuleIndex] = useState<number | null>(null);
   const [mailFailRuleDraft, setMailFailRuleDraft] = useState<MailFailRule>(emptyMailFailRule);
   const [managedUsername, setManagedUsername] = useState(emptyManagedUser.username);
@@ -820,18 +820,18 @@ export function App() {
     const uniqueActions = Array.from(new Set(rules.map((rule) => rule.action)));
     const showGuidancePanel = options.showGuidancePanel ?? true;
     const isActiveScope = mailFailManagerScope === options.scope;
-    const resolvedRuleIndex =
-      isActiveScope && selectedMailFailRuleIndex !== null && rules[selectedMailFailRuleIndex]
+    const resolvedRuleIndex = isActiveScope
+      ? selectedMailFailRuleIndex !== null && rules[selectedMailFailRuleIndex]
         ? selectedMailFailRuleIndex
-        : rules.length > 0
-          ? 0
-          : null;
-    const editorDraft =
-      isActiveScope && (selectedMailFailRuleIndex !== null || mailFailRuleDraft.trigger || mailFailRuleDraft.name || mailFailRuleDraft.message)
-        ? mailFailRuleDraft
-        : resolvedRuleIndex !== null
-          ? cloneMailFailRule(rules[resolvedRuleIndex])
-          : createDefaultMailFailRule();
+        : null
+      : rules.length > 0
+        ? 0
+        : null;
+    const editorDraft = isActiveScope
+      ? mailFailRuleDraft
+      : resolvedRuleIndex !== null
+        ? cloneMailFailRule(rules[resolvedRuleIndex])
+        : createDefaultMailFailRule();
 
     return (
       <div className="rulesWorkspace">
@@ -896,13 +896,15 @@ export function App() {
                     <p className="settingsCardLead">Every rule maps a trigger like `user+mf-greylist@…` to SMTP behavior.</p>
                   </div>
                   <div className="settingsCardActions">
-                    <button
-                      className="ghostButton compactButton"
-                      type="button"
-                      onClick={() => handleStartNewMailFailRule(options.scope)}
-                    >
-                      Add rule
-                    </button>
+                    {resolvedRuleIndex !== null ? (
+                      <button
+                        className="ghostButton compactButton"
+                        type="button"
+                        onClick={() => handleStartNewMailFailRule(options.scope)}
+                      >
+                        Add rule
+                      </button>
+                    ) : null}
                     <button className="ghostButton compactButton" type="button" onClick={() => handleImportMailFailTemplate(options.scope)}>
                       Load example rules
                     </button>
@@ -978,22 +980,6 @@ export function App() {
                     <small>Example recipient: <code>{options.exampleRecipient}</code></small>
                   </label>
 
-                  {!isReportAction(editorDraft.action) ? (
-                    <label className="settingsField">
-                      <span>Stage</span>
-                      <select
-                        value={editorDraft.stage}
-                        onChange={(event) =>
-                          setMailFailRuleDraft((current) => ({ ...current, stage: event.target.value as MailFailRule["stage"] }))
-                        }
-                      >
-                        <option value="mailfrom">MAIL FROM</option>
-                        <option value="rcpt">RCPT TO</option>
-                        <option value="data">DATA</option>
-                      </select>
-                    </label>
-                  ) : null}
-
                   <label className="settingsField">
                     <span>Action</span>
                     <select
@@ -1019,6 +1005,22 @@ export function App() {
                       <option value="async-bounce">Asynchronous bounce</option>
                     </select>
                   </label>
+
+                  {!isReportAction(editorDraft.action) ? (
+                    <label className="settingsField">
+                      <span>Stage</span>
+                      <select
+                        value={editorDraft.stage}
+                        onChange={(event) =>
+                          setMailFailRuleDraft((current) => ({ ...current, stage: event.target.value as MailFailRule["stage"] }))
+                        }
+                      >
+                        <option value="mailfrom">MAIL FROM</option>
+                        <option value="rcpt">RCPT TO</option>
+                        <option value="data">DATA</option>
+                      </select>
+                    </label>
+                  ) : null}
 
                   {!isReportAction(editorDraft.action) || editorDraft.action === "async-bounce" ? (
                     <>
