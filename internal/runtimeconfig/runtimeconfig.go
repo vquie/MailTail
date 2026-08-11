@@ -124,18 +124,34 @@ func normalizeMailFailRules(rules []models.MailFailRule) []models.MailFailRule {
 
 	normalized := make([]models.MailFailRule, 0, len(rules))
 	for _, rule := range rules {
+		action := strings.TrimSpace(rule.Action)
+		stage := strings.TrimSpace(rule.Stage)
+		message := strings.TrimSpace(rule.Message)
+		if isReportAction(action) {
+			stage = "data"
+			message = ""
+		}
 		normalized = append(normalized, models.MailFailRule{
 			Name:          strings.TrimSpace(rule.Name),
 			Trigger:       strings.TrimSpace(rule.Trigger),
-			Stage:         strings.TrimSpace(rule.Stage),
-			Action:        strings.TrimSpace(rule.Action),
+			Stage:         stage,
+			Action:        action,
 			AllowAfter:    rule.AllowAfter,
 			MinRetryAfter: strings.TrimSpace(rule.MinRetryAfter),
 			ResetAfter:    strings.TrimSpace(rule.ResetAfter),
 			Code:          rule.Code,
 			EnhancedCode:  strings.TrimSpace(rule.EnhancedCode),
-			Message:       strings.TrimSpace(rule.Message),
+			Message:       message,
 		})
 	}
 	return normalized
+}
+
+func isReportAction(action string) bool {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "arf", "xarf-v3", "xarf-v4", "original-report", "async-bounce":
+		return true
+	default:
+		return false
+	}
 }

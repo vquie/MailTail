@@ -239,11 +239,6 @@ func compileMailFailRule(rule models.MailFailRule) (mailFailRule, error) {
 	if compiled.name == "" {
 		compiled.name = compiled.trigger
 	}
-	switch compiled.stage {
-	case "mailfrom", "rcpt", "data":
-	default:
-		return mailFailRule{}, fmt.Errorf("mailfail rule %q has unsupported stage %q", compiled.name, rule.Stage)
-	}
 	if compiled.action == "" {
 		compiled.action = "reject"
 	}
@@ -252,11 +247,23 @@ func compileMailFailRule(rule models.MailFailRule) (mailFailRule, error) {
 	default:
 		return mailFailRule{}, fmt.Errorf("mailfail rule %q has unsupported action %q", compiled.name, rule.Action)
 	}
+	if isReportAction(compiled.action) {
+		compiled.stage = "data"
+		if compiled.message == "" {
+			compiled.message = defaultReportMessage(compiled.action)
+		}
+	} else {
+		switch compiled.stage {
+		case "mailfrom", "rcpt", "data":
+		default:
+			return mailFailRule{}, fmt.Errorf("mailfail rule %q has unsupported stage %q", compiled.name, rule.Stage)
+		}
+		if compiled.message == "" {
+			return mailFailRule{}, fmt.Errorf("mailfail rule %q is missing message", compiled.name)
+		}
+	}
 	if (compiled.action == "reject" || compiled.action == "greylist") && (compiled.code < 400 || compiled.code > 599) {
 		return mailFailRule{}, fmt.Errorf("mailfail rule %q has invalid code %d", compiled.name, rule.Code)
-	}
-	if compiled.message == "" {
-		return mailFailRule{}, fmt.Errorf("mailfail rule %q is missing message", compiled.name)
 	}
 	if compiled.action == "greylist" {
 		if compiled.stage != "rcpt" && compiled.stage != "data" {
@@ -283,9 +290,6 @@ func compileMailFailRule(rule models.MailFailRule) (mailFailRule, error) {
 		compiled.resetAfter = resetAfter
 	}
 	if isReportAction(compiled.action) {
-		if compiled.stage != "data" {
-			return mailFailRule{}, fmt.Errorf("mailfail rule %q uses report action %q but stage %q is unsupported", compiled.name, compiled.action, rule.Stage)
-		}
 		if compiled.action == "async-bounce" {
 			if compiled.code == 0 {
 				compiled.code = 550
@@ -303,6 +307,23 @@ func compileMailFailRule(rule models.MailFailRule) (mailFailRule, error) {
 	}
 
 	return compiled, nil
+}
+
+func defaultReportMessage(action string) string {
+	switch action {
+	case "arf":
+		return "MailTail generated an abuse feedback report for the accepted message."
+	case "xarf-v3":
+		return "MailTail generated a XARF v3 report for the accepted message."
+	case "xarf-v4":
+		return "MailTail generated a XARF v4 report for the accepted message."
+	case "original-report":
+		return "MailTail attached the original accepted message."
+	case "async-bounce":
+		return "Delivery failed after the message was accepted by MailTail."
+	default:
+		return "MailTail generated a report for the accepted message."
+	}
 }
 
 func isReportAction(action string) bool {
