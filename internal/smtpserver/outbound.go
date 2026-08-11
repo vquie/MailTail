@@ -3,17 +3,88 @@ package smtpserver
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/mail"
 	"net/smtp"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/vquie/MailTail/internal/models"
 	"github.com/vquie/MailTail/internal/storage"
 )
+
+type OutboundSender interface {
+	Send(ctx context.Context, message models.OutboundMessage) error
+}
+
+type DirectSender struct {
+	helo        string
+	lookupMX    func(context.Context, string) ([]*net.MX, error)
+	dialContext func(context.Context, string, string) (net.Conn, error)
+}
+
+func NewDirectSender(helo string) *DirectSender {
+	helo = strings.TrimSpace(helo)
+	if helo == "" {
+		helo = "mailtail.local"
+	}
+	dialer := &net.Dialer{Timeout: 30 * time.Second}
+	return &DirectSender{
+		helo:        helo,
+		lookupMX:    net.DefaultResolver.LookupMX,
+		dialContext: dialer.DialContext,
+	}
+}
+
+func (s *DirectSender) Send(ctx context.Context, message models.OutboundMessage) error {
+	recipient, err := mail.ParseAddress(strings.TrimSpace(message.Recipient))
+	if err != nil || recipient.Address != strings.TrimSpace(message.Recipient) {
+		return fmt.Errorf("invalid outbound recipient")
+	}
+	domain, ok := extractDomain(recipient.Address)
+	if !ok {
+		return fmt.Errorf("invalid outbound recipient domain")
+	}
+
+	mxRecords, err := s.lookupMX(ctx, domain)
+	if err != nil {
+		var dnsError *net.DNSError
+		if !errors.As(err, &dnsError) || !dnsError.IsNotFound {
+			return fmt.Errorf("MX lookup for %s failed: %w", domain, err)
+		}
+		mxRecords = nil
+	}
+	if len(mxRecords) == 0 {
+		mxRecords = []*net.MX{{Host: domain, Pref: 0}}
+	}
+	sort.SliceStable(mxRecords, func(left, right int) bool {
+		return mxRecords[left].Pref < mxRecords[right].Pref
+	})
+
+	failures := make([]string, 0, len(mxRecords))
+	for _, record := range mxRecords {
+		host := strings.TrimSuffix(strings.TrimSpace(record.Host), ".")
+		if host == "" {
+			return fmt.Errorf("recipient domain %s publishes a null MX and does not accept email", domain)
+		}
+		connection, err := s.dialContext(ctx, "tcp", net.JoinHostPort(host, "25"))
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", host, err))
+			continue
+		}
+		err = deliverSMTP(ctx, connection, host, s.helo, "opportunistic", "", "", message)
+		if err == nil {
+			return nil
+		}
+		failures = append(failures, fmt.Sprintf("%s: %v", host, err))
+	}
+	return fmt.Errorf("direct delivery to %s failed: %s", domain, strings.Join(failures, "; "))
+}
 
 type RelayConfig struct {
 	Address  string
@@ -70,6 +141,10 @@ func (s *RelaySender) Send(ctx context.Context, message models.OutboundMessage) 
 	if err != nil {
 		return err
 	}
+	return deliverSMTP(ctx, connection, host, s.config.Helo, s.config.TLSMode, s.config.Username, s.config.Password, message)
+}
+
+func deliverSMTP(ctx context.Context, connection net.Conn, host, helo, tlsMode, username, password string, message models.OutboundMessage) error {
 	defer connection.Close()
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = connection.SetDeadline(deadline)
@@ -82,19 +157,23 @@ func (s *RelaySender) Send(ctx context.Context, message models.OutboundMessage) 
 		return err
 	}
 	defer client.Close()
-	if err := client.Hello(s.config.Helo); err != nil {
+	if err := client.Hello(helo); err != nil {
 		return err
 	}
-	if s.config.TLSMode == "starttls" {
-		if ok, _ := client.Extension("STARTTLS"); !ok {
+	if tlsMode == "starttls" || tlsMode == "opportunistic" {
+		startTLS, _ := client.Extension("STARTTLS")
+		if tlsMode == "starttls" && !startTLS {
 			return fmt.Errorf("outbound SMTP relay does not advertise STARTTLS")
 		}
-		if err := client.StartTLS(tlsConfig); err != nil {
-			return err
+		if startTLS {
+			tlsConfig := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
+			if err := client.StartTLS(tlsConfig); err != nil {
+				return err
+			}
 		}
 	}
-	if s.config.Username != "" {
-		if err := client.Auth(smtp.PlainAuth("", s.config.Username, s.config.Password, host)); err != nil {
+	if username != "" {
+		if err := client.Auth(smtp.PlainAuth("", username, password, host)); err != nil {
 			return err
 		}
 	}
@@ -119,7 +198,7 @@ func (s *RelaySender) Send(ctx context.Context, message models.OutboundMessage) 
 	return nil
 }
 
-func RunOutboundWorker(ctx context.Context, logger *log.Logger, store storage.Store, sender *RelaySender) {
+func RunOutboundWorker(ctx context.Context, logger *log.Logger, store storage.Store, sender OutboundSender) {
 	if sender == nil {
 		return
 	}

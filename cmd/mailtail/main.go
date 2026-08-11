@@ -38,7 +38,9 @@ func main() {
 	dataDir := getEnv("MAILTAIL_DATA_DIR", "data")
 	httpAddr := getEnv("MAILTAIL_HTTP_ADDR", ":8080")
 	smtpAddr := getEnv("MAILTAIL_SMTP_ADDR", ":8025")
+	outboundMode := strings.ToLower(strings.TrimSpace(getEnv("MAILTAIL_OUTBOUND_MODE", "direct")))
 	outboundSMTPAddr := strings.TrimSpace(os.Getenv("MAILTAIL_OUTBOUND_SMTP_ADDR"))
+	outboundHelo := getEnv("MAILTAIL_OUTBOUND_SMTP_HELO", "mailtail.local")
 	staticDir := getEnv("MAILTAIL_WEB_DIR", filepath.Join("web", "dist"))
 	if strings.TrimSpace(os.Getenv("MAILTAIL_MAILFAIL_ENABLED")) != "" {
 		logger.Printf("warning: MAILTAIL_MAILFAIL_ENABLED is deprecated and ignored; enable MailFail per user in the UI")
@@ -65,21 +67,28 @@ func main() {
 	}
 	defer store.Close()
 
-	var outboundSender *smtpserver.RelaySender
-	if outboundSMTPAddr == "" {
-		logger.Printf("outbound report delivery disabled; set MAILTAIL_OUTBOUND_SMTP_ADDR to enable it")
-	} else {
+	var outboundSender smtpserver.OutboundSender
+	switch outboundMode {
+	case "direct":
+		outboundSender = smtpserver.NewDirectSender(outboundHelo)
+		logger.Printf("outbound report delivery mode: direct-to-MX")
+	case "relay":
+		if outboundSMTPAddr == "" {
+			logger.Fatal("invalid outbound SMTP config: MAILTAIL_OUTBOUND_SMTP_ADDR is required in relay mode")
+		}
 		outboundSender, err = smtpserver.NewRelaySender(smtpserver.RelayConfig{
 			Address:  outboundSMTPAddr,
 			TLSMode:  getEnv("MAILTAIL_OUTBOUND_SMTP_TLS", "starttls"),
 			Username: os.Getenv("MAILTAIL_OUTBOUND_SMTP_USERNAME"),
 			Password: os.Getenv("MAILTAIL_OUTBOUND_SMTP_PASSWORD"),
-			Helo:     getEnv("MAILTAIL_OUTBOUND_SMTP_HELO", "mailtail.local"),
+			Helo:     outboundHelo,
 		})
 		if err != nil {
 			logger.Fatalf("invalid outbound SMTP config: %v", err)
 		}
-		logger.Printf("outbound report delivery enabled via %s", outboundSMTPAddr)
+		logger.Printf("outbound report delivery mode: relay via %s", outboundSMTPAddr)
+	default:
+		logger.Fatalf("invalid outbound mode %q: MAILTAIL_OUTBOUND_MODE must be direct or relay", outboundMode)
 	}
 
 	settings := envAppSettings()

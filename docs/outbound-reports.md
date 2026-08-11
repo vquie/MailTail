@@ -1,6 +1,6 @@
 # Outbound reports
 
-MailTail rules can accept an inbound test message and asynchronously send a report to its SMTP envelope sender. The generated message is stored in a durable SQLite outbox before delivery. Temporary relay failures are retried with exponential backoff capped at one hour.
+MailTail rules can accept an inbound test message and asynchronously send a report to its SMTP envelope sender. The generated message is stored in a durable SQLite outbox before delivery. Temporary delivery failures are retried with exponential backoff capped at one hour.
 
 ## Actions
 
@@ -28,11 +28,27 @@ The original recipient address is never reused as the report sender. Recipient l
 
 Asynchronous bounces still use the configured or derived address in the visible `From` header, but their SMTP envelope sender is always empty as required for safe DSN behavior.
 
-## SMTP relay
+## Outbound transport
 
-Outbound delivery is instance-wide and configured through environment variables. Credentials are intentionally not returned by the API or stored in mailbox settings.
+Outbound delivery has one instance-wide mode that applies to ARF, XARF, original-message reports, and asynchronous bounces alike. `direct` is the default. Set `MAILTAIL_OUTBOUND_MODE=relay` only when every outbound action should use a relay.
+
+### Direct-to-MX delivery
 
 ```env
+MAILTAIL_OUTBOUND_MODE=direct
+MAILTAIL_OUTBOUND_SMTP_HELO=mailtail.example.test
+```
+
+Direct mode resolves the recipient domain's MX records, tries them in priority order, and falls back to the domain's A/AAAA records when no MX record exists. A null MX is treated as an explicit refusal of email. Delivery uses SMTP on port 25 and upgrades with STARTTLS when the destination advertises it.
+
+For reliable internet delivery, the configured HELO hostname should resolve to the sending IP and match its PTR. The report sender domain should authorize that IP through SPF and should use DKIM/DMARC where required. The host or network must permit outbound TCP port 25.
+
+### Relay delivery
+
+Relay credentials are intentionally not returned by the API or stored in mailbox settings.
+
+```env
+MAILTAIL_OUTBOUND_MODE=relay
 MAILTAIL_OUTBOUND_SMTP_ADDR=relay.example.test:587
 MAILTAIL_OUTBOUND_SMTP_TLS=starttls
 MAILTAIL_OUTBOUND_SMTP_USERNAME=mailtail
@@ -46,6 +62,6 @@ MAILTAIL_OUTBOUND_SMTP_HELO=mailtail.example.test
 - `tls`: connect using implicit TLS.
 - `none`: use plain SMTP. This is intended only for trusted local test relays.
 
-When `MAILTAIL_OUTBOUND_SMTP_ADDR` is empty, the delivery worker is disabled. Existing and newly generated reports remain queued and will be processed after MailTail restarts with a relay configured.
+`MAILTAIL_OUTBOUND_SMTP_ADDR` is required in relay mode. MailTail exits during startup instead of silently queuing undeliverable reports when the relay address is missing.
 
 Outbound rules can intentionally send mail to any accepted message's envelope sender. Before enabling them outside an isolated test network, restrict inbound SMTP with the mailbox `Allowed remote IPs` setting and avoid exposing MailTail as a public report generator.

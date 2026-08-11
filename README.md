@@ -294,11 +294,11 @@ Supported actions:
   Accepts the message first, then queues an RFC 3464 delivery-status notification. Its SMTP envelope sender is empty to prevent bounce loops.
 
 Report actions are supported only at the `data` stage. They are delivered to the original SMTP envelope sender and are suppressed for null reverse-path messages and messages carrying an `Auto-Submitted` header.
-Queued reports are persisted in SQLite and retried with exponential backoff when the outbound relay is unavailable.
+Queued reports are persisted in SQLite and retried with exponential backoff when outbound delivery is temporarily unavailable.
 
 Each mailbox can set `Report sender` in the Rules UI. If it is empty, MailTail derives `postmaster@<recipient-domain>` only when that domain is configured as an exact accepted recipient domain. Regex and catch-all recipient policies require an explicit report sender. MailTail never copies the original recipient address into the report sender.
 
-See [Outbound reports](docs/outbound-reports.md) for relay configuration, MIME formats, and sender behavior.
+See [Outbound reports](docs/outbound-reports.md) for direct and relay delivery, MIME formats, and sender behavior.
 
 Examples:
 
@@ -323,11 +323,12 @@ Bootstrap environment variables:
 - `MAILTAIL_DATA_DIR` default: `data`
 - `MAILTAIL_HTTP_ADDR` default: `:8080`
 - `MAILTAIL_SMTP_ADDR` default: `:8025`
-- `MAILTAIL_OUTBOUND_SMTP_ADDR` default: empty, keeps report delivery disabled while preserving queued reports
+- `MAILTAIL_OUTBOUND_MODE` default: `direct`; accepted values are `direct` and `relay`, and the selected mode applies to every outbound action
+- `MAILTAIL_OUTBOUND_SMTP_HELO` default: `mailtail.local`; set this to the public hostname matching the sending IP for direct delivery
+- `MAILTAIL_OUTBOUND_SMTP_ADDR` required only in `relay` mode
 - `MAILTAIL_OUTBOUND_SMTP_TLS` default: `starttls`; accepted values are `none`, `starttls`, and `tls`
 - `MAILTAIL_OUTBOUND_SMTP_USERNAME` default: empty
 - `MAILTAIL_OUTBOUND_SMTP_PASSWORD` default: empty
-- `MAILTAIL_OUTBOUND_SMTP_HELO` default: `mailtail.local`
 - `MAILTAIL_WEB_DIR` default: `web/dist`
 - `MAILTAIL_ADMIN_USERNAME` default: empty, disables login protection for web UI and API and logs a startup warning
 - `MAILTAIL_ADMIN_PASSWORD` default: empty, disables login protection for web UI and API and logs a startup warning
