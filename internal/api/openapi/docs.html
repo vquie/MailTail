@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive OpenAPI reference for the MailTail SMTP test inbox API.">
+  <meta name="keywords" content="mailtail,openapi,api documentation,smtp,email testing">
   <title>MailTail API Docs</title>
   <style>
     :root {
@@ -79,14 +81,14 @@
       line-height: 1.55;
       font-size: 1rem;
     }
-    .heroActions {
+    .hero-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 0.75rem;
       margin-top: 1.25rem;
       font-family: Arial, sans-serif;
     }
-    .heroActions a {
+    .hero-actions a {
       text-decoration: none;
       padding: 0.7rem 1rem;
       border-radius: 999px;
@@ -95,16 +97,16 @@
       color: var(--text);
       font-weight: 600;
     }
-    .heroActions a.primary {
+    .hero-actions a.primary {
       border-color: rgb(79 140 255 / 22%);
       background: rgb(79 140 255 / 16%);
       color: #c7dbff;
     }
-    .heroActions a:hover {
+    .hero-actions a:hover {
       border-color: rgb(79 140 255 / 18%);
       background: rgb(79 140 255 / 7%);
     }
-    .heroActions a.primary:hover {
+    .hero-actions a.primary:hover {
       background: rgb(79 140 255 / 22%);
     }
     .layout {
@@ -150,22 +152,22 @@
       padding: 1.25rem;
       border-radius: var(--radius-xl);
     }
-    .metaGrid {
+    .meta-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 0.9rem;
       margin-top: 1rem;
     }
-    .metaCard {
+    .meta-card {
       background: rgb(255 255 255 / 2.5%);
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
       padding: 0.9rem 1rem;
     }
-    .metaCard strong, .metaCard span {
+    .meta-card strong, .meta-card span {
       display: block;
     }
-    .metaCard strong {
+    .meta-card strong {
       font-family: var(--sans);
       font-size: 0.8rem;
       text-transform: uppercase;
@@ -173,16 +175,16 @@
       color: var(--text-subtle);
       margin-bottom: 0.4rem;
     }
-    .metaCard span {
+    .meta-card span {
       line-height: 1.5;
     }
-    .tagList, .securityList {
+    .tag-list, .security-list {
       display: flex;
       flex-wrap: wrap;
       gap: 0.5rem;
       margin-top: 0.9rem;
     }
-    .tagChip {
+    .tag-chip {
       border-radius: 999px;
       background: var(--accent-soft);
       color: #c8dcff;
@@ -193,7 +195,7 @@
     .operation {
       overflow: hidden;
     }
-    .operationHeader {
+    .operation-header {
       display: flex;
       flex-wrap: wrap;
       gap: 0.7rem;
@@ -268,17 +270,17 @@
     .muted {
       color: var(--text-muted);
     }
-    .statusList {
+    .status-list {
       display: grid;
       gap: 0.9rem;
     }
-    .statusBlock {
+    .status-block {
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
       overflow: hidden;
       background: rgb(255 255 255 / 2%);
     }
-    .statusBlock header {
+    .status-block header {
       display: flex;
       justify-content: space-between;
       gap: 1rem;
@@ -287,11 +289,11 @@
       background: rgb(255 255 255 / 3%);
       border-bottom: 1px solid var(--border);
     }
-    .statusBlock strong {
+    .status-block strong {
       font-family: var(--sans);
       font-size: 0.9rem;
     }
-    .statusBlock div {
+    .status-block div {
       padding: 1rem;
       display: grid;
       gap: 0.75rem;
@@ -317,11 +319,11 @@
       <p class="eyebrow">OpenAPI Reference</p>
       <h1 id="title">MailTail API</h1>
       <p id="intro">Loading API reference…</p>
-      <div class="heroActions">
+      <div class="hero-actions">
         <a class="primary" href="/api/openapi.json">Download OpenAPI JSON</a>
         <a href="/">Back to MailTail</a>
       </div>
-      <div class="metaGrid" id="meta"></div>
+      <div class="meta-grid" id="meta"></div>
     </section>
     <div class="layout">
       <aside class="sidebar">
@@ -329,7 +331,7 @@
         <nav id="nav"></nav>
       </aside>
       <section class="content">
-        <article class="panel" id="authPanel">
+        <article class="panel" id="auth-panel">
           <p class="eyebrow">Authentication</p>
           <h2>Session and CSRF</h2>
           <p class="muted">Loading authentication details…</p>
@@ -464,7 +466,7 @@
         ["OpenAPI", spec.openapi || "-"]
       ];
       meta.innerHTML = cards.map(([label, value]) => `
-        <div class="metaCard">
+        <div class="meta-card">
           <strong>${escapeHtml(label)}</strong>
           <span>${escapeHtml(value)}</span>
         </div>
@@ -473,9 +475,9 @@
 
     function renderAuth(spec) {
       const securitySchemes = spec.components?.securitySchemes || {};
-      const authPanel = document.getElementById("authPanel");
+      const authPanel = document.getElementById("auth-panel");
       const schemeItems = Object.entries(securitySchemes).map(([name, scheme]) => `
-        <div class="metaCard">
+        <div class="meta-card">
           <strong>${escapeHtml(name)}</strong>
           <span>${escapeHtml(scheme.description || `${scheme.type} ${scheme.in || ""}`.trim())}</span>
         </div>
@@ -488,7 +490,7 @@
           and send the <code>mailtail_session</code> cookie on every API request. Mutating requests also require the
           <code>X-CSRF-Token</code> header, which mirrors the <code>mailtail_csrf</code> cookie value.
         </p>
-        <div class="metaGrid">${schemeItems}</div>
+        <div class="meta-grid">${schemeItems}</div>
       `;
     }
 
@@ -567,7 +569,7 @@
       return entries.map(([contentType, mediaType]) => {
         const example = mediaType.example ?? schemaExample(mediaType.schema);
         return `
-          <div class="statusBlock">
+          <div class="status-block">
             <header>
               <strong>${escapeHtml(contentType)}</strong>
               <span>${requestBody.required ? "required" : "optional"}</span>
@@ -587,11 +589,11 @@
       if (!responses.length) {
         return `<p class="muted">No documented responses.</p>`;
       }
-      return `<div class="statusList">${responses.map(([status, response]) => {
+      return `<div class="status-list">${responses.map(([status, response]) => {
         const resolvedResponse = dereference(response) || response;
         const contentEntries = Object.entries(resolvedResponse.content || {});
         return `
-          <section class="statusBlock">
+          <section class="status-block">
             <header>
               <strong>${escapeHtml(status)}</strong>
               <span>${escapeHtml(resolvedResponse.description || "")}</span>
@@ -617,8 +619,8 @@
       if (!operation.security?.length) {
         return `<p class="muted">No extra security requirements beyond the current session state.</p>`;
       }
-      return `<div class="securityList">${operation.security.map((requirement) => {
-        return Object.keys(requirement).map((name) => `<span class="tagChip">${escapeHtml(name)}</span>`).join("");
+      return `<div class="security-list">${operation.security.map((requirement) => {
+        return Object.keys(requirement).map((name) => `<span class="tag-chip">${escapeHtml(name)}</span>`).join("");
       }).join("")}</div>`;
     }
 
@@ -630,10 +632,10 @@
         const id = slugify(`${operation.method}-${operation.path}`);
         return `
           <article class="panel operation" id="${id}">
-            <div class="operationHeader">
+            <div class="operation-header">
               <span class="verb verb-${operation.method.toLowerCase()}">${escapeHtml(operation.method)}</span>
               <code class="path">${escapeHtml(operation.path)}</code>
-              <div class="tagList">${operation.tags.map((tag) => `<span class="tagChip">${escapeHtml(tag)}</span>`).join("")}</div>
+              <div class="tag-list">${operation.tags.map((tag) => `<span class="tag-chip">${escapeHtml(tag)}</span>`).join("")}</div>
               <p class="summary">${escapeHtml(operation.summary || operation.description || "")}</p>
             </div>
             <div class="section">
@@ -675,7 +677,7 @@
         renderOperations(docsState.spec);
       } catch (error) {
         document.getElementById("intro").innerHTML = `<span class="error">${escapeHtml(error.message || "Failed to load API documentation.")}</span>`;
-        document.getElementById("authPanel").innerHTML = `<p class="error">API documentation could not be loaded.</p>`;
+        document.getElementById("auth-panel").innerHTML = `<p class="error">API documentation could not be loaded.</p>`;
       }
     }
 
