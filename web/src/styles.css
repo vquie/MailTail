@@ -3312,3 +3312,173 @@ body {
     width: 100%;
   }
 }
+
+/* Mailbox rules are one focused workflow: controls, list, editor. */
+.rulesHostCard {
+  padding: 12px 14px 14px;
+}
+
+.rulesHostCard > .settingsCardBody {
+  gap: 12px;
+}
+
+.rulesWorkspaceFocused {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.rulesWorkspaceFocused > * {
+  grid-column: 1;
+}
+
+.rulesControlBar {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.65fr) minmax(420px, 1.35fr);
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: rgb(255 255 255 / 2.5%);
+}
+
+.rulesEnableControl {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.rulesEnableControl input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.rulesEnableControl > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rulesEnableControl strong,
+.rulesSenderControl > span {
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.rulesEnableControl small,
+.rulesSenderControl small {
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.rulesSenderControl {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr);
+  gap: 5px 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.rulesSenderControl input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: rgb(8 12 19 / 74%);
+  color: var(--text);
+  padding: 9px 11px;
+}
+
+.rulesSenderControl small {
+  grid-column: 2;
+}
+
+.rulesWorkspaceFocused > .mailFailWorkspaceLayout {
+  display: grid;
+  grid-template-columns: minmax(310px, 0.72fr) minmax(480px, 1.28fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.rulesWorkspaceFocused .rulesCatalogCard,
+.rulesWorkspaceFocused .mailFailEditorCard {
+  padding: 14px;
+}
+
+.rulesWorkspaceFocused .rulesCatalogList {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  max-height: calc(100vh - 330px);
+  overflow: auto;
+  padding: 2px 3px 2px 0;
+}
+
+.rulesWorkspaceFocused .rulesCatalogItem {
+  min-height: 0;
+  gap: 5px;
+  padding: 10px 11px;
+  border-radius: var(--radius-md);
+}
+
+.rulesWorkspaceFocused .rulesCatalogItem p {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rulesWorkspaceFocused .rulesCatalogMeta {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.rulesWorkspaceFocused .mailFailEditorCard {
+  top: 92px;
+}
+
+.rulesDisabledState,
+.mailboxDisabledState {
+  min-height: 160px;
+  place-content: center;
+  justify-items: start;
+}
+
+@media (width <= 1180px) {
+  .rulesControlBar,
+  .rulesWorkspaceFocused > .mailFailWorkspaceLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rulesWorkspaceFocused .rulesCatalogList {
+    max-height: 360px;
+  }
+
+  .rulesWorkspaceFocused .mailFailEditorCard {
+    position: static;
+  }
+}
+
+@media (width <= 640px) {
+  .rulesHostCard {
+    padding: 10px;
+  }
+
+  .rulesSenderControl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rulesSenderControl small {
+    grid-column: 1;
+  }
+
+  .rulesWorkspaceFocused .rulesCatalogList {
+    max-height: none;
+  }
+}

@@ -680,6 +680,25 @@ export function App() {
     }
   }
 
+  function handleRulesActivation(
+    scope: MailFailSettingsScope,
+    enabled: boolean,
+    onToggle: (enabled: boolean) => void
+  ) {
+    onToggle(enabled);
+    setMailFailManagerScope(scope);
+
+    if (!enabled) {
+      setSelectedMailFailRuleIndex(null);
+      setMailFailRuleDraft(createDefaultMailFailRule());
+      return;
+    }
+
+    const firstRule = currentScopedSettings(scope).mailFailRules?.[0] ?? defaultMailFailRulesTemplate[0];
+    setSelectedMailFailRuleIndex(0);
+    setMailFailRuleDraft(cloneMailFailRule(firstRule));
+  }
+
   function updateScopedSettings(scope: MailFailSettingsScope, updater: (current: AppSettings) => AppSettings) {
     if (scope === "adminMailbox") {
       setAdminMailboxDraft((current) => updater(current));
@@ -910,15 +929,9 @@ export function App() {
     enabled: boolean;
     onToggle: (enabled: boolean) => void;
     exampleRecipient: string;
-    showGuidancePanel?: boolean;
   }) {
     const scopedSettings = currentScopedSettings(options.scope);
     const rules = scopedSettings.mailFailRules ?? [];
-    const uniqueStages = Array.from(
-      new Set(rules.filter((rule) => !isReportAction(rule.action)).map((rule) => rule.stage.toUpperCase()))
-    );
-    const uniqueActions = Array.from(new Set(rules.map((rule) => rule.action)));
-    const showGuidancePanel = options.showGuidancePanel ?? true;
     const isActiveScope = mailFailManagerScope === options.scope;
     const resolvedRuleIndex = isActiveScope
       ? selectedMailFailRuleIndex !== null && rules[selectedMailFailRuleIndex]
@@ -936,24 +949,21 @@ export function App() {
         : createDefaultMailFailRule();
 
     return (
-      <div className="rulesWorkspace">
-        <section className="settingsField settingsCard">
-          <div className="settingsCardHeader">
-            <div>
-              <h3>Rule activation</h3>
-              <p className="settingsCardLead">MailFail rules are evaluated on inbound SMTP sessions for this mailbox context.</p>
-            </div>
-          </div>
-          <div className="settingsField nestedSettingsField toggleField">
-            <span>MailFail enabled</span>
-            <label className="toggleRow">
-              <input type="checkbox" checked={options.enabled} onChange={(event) => options.onToggle(event.target.checked)} />
-              <span>Enable MailFail rule evaluation</span>
-            </label>
-            <small>Rules match plus-address triggers on the local part before the `@` sign.</small>
-          </div>
+      <div className="rulesWorkspace rulesWorkspaceFocused">
+        <section className="rulesControlBar">
+          <label className="rulesEnableControl">
+            <input
+              type="checkbox"
+              checked={options.enabled}
+              onChange={(event) => handleRulesActivation(options.scope, event.target.checked, options.onToggle)}
+            />
+            <span>
+              <strong>MailFail rules</strong>
+              <small>{options.enabled ? `${rules.length} configured · evaluated on inbound SMTP` : "Disabled for this mailbox"}</small>
+            </span>
+          </label>
           {options.enabled ? (
-            <label className="settingsField nestedSettingsField">
+            <label className="rulesSenderControl">
               <span>Report sender</span>
               <input
                 type="email"
@@ -963,39 +973,18 @@ export function App() {
                 }
                 placeholder={`postmaster@${mailFailExampleDomain}`}
               />
-              <small>
-                Optional for exact accepted recipient domains; MailTail then derives <code>postmaster@domain</code>. Required for regex or catch-all domains.
-              </small>
+              <small>Leave empty to derive <code>postmaster@domain</code> from an exact recipient domain.</small>
             </label>
           ) : null}
         </section>
 
         {options.enabled ? (
-          <>
-            <div className="rulesOverviewGrid">
-              <section className="settingsField settingsCard rulesOverviewCard">
-                <span>Rules</span>
-                <strong>{rules.length}</strong>
-                <small>Configured for this mailbox.</small>
-              </section>
-              <section className="settingsField settingsCard rulesOverviewCard">
-                <span>SMTP stages</span>
-                <strong>{uniqueStages.length ? uniqueStages.join(", ") : "None"}</strong>
-                <small>Where rule checks happen.</small>
-              </section>
-              <section className="settingsField settingsCard rulesOverviewCard">
-                <span>Actions</span>
-                <strong>{uniqueActions.length ? uniqueActions.join(", ") : "None"}</strong>
-                <small>Current response types.</small>
-              </section>
-            </div>
-
-            <div className="mailFailWorkspaceLayout">
+          <div className="mailFailWorkspaceLayout">
               <section className="settingsField settingsCard rulesCatalogCard">
                 <div className="settingsCardHeader">
                   <div>
-                    <h3>Rule catalog</h3>
-                    <p className="settingsCardLead">Every rule maps a trigger like `user+mf-greylist@…` to SMTP behavior.</p>
+                    <h3>Rules</h3>
+                    <p className="settingsCardLead">Choose a rule to edit it, or add a new one.</p>
                   </div>
                   <div className="settingsCardActions">
                     {resolvedRuleIndex !== null ? (
@@ -1051,7 +1040,7 @@ export function App() {
                 <div className="settingsCardHeader">
                   <div>
                     <h3>{resolvedRuleIndex === null ? "Create rule" : "Edit rule"}</h3>
-                    <p className="settingsCardLead">Rule edits are included automatically when you save this mailbox.</p>
+                    <p className="settingsCardLead">Changes stay in this mailbox draft until you use Save changes.</p>
                   </div>
                   <div className="settingsCardActions">
                     {resolvedRuleIndex !== null ? (
@@ -1225,78 +1214,14 @@ export function App() {
                     </>
                   ) : null}
                 </div>
-
-                {showGuidancePanel ? (
-                  <div className="rulesGuidanceCallout">
-                    <strong>How this works</strong>
-                    <p>Rules match the plus-address fragment after `+`. Report actions run after acceptance and use the instance-wide outbound delivery mode.</p>
-                  </div>
-                ) : null}
               </section>
-            </div>
-          </>
+          </div>
         ) : (
-          <div className="emptyListCard">
-            <strong>Rules are off</strong>
-            <p>Enable MailFail first if this mailbox should answer with rule-based SMTP responses.</p>
+          <div className="emptyListCard rulesDisabledState">
+            <strong>No rule processing</strong>
+            <p>Enable MailFail above to configure SMTP responses and post-accept reports.</p>
           </div>
         )}
-      </div>
-    );
-  }
-
-  function renderRulesSidebar(options: {
-    scope: MailFailSettingsScope;
-    exampleRecipient: string;
-    summary: Array<{ label: string; value: string | number }>;
-  }) {
-    return (
-      <div className="settingsSidebarStack">
-        <section className="settingsField settingsCard rulesGuidanceCard">
-          <div className="settingsCardHeader">
-            <div>
-              <h3>How this works</h3>
-              <p className="settingsCardLead">Use Rules when this mailbox needs reproducible SMTP failures and retries for tests.</p>
-            </div>
-          </div>
-
-          <dl className="settingsDefinitionList">
-            <div>
-              <dt>Example recipient</dt>
-              <dd>{options.exampleRecipient}</dd>
-            </div>
-            <div>
-              <dt>Trigger match</dt>
-              <dd>Matches the plus-address fragment after `+`.</dd>
-            </div>
-            <div>
-              <dt>Typical use</dt>
-              <dd>Model rejects, greylisting or quota responses per mailbox.</dd>
-            </div>
-          </dl>
-
-          <div className="rulesGuidanceCallout">
-            <strong>Recommended flow</strong>
-            <p>Keep a tight rule catalog here, then tune SMTP codes and responses directly in the integrated editor.</p>
-          </div>
-        </section>
-
-        <section className="settingsField settingsCard">
-          <div className="settingsCardHeader">
-            <div>
-              <h3>Mailbox summary</h3>
-              <p className="settingsCardLead">Quick state of the mailbox-specific delivery rules.</p>
-            </div>
-          </div>
-          <dl className="settingsDefinitionList">
-            {options.summary.map((item) => (
-              <div key={item.label}>
-                <dt>{item.label}</dt>
-                <dd>{item.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
       </div>
     );
   }
@@ -2048,13 +1973,21 @@ export function App() {
                           : "settingsCardGrid settingsCardGridAdmin"
                       }
                     >
-                      <section className="settingsField settingsCard settingsCardPrimary">
-                        <div className="settingsCardHeader">
-                          <div>
-                            <h3>Admin mailbox</h3>
-                            <p className="settingsCardLead">Use this when the environment admin should also receive and retain mail.</p>
+                      <section
+                        className={
+                          adminMailboxSubTab === "rules"
+                            ? "settingsField settingsCard settingsCardPrimary rulesHostCard"
+                            : "settingsField settingsCard settingsCardPrimary"
+                        }
+                      >
+                        {adminMailboxSubTab === "general" ? (
+                          <div className="settingsCardHeader">
+                            <div>
+                              <h3>Admin mailbox</h3>
+                              <p className="settingsCardLead">Use this when the environment admin should also receive and retain mail.</p>
+                            </div>
                           </div>
-                        </div>
+                        ) : null}
 
                         <div className="settingsCardBody">
                           <div className="settingsSubTabs" role="tablist" aria-label="Admin mailbox sections">
@@ -2070,26 +2003,28 @@ export function App() {
                             ))}
                           </div>
 
-                          <div className="settingsField nestedSettingsField">
-                            <span>Mailbox activation</span>
-                            <label className="toggleRow">
-                              <input
-                                type="checkbox"
-                                checked={adminMailboxEnabled}
-                                onChange={(event) => {
-                                  setAdminMailboxEnabled(event.target.checked);
-                                  if (event.target.checked && adminMailboxDraft.mailFailEnabled && adminMailboxDraft.mailFailRules.length === 0) {
-                                    setAdminMailboxDraft((current) => ({
-                                      ...current,
-                                      mailFailRules: cloneMailFailRules(defaultMailFailRulesTemplate)
-                                    }));
-                                  }
-                                }}
-                              />
-                              <span>Enable admin mailbox policies</span>
-                            </label>
-                            <small>Disabled means the admin account does not capture or retain messages.</small>
-                          </div>
+                          {adminMailboxSubTab === "general" ? (
+                            <div className="settingsField nestedSettingsField">
+                              <span>Mailbox activation</span>
+                              <label className="toggleRow">
+                                <input
+                                  type="checkbox"
+                                  checked={adminMailboxEnabled}
+                                  onChange={(event) => {
+                                    setAdminMailboxEnabled(event.target.checked);
+                                    if (event.target.checked && adminMailboxDraft.mailFailEnabled && adminMailboxDraft.mailFailRules.length === 0) {
+                                      setAdminMailboxDraft((current) => ({
+                                        ...current,
+                                        mailFailRules: cloneMailFailRules(defaultMailFailRulesTemplate)
+                                      }));
+                                    }
+                                  }}
+                                />
+                                <span>Enable admin mailbox policies</span>
+                              </label>
+                              <small>Disabled means the admin account does not capture or retain messages.</small>
+                            </div>
+                          ) : null}
 
                           {adminMailboxEnabled && adminMailboxSubTab === "general" ? (
                             <div className="settingsGrid adminMailboxGrid">
@@ -2200,9 +2135,9 @@ export function App() {
                             </div>
                           ) : null}
 
-                          {adminMailboxEnabled && adminMailboxSubTab === "rules" ? (
-                            <>
-                              {renderRulesWorkspace({
+                          {adminMailboxSubTab === "rules" ? (
+                            adminMailboxEnabled ? (
+                              renderRulesWorkspace({
                                 scope: "adminMailbox",
                                 enabled: adminMailboxDraft.mailFailEnabled,
                                 onToggle: (enabled) =>
@@ -2214,23 +2149,21 @@ export function App() {
                                         ? cloneMailFailRules(defaultMailFailRulesTemplate)
                                         : current.mailFailRules
                                   })),
-                                exampleRecipient: `admin+mf-greylist@${mailFailExampleDomain}`,
-                                showGuidancePanel: false
-                              })}
-                              {renderRulesSidebar({
-                                scope: "adminMailbox",
-                                exampleRecipient: `admin+mf-greylist@${mailFailExampleDomain}`,
-                                summary: [
-                                  { label: "Status", value: adminMailboxEnabled ? "Enabled" : "Disabled" },
-                                  { label: "MailFail rules", value: adminMailboxDraft.mailFailEnabled ? adminMailboxDraft.mailFailRules.length : 0 },
-                                  { label: "Active filters", value: enabledAdminMailboxFilters },
-                                  {
-                                    label: "Auto-delete",
-                                    value: adminMailboxAutoDeleteEnabled ? `${adminMailboxDraft.autoDeleteAfterDays || defaultAutoDeleteDays} days` : "Off"
-                                  }
-                                ]
-                              })}
-                            </>
+                                exampleRecipient: `admin+mf-greylist@${mailFailExampleDomain}`
+                              })
+                            ) : (
+                              <div className="emptyListCard mailboxDisabledState">
+                                <strong>Admin mailbox is disabled</strong>
+                                <p>Enable the mailbox under General before configuring its rules.</p>
+                                <button
+                                  className="ghostButton compactButton"
+                                  type="button"
+                                  onClick={() => setAdminMailboxSubTab("general")}
+                                >
+                                  Open General
+                                </button>
+                              </div>
+                            )
                           ) : null}
                         </div>
                       </section>
