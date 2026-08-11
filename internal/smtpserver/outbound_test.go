@@ -3,7 +3,14 @@ package smtpserver
 import (
 	"bufio"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"fmt"
+	"math/big"
 	"net"
 	"strings"
 	"testing"
@@ -46,6 +53,17 @@ func TestRelaySenderDeliversNullEnvelopeBounce(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("SMTP test server did not finish")
+	}
+}
+
+func TestOutboundTLSConfigOnlySkipsVerificationWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	if strict := outboundTLSConfig("relay.test", false); strict.InsecureSkipVerify {
+		t.Fatal("strict relay TLS config must validate certificates")
+	}
+	if opportunistic := outboundTLSConfig("mx.sender.test", true); !opportunistic.InsecureSkipVerify {
+		t.Fatal("opportunistic direct TLS config must allow invalid certificates")
 	}
 }
 
@@ -101,6 +119,45 @@ func TestDirectSenderUsesMXPriorityAndFailover(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("SMTP test server did not finish")
+	}
+}
+
+func TestDirectSenderAcceptsInvalidCertificateForOpportunisticTLS(t *testing.T) {
+	t.Parallel()
+
+	clientConnection, serverConnection := net.Pipe()
+	commands := make(chan []string, 1)
+	certificate := newSMTPTestCertificate(t, "wrong-name.sender.test")
+	go serveSMTPStartTLSTestConnection(serverConnection, certificate, commands)
+
+	sender := NewDirectSender("mx.mailtail.test")
+	sender.lookupMX = func(context.Context, string) ([]*net.MX, error) {
+		return []*net.MX{{Host: "mx.sender.test.", Pref: 10}}, nil
+	}
+	sender.dialContext = func(context.Context, string, string) (net.Conn, error) {
+		return clientConnection, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := sender.Send(ctx, models.OutboundMessage{
+		EnvelopeFrom: "",
+		Recipient:    "sender@sender.test",
+		Raw:          "From: postmaster@example.test\r\nTo: sender@sender.test\r\nSubject: failure\r\n\r\nbody\r\n",
+	}); err != nil {
+		t.Fatalf("direct send with invalid opportunistic TLS certificate: %v", err)
+	}
+
+	select {
+	case received := <-commands:
+		joined := strings.Join(received, "\n")
+		for _, want := range []string{"STARTTLS", "MAIL FROM:<>", "RCPT TO:<sender@sender.test>"} {
+			if !strings.Contains(joined, want) {
+				t.Fatalf("missing %q in SMTP exchange:\n%s", want, joined)
+			}
+		}
+	case <-ctx.Done():
+		t.Fatal("SMTP STARTTLS test server did not finish")
 	}
 }
 
@@ -197,4 +254,89 @@ func serveSMTPTestConnection(connection net.Conn, commands chan<- []string) {
 			write("500 unsupported")
 		}
 	}
+}
+
+func serveSMTPStartTLSTestConnection(connection net.Conn, certificate tls.Certificate, commands chan<- []string) {
+	defer connection.Close()
+	reader := bufio.NewReader(connection)
+	writer := bufio.NewWriter(connection)
+	write := func(value string) {
+		_, _ = fmt.Fprintf(writer, "%s\r\n", value)
+		_ = writer.Flush()
+	}
+	write("220 smtp.test ready")
+
+	var received []string
+	data := false
+	encrypted := false
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return
+		}
+		line = strings.TrimRight(line, "\r\n")
+		received = append(received, line)
+		if data {
+			if line == "." {
+				data = false
+				write("250 queued")
+			}
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "EHLO ") && !encrypted:
+			write("250-smtp.test")
+			write("250 STARTTLS")
+		case line == "STARTTLS" && !encrypted:
+			write("220 begin TLS")
+			tlsConnection := tls.Server(connection, &tls.Config{
+				Certificates: []tls.Certificate{certificate},
+				MinVersion:   tls.VersionTLS12,
+			})
+			if err := tlsConnection.Handshake(); err != nil {
+				return
+			}
+			encrypted = true
+			reader = bufio.NewReader(tlsConnection)
+			writer = bufio.NewWriter(tlsConnection)
+		case strings.HasPrefix(line, "EHLO "):
+			write("250 smtp.test")
+		case strings.HasPrefix(line, "MAIL FROM:"):
+			write("250 sender ok")
+		case strings.HasPrefix(line, "RCPT TO:"):
+			write("250 recipient ok")
+		case line == "DATA":
+			data = true
+			write("354 send data")
+		case line == "QUIT":
+			write("221 bye")
+			commands <- received
+			return
+		default:
+			write("500 unsupported")
+		}
+	}
+}
+
+func newSMTPTestCertificate(t *testing.T, dnsName string) tls.Certificate {
+	t.Helper()
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate test TLS key: %v", err)
+	}
+	now := time.Now()
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: dnsName},
+		DNSNames:     []string{dnsName},
+		NotBefore:    now.Add(-time.Hour),
+		NotAfter:     now.Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		t.Fatalf("create test TLS certificate: %v", err)
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: privateKey}
 }

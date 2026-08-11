@@ -130,7 +130,7 @@ func (s *RelaySender) Send(ctx context.Context, message models.OutboundMessage) 
 	if err != nil {
 		return err
 	}
-	tlsConfig := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
+	tlsConfig := outboundTLSConfig(host, false)
 	var connection net.Conn
 	if s.config.TLSMode == "tls" {
 		dialer := &net.Dialer{Timeout: 30 * time.Second}
@@ -156,7 +156,6 @@ func deliverSMTP(ctx context.Context, connection net.Conn, host, helo, tlsMode, 
 	if err != nil {
 		return err
 	}
-	defer client.Close()
 	if err := client.Hello(helo); err != nil {
 		return err
 	}
@@ -166,7 +165,7 @@ func deliverSMTP(ctx context.Context, connection net.Conn, host, helo, tlsMode, 
 			return fmt.Errorf("outbound SMTP relay does not advertise STARTTLS")
 		}
 		if startTLS {
-			tlsConfig := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
+			tlsConfig := outboundTLSConfig(host, tlsMode == "opportunistic")
 			if err := client.StartTLS(tlsConfig); err != nil {
 				return err
 			}
@@ -196,6 +195,16 @@ func deliverSMTP(ctx context.Context, connection net.Conn, host, helo, tlsMode, 
 	}
 	_ = client.Quit()
 	return nil
+}
+
+func outboundTLSConfig(host string, allowInvalidCertificate bool) *tls.Config {
+	return &tls.Config{
+		ServerName: host,
+		MinVersion: tls.VersionTLS12,
+		// Direct-to-MX STARTTLS is opportunistic: retain transport encryption even
+		// when the destination certificate cannot be authenticated. Relay TLS stays strict.
+		InsecureSkipVerify: allowInvalidCertificate, //nolint:gosec // Intentional opportunistic SMTP semantics.
+	}
 }
 
 func RunOutboundWorker(ctx context.Context, logger *log.Logger, store storage.Store, sender OutboundSender) {

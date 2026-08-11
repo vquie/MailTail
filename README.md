@@ -326,7 +326,7 @@ Bootstrap environment variables:
 - `MAILTAIL_OUTBOUND_MODE` default: `direct`; accepted values are `direct` and `relay`, and the selected mode applies to every outbound action
 - `MAILTAIL_OUTBOUND_SMTP_HELO` default: `mailtail.local`; set this to the public hostname matching the sending IP for direct delivery
 - `MAILTAIL_OUTBOUND_SMTP_ADDR` required only in `relay` mode
-- `MAILTAIL_OUTBOUND_SMTP_TLS` default: `starttls`; accepted values are `none`, `starttls`, and `tls`
+- `MAILTAIL_OUTBOUND_SMTP_TLS` default: `starttls`; accepted values are `none`, `starttls`, and `tls`; relay TLS validates the relay certificate
 - `MAILTAIL_OUTBOUND_SMTP_USERNAME` default: empty
 - `MAILTAIL_OUTBOUND_SMTP_PASSWORD` default: empty
 - `MAILTAIL_WEB_DIR` default: `web/dist`

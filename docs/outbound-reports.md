@@ -39,7 +39,7 @@ MAILTAIL_OUTBOUND_MODE=direct
 MAILTAIL_OUTBOUND_SMTP_HELO=mailtail.example.test
 ```
 
-Direct mode resolves the recipient domain's MX records, tries them in priority order, and falls back to the domain's A/AAAA records when no MX record exists. A null MX is treated as an explicit refusal of email. Delivery uses SMTP on port 25 and upgrades with STARTTLS when the destination advertises it.
+Direct mode resolves the recipient domain's MX records, tries them in priority order, and falls back to the domain's A/AAAA records when no MX record exists. A null MX is treated as an explicit refusal of email. Delivery uses SMTP on port 25 and upgrades with STARTTLS when the destination advertises it. STARTTLS is opportunistic in direct mode: MailTail keeps the transport encrypted but does not reject an MX because its certificate is expired, self-signed, or valid for a different hostname.
 
 For reliable internet delivery, the configured HELO hostname should resolve to the sending IP and match its PTR. The report sender domain should authorize that IP through SPF and should use DKIM/DMARC where required. The host or network must permit outbound TCP port 25.
 
@@ -61,6 +61,8 @@ MAILTAIL_OUTBOUND_SMTP_HELO=mailtail.example.test
 - `starttls`: require the relay to advertise STARTTLS before authentication or delivery.
 - `tls`: connect using implicit TLS.
 - `none`: use plain SMTP. This is intended only for trusted local test relays.
+
+Relay TLS validates the configured relay's certificate. This remains strict because relay mode can transmit SMTP credentials.
 
 `MAILTAIL_OUTBOUND_SMTP_ADDR` is required in relay mode. MailTail exits during startup instead of silently queuing undeliverable reports when the relay address is missing.
 
