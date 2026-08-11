@@ -47,7 +47,7 @@ export type MailFailRule = {
   name: string;
   trigger: string;
   stage: "mailfrom" | "rcpt" | "data";
-  action: "reject" | "greylist";
+  action: "reject" | "greylist" | "arf" | "xarf-v3" | "xarf-v4" | "original-report" | "async-bounce";
   allowAfter: number;
   minRetryAfter: string;
   resetAfter: string;
@@ -68,6 +68,7 @@ export type AppSettings = {
   smtpLogVerbose: boolean;
   mailFailEnabled: boolean;
   mailFailRules: MailFailRule[];
+  reportFrom: string;
   allowedRemoteIps: string;
   acceptedRcptDomains: string;
   acceptedFromDomains: string;

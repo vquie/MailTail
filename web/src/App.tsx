@@ -84,6 +84,7 @@ const emptySettings: AppSettings = {
   smtpLogVerbose: false,
   mailFailEnabled: false,
   mailFailRules: [],
+  reportFrom: "",
   allowedRemoteIps: "",
   acceptedRcptDomains: "",
   acceptedFromDomains: "",
@@ -847,6 +848,22 @@ export function App() {
             </label>
             <small>Rules match plus-address triggers on the local part before the `@` sign.</small>
           </div>
+          {options.enabled ? (
+            <label className="settingsField nestedSettingsField">
+              <span>Report sender</span>
+              <input
+                type="email"
+                value={scopedSettings.reportFrom}
+                onChange={(event) =>
+                  updateScopedSettings(options.scope, (current) => ({ ...current, reportFrom: event.target.value }))
+                }
+                placeholder={`postmaster@${mailFailExampleDomain}`}
+              />
+              <small>
+                Optional for exact accepted recipient domains; MailTail then derives <code>postmaster@domain</code>. Required for regex or catch-all domains.
+              </small>
+            </label>
+          ) : null}
         </section>
 
         {options.enabled ? (
@@ -901,7 +918,7 @@ export function App() {
                       >
                         <div className="rulesCatalogItemTop">
                           <strong>{rule.name || rule.trigger}</strong>
-                          <span className="ruleChip">{rule.code}</span>
+                          <span className="ruleChip">{isReportAction(rule.action) ? "report" : rule.code}</span>
                         </div>
                         <div className="rulesCatalogMeta">
                           <span>{rule.trigger}</span>
@@ -959,6 +976,7 @@ export function App() {
                     <span>Stage</span>
                     <select
                       value={editorDraft.stage}
+                      disabled={isReportAction(editorDraft.action)}
                       onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, stage: event.target.value as MailFailRule["stage"] }))}
                     >
                       <option value="mailfrom">MAIL FROM</option>
@@ -971,35 +989,53 @@ export function App() {
                     <span>Action</span>
                     <select
                       value={editorDraft.action}
-                      onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, action: event.target.value as MailFailRule["action"] }))}
+                      onChange={(event) => {
+                        const action = event.target.value as MailFailRule["action"];
+                        setMailFailRuleDraft((current) => ({
+                          ...current,
+                          action,
+                          stage: isReportAction(action) ? "data" : current.stage,
+                          code: action === "async-bounce" ? 550 : current.code,
+                          enhancedCode: action === "async-bounce" ? current.enhancedCode || "5.0.0" : current.enhancedCode
+                        }));
+                      }}
                     >
                       <option value="reject">Reject</option>
                       <option value="greylist">Greylist</option>
+                      <option value="arf">ARF report</option>
+                      <option value="xarf-v3">XARF v3 report</option>
+                      <option value="xarf-v4">XARF v4 report</option>
+                      <option value="original-report">Original message report</option>
+                      <option value="async-bounce">Asynchronous bounce</option>
                     </select>
                   </label>
 
-                  <label className="settingsField">
-                    <span>SMTP code</span>
-                    <input
-                      type="number"
-                      min={400}
-                      max={599}
-                      value={editorDraft.code}
-                      onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, code: Number.parseInt(event.target.value || "550", 10) }))}
-                    />
-                  </label>
+                  {!isReportAction(editorDraft.action) || editorDraft.action === "async-bounce" ? (
+                    <>
+                      <label className="settingsField">
+                        <span>{editorDraft.action === "async-bounce" ? "Diagnostic SMTP code" : "SMTP code"}</span>
+                        <input
+                          type="number"
+                          min={editorDraft.action === "async-bounce" ? 500 : 400}
+                          max={599}
+                          value={editorDraft.code}
+                          onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, code: Number.parseInt(event.target.value || "550", 10) }))}
+                        />
+                      </label>
 
-                  <label className="settingsField">
-                    <span>Enhanced status code</span>
-                    <input
-                      value={editorDraft.enhancedCode}
-                      onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, enhancedCode: event.target.value }))}
-                      placeholder="4.7.1 or 5.1.1"
-                    />
-                  </label>
+                      <label className="settingsField">
+                        <span>Enhanced status code</span>
+                        <input
+                          value={editorDraft.enhancedCode}
+                          onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, enhancedCode: event.target.value }))}
+                          placeholder="4.7.1 or 5.1.1"
+                        />
+                      </label>
+                    </>
+                  ) : null}
 
                   <label className="settingsField mailFailMessageField">
-                    <span>Message</span>
+                    <span>{isReportAction(editorDraft.action) ? "Human-readable report text" : "Message"}</span>
                     <input
                       value={editorDraft.message}
                       onChange={(event) => setMailFailRuleDraft((current) => ({ ...current, message: event.target.value }))}
@@ -1052,7 +1088,7 @@ export function App() {
                 {showGuidancePanel ? (
                   <div className="rulesGuidanceCallout">
                     <strong>How this works</strong>
-                    <p>Rules match the plus-address fragment after `+`. Use them for deterministic rejects, greylisting and mailbox-full scenarios during SMTP debugging.</p>
+                    <p>Rules match the plus-address fragment after `+`. Report actions run after the message is accepted and are delivered asynchronously through the configured outbound SMTP relay.</p>
                   </div>
                 ) : null}
               </section>
@@ -2721,6 +2757,7 @@ function hashString(value: string): number {
 function normalizeSettingsDraft(settings: AppSettings): AppSettings {
   return {
     ...settings,
+    reportFrom: settings.reportFrom ?? "",
     mailFailRules: cloneMailFailRules(settings.mailFailRules ?? []),
     autoDeleteAfterDays: settings.autoDeleteAfterDays > 0 ? settings.autoDeleteAfterDays : 0
   };
@@ -2819,19 +2856,24 @@ function createDefaultMailFailRule(): MailFailRule {
 }
 
 function normalizeMailFailRuleDraft(rule: MailFailRule): MailFailRule {
+  const reportAction = isReportAction(rule.action);
   return {
     ...rule,
     name: rule.name.trim(),
     trigger: rule.trigger.trim(),
-    stage: rule.stage,
+    stage: reportAction ? "data" : rule.stage,
     action: rule.action,
     allowAfter: rule.action === "greylist" ? Math.max(1, rule.allowAfter || 1) : 1,
     minRetryAfter: rule.action === "greylist" ? rule.minRetryAfter.trim() : "",
     resetAfter: rule.action === "greylist" ? rule.resetAfter.trim() : "",
-    code: Math.max(400, Math.min(599, rule.code || 550)),
-    enhancedCode: rule.enhancedCode.trim(),
+    code: reportAction && rule.action !== "async-bounce" ? 0 : Math.max(rule.action === "async-bounce" ? 500 : 400, Math.min(599, rule.code || 550)),
+    enhancedCode: rule.action === "async-bounce" ? rule.enhancedCode.trim() || "5.0.0" : rule.enhancedCode.trim(),
     message: rule.message.trim()
   };
+}
+
+function isReportAction(action: MailFailRule["action"]): boolean {
+  return ["arf", "xarf-v3", "xarf-v4", "original-report", "async-bounce"].includes(action);
 }
 
 function buildEMLFileName(message: Message): string {

@@ -90,6 +90,7 @@ func NormalizeUserSettings(settings models.AppSettings) models.AppSettings {
 func normalizeSettings(settings models.AppSettings) models.AppSettings {
 	settings.AllowedOrigins = normalizeCSV(settings.AllowedOrigins)
 	settings.MailFailRules = normalizeMailFailRules(settings.MailFailRules)
+	settings.ReportFrom = strings.TrimSpace(settings.ReportFrom)
 	settings.AllowedRemoteIPs = normalizeCSV(settings.AllowedRemoteIPs)
 	settings.AcceptedRcptDomains = normalizeCSV(settings.AcceptedRcptDomains)
 	settings.AcceptedFromDomains = normalizeCSV(settings.AcceptedFromDomains)

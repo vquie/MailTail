@@ -3,6 +3,7 @@ package smtpserver
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -27,6 +28,17 @@ type mailFailRule struct {
 	enhancedCode  string
 	message       string
 }
+
+type ReportRequest struct {
+	Action       string
+	Recipient    string
+	From         string
+	Code         int
+	EnhancedCode string
+	Message      string
+}
+
+var enhancedBounceCodePattern = regexp.MustCompile(`^5\.[0-9]{1,3}\.[0-9]{1,3}$`)
 
 func NewMailFailEngine(rules []models.MailFailRule, store storage.Store) (*MailFailEngine, error) {
 	engine := &MailFailEngine{
@@ -76,6 +88,37 @@ func (e *MailFailEngine) MatchData(mailFrom string, recipients []string) *Respon
 	return nil
 }
 
+func (e *MailFailEngine) MatchReports(recipients []string) []ReportRequest {
+	if e == nil {
+		return nil
+	}
+
+	requests := make([]ReportRequest, 0)
+	for _, recipient := range recipients {
+		localPart, ok := extractLocalPart(recipient)
+		if !ok {
+			continue
+		}
+		segments := plusAddressSegments(localPart)
+		for _, rule := range e.rules {
+			if rule.stage != "data" || !isReportAction(rule.action) {
+				continue
+			}
+			if containsExactSegment(segments, rule.trigger) {
+				requests = append(requests, ReportRequest{
+					Action:       rule.action,
+					Recipient:    recipient,
+					Code:         rule.code,
+					EnhancedCode: rule.enhancedCode,
+					Message:      rule.message,
+				})
+				break
+			}
+		}
+	}
+	return requests
+}
+
 func (e *MailFailEngine) match(stage, mailFrom, address string) *ResponseError {
 	if e == nil {
 		return nil
@@ -92,6 +135,9 @@ func (e *MailFailEngine) match(stage, mailFrom, address string) *ResponseError {
 			continue
 		}
 		if containsExactSegment(segments, rule.trigger) {
+			if isReportAction(rule.action) {
+				continue
+			}
 			if rule.action == "greylist" {
 				return e.greylistResponse(rule, mailFrom, address)
 			}
@@ -202,11 +248,11 @@ func compileMailFailRule(rule models.MailFailRule) (mailFailRule, error) {
 		compiled.action = "reject"
 	}
 	switch compiled.action {
-	case "reject", "greylist":
+	case "reject", "greylist", "arf", "xarf-v3", "xarf-v4", "original-report", "async-bounce":
 	default:
 		return mailFailRule{}, fmt.Errorf("mailfail rule %q has unsupported action %q", compiled.name, rule.Action)
 	}
-	if compiled.code < 400 || compiled.code > 599 {
+	if (compiled.action == "reject" || compiled.action == "greylist") && (compiled.code < 400 || compiled.code > 599) {
 		return mailFailRule{}, fmt.Errorf("mailfail rule %q has invalid code %d", compiled.name, rule.Code)
 	}
 	if compiled.message == "" {
@@ -236,8 +282,36 @@ func compileMailFailRule(rule models.MailFailRule) (mailFailRule, error) {
 		}
 		compiled.resetAfter = resetAfter
 	}
+	if isReportAction(compiled.action) {
+		if compiled.stage != "data" {
+			return mailFailRule{}, fmt.Errorf("mailfail rule %q uses report action %q but stage %q is unsupported", compiled.name, compiled.action, rule.Stage)
+		}
+		if compiled.action == "async-bounce" {
+			if compiled.code == 0 {
+				compiled.code = 550
+			}
+			if compiled.code < 500 || compiled.code > 599 {
+				return mailFailRule{}, fmt.Errorf("mailfail rule %q uses async-bounce but code %d is not permanent", compiled.name, compiled.code)
+			}
+			if compiled.enhancedCode == "" {
+				compiled.enhancedCode = "5.0.0"
+			}
+			if !enhancedBounceCodePattern.MatchString(compiled.enhancedCode) {
+				return mailFailRule{}, fmt.Errorf("mailfail rule %q uses async-bounce but enhanced code %q is invalid", compiled.name, compiled.enhancedCode)
+			}
+		}
+	}
 
 	return compiled, nil
+}
+
+func isReportAction(action string) bool {
+	switch action {
+	case "arf", "xarf-v3", "xarf-v4", "original-report", "async-bounce":
+		return true
+	default:
+		return false
+	}
 }
 
 func (r mailFailRule) replyText() string {

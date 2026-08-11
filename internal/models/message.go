@@ -99,6 +99,7 @@ type AppSettings struct {
 	SMTPLogVerbose      bool           `json:"smtpLogVerbose"`
 	MailFailEnabled     bool           `json:"mailFailEnabled"`
 	MailFailRules       []MailFailRule `json:"mailFailRules,omitempty"`
+	ReportFrom          string         `json:"reportFrom"`
 	AllowedRemoteIPs    string         `json:"allowedRemoteIps"`
 	AcceptedRcptDomains string         `json:"acceptedRcptDomains"`
 	AcceptedFromDomains string         `json:"acceptedFromDomains"`
@@ -116,6 +117,15 @@ type MailFailRule struct {
 	Code          int    `json:"code"`
 	EnhancedCode  string `json:"enhancedCode,omitempty"`
 	Message       string `json:"message"`
+}
+
+type OutboundMessage struct {
+	ID           int64
+	EnvelopeFrom string
+	Recipient    string
+	Raw          string
+	Attempts     int
+	NextAttempt  time.Time
 }
 
 type User struct {

@@ -55,6 +55,10 @@ type Store interface {
 	SaveGreylistState(ctx context.Context, state models.GreylistState) error
 	DeleteGreylistState(ctx context.Context, key string) error
 	DeleteExpiredGreylistStates(ctx context.Context, before time.Time) error
+	EnqueueOutboundMessage(ctx context.Context, message models.OutboundMessage) error
+	ListDueOutboundMessages(ctx context.Context, before time.Time, limit int) ([]models.OutboundMessage, error)
+	DeleteOutboundMessage(ctx context.Context, id int64) error
+	RescheduleOutboundMessage(ctx context.Context, id int64, attempts int, nextAttempt time.Time, lastError string) error
 	GetMessage(ctx context.Context, id int64, principal models.SessionPrincipal) (models.Message, error)
 	GetRawMessage(ctx context.Context, id int64, principal models.SessionPrincipal) (string, error)
 	GetAttachment(ctx context.Context, messageID, attachmentID int64, principal models.SessionPrincipal) (models.Attachment, []byte, error)
@@ -163,6 +167,17 @@ func (s *SQLiteStore) applySchemaUpgrades() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_message_tags_tag_message_id ON message_tags(tag, message_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_message_tags_message_id ON message_tags(message_id)`,
+		`CREATE TABLE IF NOT EXISTS outbound_messages (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			envelope_from TEXT NOT NULL,
+			recipient TEXT NOT NULL,
+			raw TEXT NOT NULL,
+			attempts INTEGER NOT NULL DEFAULT 0,
+			next_attempt TEXT NOT NULL,
+			last_error TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_outbound_messages_next_attempt ON outbound_messages(next_attempt, id)`,
 	}
 	for _, statement := range indexStatements {
 		if _, err := s.db.Exec(statement); err != nil {
@@ -170,6 +185,64 @@ func (s *SQLiteStore) applySchemaUpgrades() error {
 		}
 	}
 	return nil
+}
+
+func (s *SQLiteStore) EnqueueOutboundMessage(ctx context.Context, message models.OutboundMessage) error {
+	nextAttempt := message.NextAttempt
+	if nextAttempt.IsZero() {
+		nextAttempt = time.Now().UTC()
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO outbound_messages (envelope_from, recipient, raw, attempts, next_attempt, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, message.EnvelopeFrom, message.Recipient, message.Raw, message.Attempts, nextAttempt.UTC().Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *SQLiteStore) ListDueOutboundMessages(ctx context.Context, before time.Time, limit int) ([]models.OutboundMessage, error) {
+	if limit <= 0 {
+		limit = 25
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, envelope_from, recipient, raw, attempts, next_attempt
+		FROM outbound_messages
+		WHERE next_attempt <= ?
+		ORDER BY next_attempt, id
+		LIMIT ?
+	`, before.UTC().Format(time.RFC3339Nano), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	messages := make([]models.OutboundMessage, 0)
+	for rows.Next() {
+		var message models.OutboundMessage
+		var nextAttempt string
+		if err := rows.Scan(&message.ID, &message.EnvelopeFrom, &message.Recipient, &message.Raw, &message.Attempts, &nextAttempt); err != nil {
+			return nil, err
+		}
+		message.NextAttempt, err = time.Parse(time.RFC3339Nano, nextAttempt)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+	return messages, rows.Err()
+}
+
+func (s *SQLiteStore) DeleteOutboundMessage(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM outbound_messages WHERE id = ?`, id)
+	return err
+}
+
+func (s *SQLiteStore) RescheduleOutboundMessage(ctx context.Context, id int64, attempts int, nextAttempt time.Time, lastError string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE outbound_messages
+		SET attempts = ?, next_attempt = ?, last_error = ?
+		WHERE id = ?
+	`, attempts, nextAttempt.UTC().Format(time.RFC3339Nano), lastError, id)
+	return err
 }
 
 func (s *SQLiteStore) ensureColumn(table, column, alter string) error {

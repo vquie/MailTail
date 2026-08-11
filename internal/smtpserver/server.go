@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/mail"
 	"net/textproto"
 	"strings"
 	"time"
@@ -160,6 +161,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 				_ = s.sendStatus(conn, 451, "Failed to store message")
 				continue
 			}
+			s.queueReports(ctx, session, raw)
 			s.logSMTPAction(session, "message-accepted", "", "", nil)
 			if err := s.sendStatus(conn, 250, "Message accepted"); err != nil {
 				return
@@ -186,6 +188,39 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 			}
 		}
 	}
+}
+
+func (s *Server) queueReports(ctx context.Context, session SessionMetadata, raw []byte) {
+	policy, ok := s.policy.(MessageReportPolicy)
+	if !ok || hasAutoSubmittedHeader(raw) {
+		return
+	}
+	requests, err := policy.ReportsFor(&session)
+	if err != nil {
+		s.logger.Printf("report policy failed: %v", err)
+		return
+	}
+	for _, request := range requests {
+		message, err := BuildReportMessage(request, session, raw, time.Now().UTC())
+		if err != nil {
+			s.logger.Printf("report generation failed action=%q: %v", request.Action, err)
+			continue
+		}
+		if err := s.store.EnqueueOutboundMessage(ctx, message); err != nil {
+			s.logger.Printf("report enqueue failed action=%q: %v", request.Action, err)
+			continue
+		}
+		s.logger.Printf("report queued action=%q recipient=%q", request.Action, sanitizeLogValue(message.Recipient))
+	}
+}
+
+func hasAutoSubmittedHeader(raw []byte) bool {
+	message, err := mail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		return false
+	}
+	value := strings.TrimSpace(message.Header.Get("Auto-Submitted"))
+	return value != "" && !strings.EqualFold(value, "no")
 }
 
 func (s *Server) persistMessage(ctx context.Context, session SessionMetadata, raw []byte) error {

@@ -10,6 +10,7 @@ MailTail is a modern open-source SMTP test inbox focused on mail infrastructure 
 - MIME parsing for text, HTML, and attachments
 - Search over subject, sender, and recipient
 - Full raw message storage
+- Rule-driven ARF, XARF v3/v4, original-message reports, and asynchronous DSN bounces
 - Extensible SMTP response policy interface for future MailFail behavior
 
 ## Project Structure
@@ -281,6 +282,23 @@ Supported actions:
   `allowAfter: 1` means "reject once, accept on the second attempt".
   `minRetryAfter` defines how long the sender must wait before the retry is accepted.
   `resetAfter` defines when the greylist state expires and becomes temporary again. The default is `1h`.
+- `arf`
+  Accepts the message, then queues an RFC 5965 feedback report with the original message attached.
+- `xarf-v3`
+  Accepts the message, then queues a legacy XARF v3 spam report as JSON in the XARF SMTP envelope.
+- `xarf-v4`
+  Accepts the message, then queues a XARF v4 `messaging/spam` report with hashed, base64-encoded evidence.
+- `original-report`
+  Accepts the message, then queues a human-readable report with the original RFC822 message attached.
+- `async-bounce`
+  Accepts the message first, then queues an RFC 3464 delivery-status notification. Its SMTP envelope sender is empty to prevent bounce loops.
+
+Report actions are supported only at the `data` stage. They are delivered to the original SMTP envelope sender and are suppressed for null reverse-path messages and messages carrying an `Auto-Submitted` header.
+Queued reports are persisted in SQLite and retried with exponential backoff when the outbound relay is unavailable.
+
+Each mailbox can set `Report sender` in the Rules UI. If it is empty, MailTail derives `postmaster@<recipient-domain>` only when that domain is configured as an exact accepted recipient domain. Regex and catch-all recipient policies require an explicit report sender. MailTail never copies the original recipient address into the report sender.
+
+See [Outbound reports](docs/outbound-reports.md) for relay configuration, MIME formats, and sender behavior.
 
 Examples:
 
@@ -305,6 +323,11 @@ Bootstrap environment variables:
 - `MAILTAIL_DATA_DIR` default: `data`
 - `MAILTAIL_HTTP_ADDR` default: `:8080`
 - `MAILTAIL_SMTP_ADDR` default: `:8025`
+- `MAILTAIL_OUTBOUND_SMTP_ADDR` default: empty, keeps report delivery disabled while preserving queued reports
+- `MAILTAIL_OUTBOUND_SMTP_TLS` default: `starttls`; accepted values are `none`, `starttls`, and `tls`
+- `MAILTAIL_OUTBOUND_SMTP_USERNAME` default: empty
+- `MAILTAIL_OUTBOUND_SMTP_PASSWORD` default: empty
+- `MAILTAIL_OUTBOUND_SMTP_HELO` default: `mailtail.local`
 - `MAILTAIL_WEB_DIR` default: `web/dist`
 - `MAILTAIL_ADMIN_USERNAME` default: empty, disables login protection for web UI and API and logs a startup warning
 - `MAILTAIL_ADMIN_PASSWORD` default: empty, disables login protection for web UI and API and logs a startup warning
@@ -352,19 +375,20 @@ MailFail is already available as an initial MVP through the SMTP response policy
 
 ```go
 type SMTPResponsePolicy interface {
-    OnConnect(session SessionMetadata) *ResponseError
-    OnMailFrom(session SessionMetadata, from string) *ResponseError
-    OnRcptTo(session SessionMetadata, recipient string) *ResponseError
-    OnData(session SessionMetadata) *ResponseError
+    OnConnect(session *SessionMetadata) *ResponseError
+    OnMailFrom(session *SessionMetadata, from string) *ResponseError
+    OnRcptTo(session *SessionMetadata, recipient string) *ResponseError
+    OnData(session *SessionMetadata) *ResponseError
 }
 ```
 
 The current MailFail implementation supports:
 
 - localpart-based triggers via plus-addressing
-- configurable SMTP replies from YAML
+- UI-managed mailbox rules
 - `reject`
 - `greylist`
+- durable outbound ARF, XARF v3/v4, original-message, and asynchronous-bounce actions
 
 Planned next steps include:
 

@@ -43,9 +43,7 @@
         "tags": ["App"],
         "summary": "Get application metadata",
         "description": "Returns static metadata about the running MailTail build.",
-        "security": [
-          { "sessionCookie": [] }
-        ],
+        "security": [{ "sessionCookie": [] }],
         "responses": {
           "200": {
             "description": "Application information.",
@@ -65,9 +63,7 @@
         "tags": ["App"],
         "summary": "Get the active session principal",
         "description": "Returns the session principal resolved from the current authenticated request.",
-        "security": [
-          { "sessionCookie": [] }
-        ],
+        "security": [{ "sessionCookie": [] }],
         "responses": {
           "200": {
             "description": "Current session principal.",
@@ -86,9 +82,7 @@
         "tags": ["Settings"],
         "summary": "Get settings for the current mailbox context",
         "description": "Admins receive instance runtime settings. Non-admin users receive their mailbox delivery settings.",
-        "security": [
-          { "sessionCookie": [] }
-        ],
+        "security": [{ "sessionCookie": [] }],
         "responses": {
           "200": {
             "description": "Mailbox settings.",
@@ -105,9 +99,7 @@
         "tags": ["Settings"],
         "summary": "Update settings for the current mailbox context",
         "description": "Normalizes comma- and newline-separated list fields before storing them.",
-        "security": [
-          { "sessionCookie": [], "csrfToken": [] }
-        ],
+        "security": [{ "sessionCookie": [], "csrfToken": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -133,7 +125,9 @@
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ErrorResponse" },
-                "example": { "error": "recipient ownership conflicts with an existing mailbox policy" }
+                "example": {
+                  "error": "recipient ownership conflicts with an existing mailbox policy"
+                }
               }
             }
           }
@@ -145,9 +139,7 @@
         "tags": ["Admin"],
         "summary": "Get admin mailbox settings",
         "description": "Returns the admin-owned mailbox delivery policy. Admin access is required.",
-        "security": [
-          { "sessionCookie": [] }
-        ],
+        "security": [{ "sessionCookie": [] }],
         "responses": {
           "200": {
             "description": "Admin mailbox settings.",
@@ -165,9 +157,7 @@
         "tags": ["Admin"],
         "summary": "Update admin mailbox settings",
         "description": "Stores the admin mailbox policy used for unmatched deliveries.",
-        "security": [
-          { "sessionCookie": [], "csrfToken": [] }
-        ],
+        "security": [{ "sessionCookie": [], "csrfToken": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -204,9 +194,7 @@
         "tags": ["Admin"],
         "summary": "List managed users",
         "description": "Returns all managed mailbox users. Admin access is required.",
-        "security": [
-          { "sessionCookie": [] }
-        ],
+        "security": [{ "sessionCookie": [] }],
         "responses": {
           "200": {
             "description": "Managed users.",
@@ -224,9 +212,7 @@
         "tags": ["Admin"],
         "summary": "Create a managed user",
         "description": "Creates a login-capable managed mailbox user and stores its delivery settings.",
-        "security": [
-          { "sessionCookie": [], "csrfToken": [] }
-        ],
+        "security": [{ "sessionCookie": [], "csrfToken": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -259,16 +245,12 @@
       }
     },
     "/api/admin/users/{id}": {
-      "parameters": [
-        { "$ref": "#/components/parameters/UserID" }
-      ],
+      "parameters": [{ "$ref": "#/components/parameters/UserID" }],
       "put": {
         "tags": ["Admin"],
         "summary": "Update a managed user",
         "description": "Updates the user's login name, optional password and delivery settings.",
-        "security": [
-          { "sessionCookie": [], "csrfToken": [] }
-        ],
+        "security": [{ "sessionCookie": [], "csrfToken": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -304,9 +286,7 @@
         "tags": ["Admin"],
         "summary": "Delete a managed user",
         "description": "Deletes a managed user and its active sessions.",
-        "security": [
-          { "sessionCookie": [], "csrfToken": [] }
-        ],
+        "security": [{ "sessionCookie": [], "csrfToken": [] }],
         "responses": {
           "204": {
             "description": "User deleted."
@@ -322,9 +302,7 @@
         "tags": ["Messages"],
         "summary": "List messages",
         "description": "Returns a cursor-based page of captured messages, filtered by search query and optional plus-address tag.",
-        "security": [
-          { "sessionCookie": [] }
-        ],
+        "security": [{ "sessionCookie": [] }],
         "parameters": [
           { "$ref": "#/components/parameters/Query" },
           { "$ref": "#/components/parameters/Tag" },
@@ -348,9 +326,7 @@
         "tags": ["Messages"],
         "summary": "Delete messages from the current mailbox scope",
         "description": "Deletes all messages visible to the current principal, optionally filtered by search query and tag.",
-        "security": [
-          { "sessionCookie": [], "csrfToken": [] }
-        ],
+        "security": [{ "sessionCookie": [], "csrfToken": [] }],
         "parameters": [
           { "$ref": "#/components/parameters/Query" },
           { "$ref": "#/components/parameters/Tag" }
@@ -365,16 +341,12 @@
       }
     },
     "/api/messages/{id}": {
-      "parameters": [
-        { "$ref": "#/components/parameters/MessageID" }
-      ],
+      "parameters": [{ "$ref": "#/components/parameters/MessageID" }],
       "get": {
         "tags": ["Messages"],
         "summary": "Get a single message",
         "description": "Returns a parsed captured message with headers, text and HTML bodies, and attachments metadata.",
-        "security": [
-          { "sessionCookie": [] }
-        ],
+        "security": [{ "sessionCookie": [] }],
         "responses": {
           "200": {
             "description": "Requested message.",
@@ -393,9 +365,7 @@
         "tags": ["Messages"],
         "summary": "Delete a single message",
         "description": "Deletes a message visible to the current principal.",
-        "security": [
-          { "sessionCookie": [], "csrfToken": [] }
-        ],
+        "security": [{ "sessionCookie": [], "csrfToken": [] }],
         "responses": {
           "204": {
             "description": "Message deleted."
@@ -408,16 +378,12 @@
       }
     },
     "/api/messages/{id}/raw": {
-      "parameters": [
-        { "$ref": "#/components/parameters/MessageID" }
-      ],
+      "parameters": [{ "$ref": "#/components/parameters/MessageID" }],
       "get": {
         "tags": ["Messages"],
         "summary": "Download the raw RFC822 message",
         "description": "Returns the stored raw message source with a `message/rfc822` content type.",
-        "security": [
-          { "sessionCookie": [] }
-        ],
+        "security": [{ "sessionCookie": [] }],
         "responses": {
           "200": {
             "description": "Raw RFC822 message.",
@@ -445,9 +411,7 @@
         "tags": ["Messages"],
         "summary": "Download a message attachment",
         "description": "Streams the stored attachment bytes using the original content type and a download filename.",
-        "security": [
-          { "sessionCookie": [] }
-        ],
+        "security": [{ "sessionCookie": [] }],
         "responses": {
           "200": {
             "description": "Attachment content.",
@@ -479,9 +443,7 @@
         "tags": ["Stats"],
         "summary": "Get inbox statistics",
         "description": "Returns aggregate counts and total stored size for the current mailbox scope.",
-        "security": [
-          { "sessionCookie": [] }
-        ],
+        "security": [{ "sessionCookie": [] }],
         "responses": {
           "200": {
             "description": "Aggregate inbox statistics.",
@@ -531,9 +493,7 @@
         "tags": ["Auth"],
         "summary": "Destroy the current session",
         "description": "Deletes the active server-side session, clears session cookies, and redirects to `/login`.",
-        "security": [
-          { "sessionCookie": [], "csrfToken": [] }
-        ],
+        "security": [{ "sessionCookie": [], "csrfToken": [] }],
         "responses": {
           "303": {
             "description": "Logout succeeded and the browser is redirected to the login page."
@@ -758,6 +718,7 @@
           "smtpLogVerbose",
           "mailFailEnabled",
           "mailFailRules",
+          "reportFrom",
           "allowedRemoteIps",
           "acceptedRcptDomains",
           "acceptedFromDomains",
@@ -779,6 +740,13 @@
           "mailFailRules": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/MailFailRule" }
+          },
+          "reportFrom": {
+            "oneOf": [
+              { "type": "string", "maxLength": 0 },
+              { "type": "string", "format": "email" }
+            ],
+            "example": "postmaster@example.test"
           },
           "allowedRemoteIps": {
             "type": "string",
@@ -818,8 +786,17 @@
           },
           "action": {
             "type": "string",
-            "enum": ["reject", "greylist"],
-            "example": "greylist"
+            "enum": [
+              "reject",
+              "greylist",
+              "arf",
+              "xarf-v3",
+              "xarf-v4",
+              "original-report",
+              "async-bounce"
+            ],
+            "example": "greylist",
+            "description": "Outbound report actions are valid only at the data stage."
           },
           "allowAfter": {
             "type": "integer",
@@ -836,9 +813,10 @@
           },
           "code": {
             "type": "integer",
-            "minimum": 400,
+            "minimum": 0,
             "maximum": 599,
-            "example": 451
+            "example": 451,
+            "description": "SMTP response or DSN diagnostic code. Non-DSN report actions use 0."
           },
           "enhancedCode": {
             "type": "string",
@@ -1044,7 +1022,15 @@
       },
       "Attachment": {
         "type": "object",
-        "required": ["id", "messageId", "fileName", "contentType", "contentId", "size", "inline"],
+        "required": [
+          "id",
+          "messageId",
+          "fileName",
+          "contentType",
+          "contentId",
+          "size",
+          "inline"
+        ],
         "properties": {
           "id": {
             "type": "integer",

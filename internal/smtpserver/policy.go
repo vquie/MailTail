@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/mail"
 	"regexp"
 	"strings"
 	"sync"
@@ -18,6 +19,10 @@ type SMTPResponsePolicy interface {
 	OnMailFrom(session *SessionMetadata, from string) *ResponseError
 	OnRcptTo(session *SessionMetadata, recipient string) *ResponseError
 	OnData(session *SessionMetadata) *ResponseError
+}
+
+type MessageReportPolicy interface {
+	ReportsFor(session *SessionMetadata) ([]ReportRequest, error)
 }
 
 type SessionMetadata struct {
@@ -50,6 +55,7 @@ type DomainPolicyConfig struct {
 	AllowedRemoteCIDRs  []string
 	MailFailEnabled     bool
 	MailFailRules       []models.MailFailRule
+	ReportFrom          string
 }
 
 var ErrRecipientOwnershipConflict = errors.New("recipient ownership conflicts with an existing mailbox policy")
@@ -60,6 +66,7 @@ type domainPolicyState struct {
 	acceptedFromDomains *addressMatcher
 	allowedRemoteNets   []*net.IPNet
 	mailFail            *MailFailEngine
+	reportFrom          string
 }
 
 func DomainPolicyConfigFromSettings(settings models.AppSettings) DomainPolicyConfig {
@@ -69,6 +76,7 @@ func DomainPolicyConfigFromSettings(settings models.AppSettings) DomainPolicyCon
 		AllowedRemoteCIDRs:  csvList(settings.AllowedRemoteIPs),
 		MailFailEnabled:     settings.MailFailEnabled,
 		MailFailRules:       settings.MailFailRules,
+		ReportFrom:          settings.ReportFrom,
 	}
 }
 
@@ -177,13 +185,94 @@ func buildDomainPolicyState(userID int64, config DomainPolicyConfig, store stora
 		mailFail = engine
 	}
 
+	reportFrom := strings.TrimSpace(config.ReportFrom)
+	if reportFrom != "" {
+		address, err := mail.ParseAddress(reportFrom)
+		_, hasDomain := extractDomain(reportFrom)
+		if err != nil || !strings.EqualFold(address.Address, reportFrom) || !hasDomain {
+			return domainPolicyState{}, fmt.Errorf("reportFrom must be a single email address")
+		}
+		reportFrom = address.Address
+	}
+	if config.MailFailEnabled && hasReportRules(config.MailFailRules) && reportFrom == "" && len(rcptMatcher.exactDomains) == 0 {
+		return domainPolicyState{}, fmt.Errorf("reportFrom is required for report rules unless an exact accepted recipient domain is configured")
+	}
+
 	return domainPolicyState{
 		userID:              userID,
 		acceptedRcptDomains: rcptMatcher,
 		acceptedFromDomains: fromMatcher,
 		allowedRemoteNets:   allowedRemoteNets,
 		mailFail:            mailFail,
+		reportFrom:          reportFrom,
 	}, nil
+}
+
+func (p *DomainPolicy) ReportsFor(session *SessionMetadata) ([]ReportRequest, error) {
+	if session == nil || strings.TrimSpace(session.MailFrom) == "" {
+		return nil, nil
+	}
+
+	state, err := p.reportState(session.OwnerUserID)
+	if err != nil || state.mailFail == nil {
+		return nil, err
+	}
+	requests := state.mailFail.MatchReports(session.RcptTo)
+	for index := range requests {
+		requests[index].From, err = state.resolveReportFrom(requests[index].Recipient)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return requests, nil
+}
+
+func (p *DomainPolicy) reportState(ownerUserID int64) (domainPolicyState, error) {
+	if ownerUserID == 0 {
+		users, err := p.policyUsers()
+		if err != nil {
+			return domainPolicyState{}, err
+		}
+		for _, state := range users {
+			if state.userID == 0 {
+				return state, nil
+			}
+		}
+		return p.snapshot(), nil
+	}
+	users, err := p.policyUsers()
+	if err != nil {
+		return domainPolicyState{}, err
+	}
+	for _, state := range users {
+		if state.userID == ownerUserID {
+			return state, nil
+		}
+	}
+	return domainPolicyState{}, fmt.Errorf("mailbox policy not found")
+}
+
+func (s domainPolicyState) resolveReportFrom(recipient string) (string, error) {
+	if s.reportFrom != "" {
+		return s.reportFrom, nil
+	}
+	domain, ok := extractDomain(recipient)
+	if !ok {
+		return "", fmt.Errorf("cannot derive report sender from recipient %q", recipient)
+	}
+	if _, allowed := s.acceptedRcptDomains.exactDomains[domain]; !allowed {
+		return "", fmt.Errorf("cannot derive report sender from non-exact recipient domain %q", domain)
+	}
+	return "postmaster@" + domain, nil
+}
+
+func hasReportRules(rules []models.MailFailRule) bool {
+	for _, rule := range rules {
+		if isReportAction(strings.ToLower(strings.TrimSpace(rule.Action))) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *DomainPolicy) OnConnect(session *SessionMetadata) *ResponseError {

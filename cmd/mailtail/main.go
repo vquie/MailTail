@@ -38,6 +38,7 @@ func main() {
 	dataDir := getEnv("MAILTAIL_DATA_DIR", "data")
 	httpAddr := getEnv("MAILTAIL_HTTP_ADDR", ":8080")
 	smtpAddr := getEnv("MAILTAIL_SMTP_ADDR", ":8025")
+	outboundSMTPAddr := strings.TrimSpace(os.Getenv("MAILTAIL_OUTBOUND_SMTP_ADDR"))
 	staticDir := getEnv("MAILTAIL_WEB_DIR", filepath.Join("web", "dist"))
 	if strings.TrimSpace(os.Getenv("MAILTAIL_MAILFAIL_ENABLED")) != "" {
 		logger.Printf("warning: MAILTAIL_MAILFAIL_ENABLED is deprecated and ignored; enable MailFail per user in the UI")
@@ -63,6 +64,23 @@ func main() {
 		logger.Fatalf("open storage: %v", err)
 	}
 	defer store.Close()
+
+	var outboundSender *smtpserver.RelaySender
+	if outboundSMTPAddr == "" {
+		logger.Printf("outbound report delivery disabled; set MAILTAIL_OUTBOUND_SMTP_ADDR to enable it")
+	} else {
+		outboundSender, err = smtpserver.NewRelaySender(smtpserver.RelayConfig{
+			Address:  outboundSMTPAddr,
+			TLSMode:  getEnv("MAILTAIL_OUTBOUND_SMTP_TLS", "starttls"),
+			Username: os.Getenv("MAILTAIL_OUTBOUND_SMTP_USERNAME"),
+			Password: os.Getenv("MAILTAIL_OUTBOUND_SMTP_PASSWORD"),
+			Helo:     getEnv("MAILTAIL_OUTBOUND_SMTP_HELO", "mailtail.local"),
+		})
+		if err != nil {
+			logger.Fatalf("invalid outbound SMTP config: %v", err)
+		}
+		logger.Printf("outbound report delivery enabled via %s", outboundSMTPAddr)
+	}
 
 	settings := envAppSettings()
 	if savedSettings, ok, err := store.LoadAppSettings(context.Background()); err != nil {
@@ -106,6 +124,7 @@ func main() {
 	}()
 
 	go runMessageRetentionWorker(ctx, logger, store, runtime)
+	go smtpserver.RunOutboundWorker(ctx, logger, store, outboundSender)
 
 	select {
 	case <-ctx.Done():
