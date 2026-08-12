@@ -26,6 +26,7 @@ type mailFailRule struct {
 	resetAfter    time.Duration
 	code          int
 	enhancedCode  string
+	feedbackType  string
 	message       string
 }
 
@@ -35,6 +36,7 @@ type ReportRequest struct {
 	From         string
 	Code         int
 	EnhancedCode string
+	FeedbackType string
 	Message      string
 }
 
@@ -110,6 +112,7 @@ func (e *MailFailEngine) MatchReports(recipients []string) []ReportRequest {
 					Recipient:    recipient,
 					Code:         rule.code,
 					EnhancedCode: rule.enhancedCode,
+					FeedbackType: rule.feedbackType,
 					Message:      rule.message,
 				})
 				break
@@ -230,6 +233,7 @@ func compileMailFailRule(rule models.MailFailRule) (mailFailRule, error) {
 		allowAfter:   rule.AllowAfter,
 		code:         rule.Code,
 		enhancedCode: strings.TrimSpace(rule.EnhancedCode),
+		feedbackType: strings.ToLower(strings.TrimSpace(rule.FeedbackType)),
 		message:      strings.TrimSpace(rule.Message),
 	}
 
@@ -261,6 +265,18 @@ func compileMailFailRule(rule models.MailFailRule) (mailFailRule, error) {
 		if compiled.message == "" {
 			return mailFailRule{}, fmt.Errorf("mailfail rule %q is missing message", compiled.name)
 		}
+	}
+	if compiled.action == "arf" {
+		if compiled.feedbackType == "" {
+			compiled.feedbackType = "abuse"
+		}
+		switch compiled.feedbackType {
+		case "abuse", "fraud", "virus", "other", "not-spam":
+		default:
+			return mailFailRule{}, fmt.Errorf("mailfail rule %q uses unsupported ARF feedback type %q", compiled.name, rule.FeedbackType)
+		}
+	} else {
+		compiled.feedbackType = ""
 	}
 	if (compiled.action == "reject" || compiled.action == "greylist") && (compiled.code < 400 || compiled.code > 599) {
 		return mailFailRule{}, fmt.Errorf("mailfail rule %q has invalid code %d", compiled.name, rule.Code)

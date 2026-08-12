@@ -40,16 +40,17 @@ func TestNormalizeUserSettingsNormalizesNewlineSeparatedLists(t *testing.T) {
 	}
 }
 
-func TestNormalizeUserSettingsMakesReportStageAndTextImplicit(t *testing.T) {
+func TestNormalizeUserSettingsMakesARFStageAndTextImplicit(t *testing.T) {
 	t.Parallel()
 
 	settings := NormalizeUserSettings(models.AppSettings{
 		MailFailRules: []models.MailFailRule{{
-			Name:    "ARF",
-			Trigger: "mf-arf",
-			Stage:   "mailfrom",
-			Action:  "arf",
-			Message: "user-supplied report text",
+			Name:         "ARF",
+			Trigger:      "mf-arf",
+			Stage:        "mailfrom",
+			Action:       "arf",
+			FeedbackType: " Fraud ",
+			Message:      "user-supplied report text",
 		}},
 	})
 
@@ -62,5 +63,30 @@ func TestNormalizeUserSettingsMakesReportStageAndTextImplicit(t *testing.T) {
 	}
 	if rule.Message != "" {
 		t.Fatalf("report text must not be stored as user configuration, got %q", rule.Message)
+	}
+	if rule.FeedbackType != "fraud" {
+		t.Fatalf("unexpected normalized feedback type: %q", rule.FeedbackType)
+	}
+}
+
+func TestNormalizeUserSettingsPreservesAsyncBounceText(t *testing.T) {
+	t.Parallel()
+
+	settings := NormalizeUserSettings(models.AppSettings{
+		MailFailRules: []models.MailFailRule{{
+			Name:         "quota bounce",
+			Trigger:      "mf-quota-bounce",
+			Action:       "async-bounce",
+			FeedbackType: "abuse",
+			Message:      " Mailbox quota exceeded ",
+		}},
+	})
+
+	rule := settings.MailFailRules[0]
+	if rule.Stage != "data" || rule.Message != "Mailbox quota exceeded" {
+		t.Fatalf("unexpected normalized async bounce: %#v", rule)
+	}
+	if rule.FeedbackType != "" {
+		t.Fatalf("async bounce must not store an ARF feedback type, got %q", rule.FeedbackType)
 	}
 }

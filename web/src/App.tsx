@@ -40,6 +40,7 @@ const defaultMailFailRulesTemplate: MailFailRule[] = [
     resetAfter: "",
     code: 550,
     enhancedCode: "5.1.1",
+    feedbackType: "",
     message: "User unknown"
   },
   {
@@ -52,6 +53,7 @@ const defaultMailFailRulesTemplate: MailFailRule[] = [
     resetAfter: "1h",
     code: 451,
     enhancedCode: "4.7.1",
+    feedbackType: "",
     message: "Try again later"
   },
   {
@@ -64,6 +66,7 @@ const defaultMailFailRulesTemplate: MailFailRule[] = [
     resetAfter: "",
     code: 552,
     enhancedCode: "5.2.2",
+    feedbackType: "",
     message: "Mailbox full"
   }
 ];
@@ -77,6 +80,7 @@ const emptyMailFailRule: MailFailRule = {
   resetAfter: "1h",
   code: 550,
   enhancedCode: "",
+  feedbackType: "",
   message: ""
 };
 const emptySettings: AppSettings = {
@@ -1020,11 +1024,7 @@ export function App() {
                           {!isReportAction(rule.action) ? <span>{rule.stage.toUpperCase()}</span> : null}
                           <span>{rule.action}</span>
                         </div>
-                        <p>
-                          {isReportAction(rule.action)
-                            ? "Generated automatically after message acceptance."
-                            : rule.message || "No reply message configured."}
-                        </p>
+                        <p>{mailFailRuleSummary(rule)}</p>
                       </button>
                     ))}
                   </div>
@@ -1087,6 +1087,7 @@ export function App() {
                           stage: isReportAction(action) ? "data" : current.stage,
                           code: action === "async-bounce" ? 550 : current.code,
                           enhancedCode: action === "async-bounce" ? current.enhancedCode || "5.0.0" : current.enhancedCode,
+                          feedbackType: action === "arf" ? current.feedbackType || "abuse" : "",
                           message: isReportAction(action) ? "" : current.message
                         }));
                       }}
@@ -1100,6 +1101,28 @@ export function App() {
                       <option value="async-bounce">Asynchronous bounce</option>
                     </select>
                   </label>
+
+                  {editorDraft.action === "arf" ? (
+                    <label className="settingsField">
+                      <span>Feedback type</span>
+                      <select
+                        value={editorDraft.feedbackType || "abuse"}
+                        onChange={(event) =>
+                          updateMailFailRuleEditor(options.scope, (current) => ({
+                            ...current,
+                            feedbackType: event.target.value as MailFailRule["feedbackType"]
+                          }))
+                        }
+                      >
+                        <option value="abuse">Abuse</option>
+                        <option value="fraud">Fraud</option>
+                        <option value="virus">Virus</option>
+                        <option value="other">Other</option>
+                        <option value="not-spam">Not spam</option>
+                      </select>
+                      <small>Written to the RFC 5965 <code>Feedback-Type</code> field.</small>
+                    </label>
+                  ) : null}
 
                   {!isReportAction(editorDraft.action) ? (
                     <label className="settingsField">
@@ -1161,6 +1184,18 @@ export function App() {
                         }
                         placeholder="Try again later"
                       />
+                    </label>
+                  ) : editorDraft.action === "async-bounce" ? (
+                    <label className="settingsField mailFailMessageField">
+                      <span>Bounce diagnostic text</span>
+                      <input
+                        value={editorDraft.message}
+                        onChange={(event) =>
+                          updateMailFailRuleEditor(options.scope, (current) => ({ ...current, message: event.target.value }))
+                        }
+                        placeholder="Delivery failed after the message was accepted by MailTail."
+                      />
+                      <small>Used in both the human-readable DSN part and its <code>Diagnostic-Code</code>. Leave empty for the default.</small>
                     </label>
                   ) : (
                     <div className="settingsField mailFailMessageField">
@@ -2941,6 +2976,7 @@ function cloneMailFailRule(rule: MailFailRule): MailFailRule {
     resetAfter: rule.resetAfter ?? "",
     code: rule.code ?? emptyMailFailRule.code,
     enhancedCode: rule.enhancedCode ?? "",
+    feedbackType: rule.feedbackType ?? "",
     message: rule.message ?? ""
   };
 }
@@ -2962,6 +2998,7 @@ function hasMailFailRuleDraftChanges(rule: MailFailRule): boolean {
     rule.stage !== emptyMailFailRule.stage ||
     rule.code !== emptyMailFailRule.code ||
     (rule.enhancedCode ?? "").trim() !== "" ||
+    (rule.feedbackType ?? "").trim() !== "" ||
     rule.allowAfter !== emptyMailFailRule.allowAfter ||
     (rule.minRetryAfter ?? "").trim() !== "" ||
     (rule.resetAfter ?? "").trim() !== emptyMailFailRule.resetAfter
@@ -2991,12 +3028,23 @@ function normalizeMailFailRuleDraft(rule: MailFailRule): MailFailRule {
       normalizedInput.action === "async-bounce"
         ? normalizedInput.enhancedCode.trim() || "5.0.0"
         : normalizedInput.enhancedCode.trim(),
-    message: reportAction ? "" : normalizedInput.message.trim()
+    feedbackType: normalizedInput.action === "arf" ? normalizedInput.feedbackType || "abuse" : "",
+    message: reportAction && normalizedInput.action !== "async-bounce" ? "" : normalizedInput.message.trim()
   };
 }
 
 function isReportAction(action: MailFailRule["action"]): boolean {
   return ["arf", "xarf-v3", "xarf-v4", "original-report", "async-bounce"].includes(action);
+}
+
+function mailFailRuleSummary(rule: MailFailRule): string {
+  if (rule.action === "async-bounce") {
+    return rule.message || "Default delivery failure text.";
+  }
+  if (isReportAction(rule.action)) {
+    return "Generated automatically after message acceptance.";
+  }
+  return rule.message || "No reply message configured.";
 }
 
 function buildEMLFileName(message: Message): string {

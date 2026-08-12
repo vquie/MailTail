@@ -797,7 +797,7 @@
               "async-bounce"
             ],
             "example": "greylist",
-            "description": "Outbound report actions run after accepted DATA and do not require a stage or report text."
+            "description": "Outbound report actions run after accepted DATA. Async bounces may configure their DSN diagnostic text."
           },
           "allowAfter": {
             "type": "integer",
@@ -823,10 +823,16 @@
             "type": "string",
             "example": "4.7.1"
           },
+          "feedbackType": {
+            "type": "string",
+            "enum": ["abuse", "fraud", "virus", "other", "not-spam"],
+            "example": "abuse",
+            "description": "Optional RFC 5965 feedback type for ARF actions. Defaults to abuse and is ignored for other actions."
+          },
           "message": {
             "type": "string",
             "example": "Try again later",
-            "description": "Required for reject and greylist actions. MailTail generates standard text for outbound report actions."
+            "description": "Required for reject and greylist actions. Optional for async-bounce, where it becomes the human-readable and machine-readable DSN diagnostic text. Other report actions use generated text."
           }
         }
       },

@@ -34,7 +34,7 @@ func TestBuildReportMessageFormats(t *testing.T) {
 		{action: "arf", contentType: "multipart/report", want: []string{"report-type=feedback-report", "Feedback-Type: abuse", "Content-Type: message/rfc822"}},
 		{action: "xarf-v3", contentType: "multipart/report", want: []string{"Feedback-Type: xarf", "application/json; name=xarf.json"}},
 		{action: "xarf-v4", contentType: "multipart/report", want: []string{"Feedback-Type: xarf", "application/json; name=xarf.json"}},
-		{action: "original-report", contentType: "multipart/mixed", want: []string{"Content-Type: message/rfc822", "Hello"}},
+		{action: "original-report", contentType: "multipart/report", want: []string{"report-type=feedback-report", "Feedback-Type: other", "Content-Type: message/rfc822", "Hello"}},
 		{action: "async-bounce", contentType: "multipart/report", want: []string{"report-type=delivery-status", "Content-Type: message/delivery-status", "Action: failed", "Status: 5.1.1"}},
 	}
 
@@ -68,6 +68,9 @@ func TestBuildReportMessageFormats(t *testing.T) {
 			if !strings.Contains(message.Raw, "Auto-Submitted: auto-generated") {
 				t.Fatal("missing loop prevention header")
 			}
+			if test.action != "async-bounce" && !strings.Contains(message.Raw, "Subject: test\r\n") {
+				t.Fatal("feedback report must preserve the original subject")
+			}
 			for _, want := range test.want {
 				if !strings.Contains(message.Raw, want) {
 					t.Fatalf("missing %q in report", want)
@@ -75,6 +78,109 @@ func TestBuildReportMessageFormats(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFeedbackReportsMatchHalonParserMIMEContract(t *testing.T) {
+	t.Parallel()
+
+	original := []byte("From: sender@sender.test\r\nTo: trap@example.test\r\nSubject: test\r\n\r\nbody\r\n")
+	tests := []struct {
+		action       string
+		feedbackType string
+		wantFeedback string
+		wantParts    []string
+	}{
+		{action: "arf", feedbackType: "fraud", wantFeedback: "fraud", wantParts: []string{"text/plain", "message/feedback-report", "message/rfc822"}},
+		{action: "xarf-v3", wantFeedback: "xarf", wantParts: []string{"text/plain", "message/feedback-report", "application/json"}},
+		{action: "xarf-v4", wantFeedback: "xarf", wantParts: []string{"text/plain", "message/feedback-report", "application/json"}},
+		{action: "original-report", wantFeedback: "other", wantParts: []string{"text/plain", "message/feedback-report", "message/rfc822"}},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.action, func(t *testing.T) {
+			t.Parallel()
+
+			message, err := BuildReportMessage(ReportRequest{
+				Action:       test.action,
+				Recipient:    "trap@example.test",
+				From:         "reports@example.test",
+				FeedbackType: test.feedbackType,
+				Message:      "Automated report",
+			}, SessionMetadata{RemoteIP: "192.0.2.55", MailFrom: "sender@sender.test"}, original, time.Now().UTC())
+			if err != nil {
+				t.Fatalf("build report: %v", err)
+			}
+
+			header, parts := parseMultipartReport(t, message.Raw)
+			mediaType, params, err := mime.ParseMediaType(header.Get("Content-Type"))
+			if err != nil {
+				t.Fatalf("parse outer content type: %v", err)
+			}
+			if mediaType != "multipart/report" || params["report-type"] != "feedback-report" {
+				t.Fatalf("unexpected outer content type: %q", header.Get("Content-Type"))
+			}
+			if len(parts) != len(test.wantParts) {
+				t.Fatalf("unexpected MIME part count: got %d want %d", len(parts), len(test.wantParts))
+			}
+			for index, want := range test.wantParts {
+				partType, _, err := mime.ParseMediaType(parts[index].header.Get("Content-Type"))
+				if err != nil {
+					t.Fatalf("parse part %d content type: %v", index, err)
+				}
+				if partType != want {
+					t.Fatalf("part %d has type %q, want %q", index, partType, want)
+				}
+			}
+
+			feedback := parts[1].body
+			for _, field := range []string{
+				"Feedback-Type: " + test.wantFeedback,
+				"User-Agent: " + reportUserAgent,
+				"Version: 1",
+			} {
+				if !strings.Contains(feedback, field) {
+					t.Fatalf("feedback report missing %q: %s", field, feedback)
+				}
+			}
+		})
+	}
+}
+
+type parsedReportPart struct {
+	header textproto.MIMEHeader
+	body   string
+}
+
+func parseMultipartReport(t *testing.T, raw string) (textproto.MIMEHeader, []parsedReportPart) {
+	t.Helper()
+
+	reader := textproto.NewReader(bufio.NewReader(strings.NewReader(raw)))
+	header, err := reader.ReadMIMEHeader()
+	if err != nil {
+		t.Fatalf("read message header: %v", err)
+	}
+	_, params, err := mime.ParseMediaType(header.Get("Content-Type"))
+	if err != nil {
+		t.Fatalf("parse content type: %v", err)
+	}
+	multipartReader := multipart.NewReader(reader.R, params["boundary"])
+	parts := make([]parsedReportPart, 0, 4)
+	for {
+		part, err := multipartReader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("read MIME part: %v", err)
+		}
+		body, err := io.ReadAll(part)
+		if err != nil {
+			t.Fatalf("read MIME part body: %v", err)
+		}
+		parts = append(parts, parsedReportPart{header: part.Header, body: string(body)})
+	}
+	return header, parts
 }
 
 func TestBuildXARFJSONMatchesRequestedVersion(t *testing.T) {
@@ -200,6 +306,55 @@ func TestMailFailReportRulesArePostAcceptActions(t *testing.T) {
 	requests := engine.MatchReports([]string{"user+bounce@example.test"})
 	if len(requests) != 1 || requests[0].Action != "async-bounce" {
 		t.Fatalf("unexpected report requests: %#v", requests)
+	}
+	if requests[0].Message != "Unknown user" {
+		t.Fatalf("custom async bounce text was not retained: %#v", requests[0])
+	}
+}
+
+func TestAsyncBounceUsesCustomDiagnosticText(t *testing.T) {
+	t.Parallel()
+
+	message, err := BuildReportMessage(ReportRequest{
+		Action:       "async-bounce",
+		Recipient:    "quota@example.test",
+		From:         "postmaster@example.test",
+		Code:         552,
+		EnhancedCode: "5.2.2",
+		Message:      "Mailbox quota exceeded",
+	}, SessionMetadata{MailFrom: "sender@sender.test"}, []byte("Subject: quota\r\n\r\nbody"), time.Now().UTC())
+	if err != nil {
+		t.Fatalf("build async bounce: %v", err)
+	}
+	for _, want := range []string{
+		"Mailbox quota exceeded\r\n",
+		"Diagnostic-Code: smtp; 552 5.2.2 Mailbox quota exceeded",
+	} {
+		if !strings.Contains(message.Raw, want) {
+			t.Fatalf("async bounce missing %q", want)
+		}
+	}
+}
+
+func TestMailFailARFFeedbackType(t *testing.T) {
+	t.Parallel()
+
+	engine, err := NewMailFailEngine([]models.MailFailRule{{
+		Name: "fraud", Trigger: "fraud", Action: "arf", FeedbackType: "fraud",
+	}}, nil)
+	if err != nil {
+		t.Fatalf("create engine: %v", err)
+	}
+	requests := engine.MatchReports([]string{"user+fraud@example.test"})
+	if len(requests) != 1 || requests[0].FeedbackType != "fraud" {
+		t.Fatalf("unexpected report request: %#v", requests)
+	}
+
+	_, err = NewMailFailEngine([]models.MailFailRule{{
+		Name: "invalid", Trigger: "invalid", Action: "arf", FeedbackType: "xarf",
+	}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "unsupported ARF feedback type") {
+		t.Fatalf("expected feedback type validation error, got %v", err)
 	}
 }
 

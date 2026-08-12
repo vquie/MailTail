@@ -116,6 +116,7 @@ type MailFailRule struct {
 	ResetAfter    string `json:"resetAfter,omitempty"`
 	Code          int    `json:"code"`
 	EnhancedCode  string `json:"enhancedCode,omitempty"`
+	FeedbackType  string `json:"feedbackType,omitempty"`
 	Message       string `json:"message"`
 }
 

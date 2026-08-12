@@ -53,6 +53,7 @@ export type MailFailRule = {
   resetAfter: string;
   code: number;
   enhancedCode: string;
+  feedbackType: "" | "abuse" | "fraud" | "virus" | "other" | "not-spam";
   message: string;
 };
 

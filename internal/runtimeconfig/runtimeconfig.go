@@ -124,12 +124,18 @@ func normalizeMailFailRules(rules []models.MailFailRule) []models.MailFailRule {
 
 	normalized := make([]models.MailFailRule, 0, len(rules))
 	for _, rule := range rules {
-		action := strings.TrimSpace(rule.Action)
+		action := strings.ToLower(strings.TrimSpace(rule.Action))
 		stage := strings.TrimSpace(rule.Stage)
 		message := strings.TrimSpace(rule.Message)
+		feedbackType := strings.ToLower(strings.TrimSpace(rule.FeedbackType))
 		if isReportAction(action) {
 			stage = "data"
-			message = ""
+			if action != "async-bounce" {
+				message = ""
+			}
+		}
+		if action != "arf" {
+			feedbackType = ""
 		}
 		normalized = append(normalized, models.MailFailRule{
 			Name:          strings.TrimSpace(rule.Name),
@@ -141,6 +147,7 @@ func normalizeMailFailRules(rules []models.MailFailRule) []models.MailFailRule {
 			ResetAfter:    strings.TrimSpace(rule.ResetAfter),
 			Code:          rule.Code,
 			EnhancedCode:  strings.TrimSpace(rule.EnhancedCode),
+			FeedbackType:  feedbackType,
 			Message:       message,
 		})
 	}

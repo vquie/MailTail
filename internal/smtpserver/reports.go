@@ -42,14 +42,10 @@ func BuildReportMessage(request ReportRequest, session SessionMetadata, original
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	reportType := "feedback-report"
-	subject := "MailTail report"
+	subject := reportSubject(original, "MailTail report")
 	if request.Action == "async-bounce" {
 		reportType = "delivery-status"
 		subject = "Delivery Status Notification (Failure)"
-	}
-	if request.Action == "original-report" {
-		reportType = ""
-		subject = "MailTail original message report"
 	}
 
 	if err := writeHumanReadablePart(writer, request.Message); err != nil {
@@ -63,7 +59,7 @@ func BuildReportMessage(request ReportRequest, session SessionMetadata, original
 	case "xarf-v4":
 		err = writeXARFParts(writer, request, session, original, now, 4)
 	case "original-report":
-		err = writeOriginalPart(writer, original)
+		err = writeOriginalReportParts(writer, request, session, original, now)
 	case "async-bounce":
 		err = writeDSNParts(writer, request, session, original, now)
 	default:
@@ -84,10 +80,7 @@ func BuildReportMessage(request ReportRequest, session SessionMetadata, original
 		fromAddress.Name = "Mail Delivery System"
 		fromHeader = fromAddress.String()
 	}
-	contentType := fmt.Sprintf("multipart/mixed; boundary=%q", writer.Boundary())
-	if reportType != "" {
-		contentType = fmt.Sprintf("multipart/report; report-type=%s; boundary=%q", reportType, writer.Boundary())
-	}
+	contentType := fmt.Sprintf("multipart/report; report-type=%s; boundary=%q", reportType, writer.Boundary())
 
 	var raw bytes.Buffer
 	fmt.Fprintf(&raw, "From: %s\r\n", fromHeader)
@@ -129,6 +122,29 @@ func writeHumanReadablePart(writer *multipart.Writer, message string) error {
 }
 
 func writeARFParts(writer *multipart.Writer, request ReportRequest, session SessionMetadata, original []byte, now time.Time) error {
+	feedbackType := strings.ToLower(strings.TrimSpace(request.FeedbackType))
+	if feedbackType == "" {
+		feedbackType = "abuse"
+	}
+	switch feedbackType {
+	case "abuse", "fraud", "virus", "other", "not-spam":
+	default:
+		return fmt.Errorf("unsupported ARF feedback type %q", request.FeedbackType)
+	}
+	if err := writeFeedbackReportPart(writer, feedbackType, request, session, now); err != nil {
+		return err
+	}
+	return writeOriginalPart(writer, original)
+}
+
+func writeOriginalReportParts(writer *multipart.Writer, request ReportRequest, session SessionMetadata, original []byte, now time.Time) error {
+	if err := writeFeedbackReportPart(writer, "other", request, session, now); err != nil {
+		return err
+	}
+	return writeOriginalPart(writer, original)
+}
+
+func writeFeedbackReportPart(writer *multipart.Writer, feedbackType string, request ReportRequest, session SessionMetadata, now time.Time) error {
 	part, err := writer.CreatePart(textproto.MIMEHeader{
 		"Content-Type":        {"message/feedback-report"},
 		"Content-Disposition": {"inline"},
@@ -136,7 +152,7 @@ func writeARFParts(writer *multipart.Writer, request ReportRequest, session Sess
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(part, "Feedback-Type: abuse\r\n")
+	fmt.Fprintf(part, "Feedback-Type: %s\r\n", feedbackType)
 	fmt.Fprintf(part, "User-Agent: %s\r\n", reportUserAgent)
 	fmt.Fprintf(part, "Version: 1\r\n")
 	fmt.Fprintf(part, "Original-Mail-From: <%s>\r\n", session.MailFrom)
@@ -147,18 +163,13 @@ func writeARFParts(writer *multipart.Writer, request ReportRequest, session Sess
 		fmt.Fprintf(part, "Source-IP: %s\r\n", session.RemoteIP)
 	}
 	fmt.Fprintf(part, "Arrival-Date: %s\r\n", now.UTC().Format(time.RFC1123Z))
-	return writeOriginalPart(writer, original)
+	return nil
 }
 
 func writeXARFParts(writer *multipart.Writer, request ReportRequest, session SessionMetadata, original []byte, now time.Time, version int) error {
-	feedback, err := writer.CreatePart(textproto.MIMEHeader{
-		"Content-Type":        {"message/feedback-report"},
-		"Content-Disposition": {"inline"},
-	})
-	if err != nil {
+	if err := writeFeedbackReportPart(writer, "xarf", request, session, now); err != nil {
 		return err
 	}
-	fmt.Fprintf(feedback, "Feedback-Type: xarf\r\nUser-Agent: %s\r\nVersion: 1\r\n", reportUserAgent)
 
 	payload, err := buildXARFPayload(request, session, original, now, version)
 	if err != nil {
@@ -269,6 +280,18 @@ func writeOriginalPart(writer *multipart.Writer, original []byte) error {
 	}
 	_, err = part.Write(original)
 	return err
+}
+
+func reportSubject(original []byte, fallback string) string {
+	message, err := mail.ReadMessage(bytes.NewReader(original))
+	if err != nil {
+		return fallback
+	}
+	subject := strings.Join(strings.Fields(message.Header.Get("Subject")), " ")
+	if subject == "" {
+		return fallback
+	}
+	return subject
 }
 
 func newReportID() string {

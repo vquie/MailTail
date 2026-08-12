@@ -4,17 +4,23 @@ MailTail rules can accept an inbound test message and asynchronously send a repo
 
 ## Actions
 
-All outbound actions run after MailTail has accepted `DATA` and match the same plus-address trigger used by other MailFail rules. Their SMTP stage is implicit rather than configurable, and MailTail generates the standard human-readable report text.
+All outbound actions run after MailTail has accepted `DATA` and match the same plus-address trigger used by other MailFail rules. Their SMTP stage is implicit rather than configurable. MailTail generates standard human-readable text for feedback reports, while asynchronous bounces may override their diagnostic text per rule.
 
-| Action            | Generated format                                                                    | SMTP envelope sender                |
-|-------------------|-------------------------------------------------------------------------------------|-------------------------------------|
-| `arf`             | RFC 5965 `multipart/report` with `message/feedback-report` and the original message | Configured or derived report sender |
-| `xarf-v3`         | Legacy XARF v3 JSON transported in a feedback report                                | Configured or derived report sender |
-| `xarf-v4`         | XARF v4 `messaging/spam` JSON with SHA-256 evidence metadata                        | Configured or derived report sender |
-| `original-report` | `multipart/mixed` with the original RFC822 message                                  | Configured or derived report sender |
-| `async-bounce`    | RFC 3464 `multipart/report; report-type=delivery-status`                            | Empty reverse path (`<>`)           |
+- `arf`: RFC 5965 `multipart/report` with a registered feedback type and the original message. It uses the configured or derived report sender.
+- `xarf-v3`: Legacy XARF v3 JSON transported in a feedback report. It uses the configured or derived report sender.
+- `xarf-v4`: XARF v4 `messaging/spam` JSON with SHA-256 evidence metadata. It uses the configured or derived report sender.
+- `original-report`: RFC 5965 `other` feedback report with the original RFC822 message. It uses the configured or derived report sender.
+- `async-bounce`: RFC 3464 `multipart/report; report-type=delivery-status` with an empty reverse path (`<>`).
 
 Report messages include `Auto-Submitted: auto-generated` and `X-Auto-Response-Suppress: All`. MailTail does not create reports for messages with an empty envelope sender or an existing non-`no` `Auto-Submitted` header.
+
+ARF rules default to `Feedback-Type: abuse`. The Rules UI also exposes the registered RFC 5965 values `fraud`, `virus`, `other`, and `not-spam`.
+
+XARF transport uses `Feedback-Type: xarf`, which is an intentional unofficial RFC 5965 extension defined by XARF. Its third MIME part is the XARF JSON document.
+
+An `original-report` uses `Feedback-Type: other` so ARF parsers can discover its `message/feedback-report` metadata and attached `message/rfc822` part.
+
+For `async-bounce`, the optional rule text is written to both the first human-readable MIME part and the SMTP `Diagnostic-Code` in `message/delivery-status`. If it is empty, MailTail uses its standard delivery failure text.
 
 ## Report sender
 
@@ -39,7 +45,9 @@ MAILTAIL_OUTBOUND_MODE=direct
 MAILTAIL_OUTBOUND_SMTP_HELO=mailtail.example.test
 ```
 
-Direct mode resolves the recipient domain's MX records, tries them in priority order, and falls back to the domain's A/AAAA records when no MX record exists. A null MX is treated as an explicit refusal of email. Delivery uses SMTP on port 25 and upgrades with STARTTLS when the destination advertises it. STARTTLS is opportunistic in direct mode: MailTail keeps the transport encrypted but does not reject an MX because its certificate is expired, self-signed, or valid for a different hostname.
+Direct mode resolves the recipient domain's MX records, tries them in priority order, and falls back to the domain's A/AAAA records when no MX record exists. A null MX is treated as an explicit refusal of email.
+
+Delivery uses SMTP on port 25 and upgrades with STARTTLS when the destination advertises it. STARTTLS is opportunistic in direct mode: MailTail keeps the transport encrypted but does not reject an MX because its certificate is expired, self-signed, or valid for a different hostname.
 
 For reliable internet delivery, the configured HELO hostname should resolve to the sending IP and match its PTR. The report sender domain should authorize that IP through SPF and should use DKIM/DMARC where required. The host or network must permit outbound TCP port 25.
 
