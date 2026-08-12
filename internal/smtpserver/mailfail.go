@@ -307,6 +307,9 @@ func compileMailFailRule(rule models.MailFailRule) (mailFailRule, error) {
 	}
 	if isReportAction(compiled.action) {
 		if compiled.action == "async-bounce" {
+			if !validDSNDiagnostic(compiled.message) {
+				return mailFailRule{}, fmt.Errorf("mailfail rule %q uses async-bounce but message must be printable US-ASCII and at most 700 characters", compiled.name)
+			}
 			if compiled.code == 0 {
 				compiled.code = 550
 			}

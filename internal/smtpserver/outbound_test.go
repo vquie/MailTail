@@ -56,6 +56,30 @@ func TestRelaySenderDeliversNullEnvelopeBounce(t *testing.T) {
 	}
 }
 
+func TestOutboundRejectsEightBitReportWithoutEightBitMIME(t *testing.T) {
+	t.Parallel()
+
+	clientConnection, serverConnection := net.Pipe()
+	commands := make(chan []string, 1)
+	go serveSMTPTestConnection(serverConnection, commands)
+
+	sender, err := NewRelaySender(RelayConfig{Address: "127.0.0.1:25", TLSMode: "none", Helo: "mailtail.test"})
+	if err != nil {
+		t.Fatalf("create relay sender: %v", err)
+	}
+	sender.dialContext = func(context.Context, string, string) (net.Conn, error) {
+		return clientConnection, nil
+	}
+	err = sender.Send(context.Background(), models.OutboundMessage{
+		EnvelopeFrom: "reports@example.test",
+		Recipient:    "sender@example.test",
+		Raw:          "From: reports@example.test\r\nTo: sender@example.test\r\nSubject: test\r\n\r\nGrüße\r\n",
+	})
+	if err == nil || !strings.Contains(err.Error(), "8BITMIME") {
+		t.Fatalf("expected 8BITMIME capability failure, got %v", err)
+	}
+}
+
 func TestOutboundTLSConfigOnlySkipsVerificationWhenRequested(t *testing.T) {
 	t.Parallel()
 

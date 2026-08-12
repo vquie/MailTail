@@ -8,7 +8,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"mime"
 	"mime/multipart"
+	"mime/quotedprintable"
+	"net"
 	"net/mail"
 	"net/textproto"
 	"strings"
@@ -21,19 +24,22 @@ const reportUserAgent = "MailTail"
 
 func BuildReportMessage(request ReportRequest, session SessionMetadata, original []byte, now time.Time) (models.OutboundMessage, error) {
 	from, err := mail.ParseAddress(strings.TrimSpace(request.From))
-	if err != nil || from.Address != strings.TrimSpace(request.From) {
+	if err != nil || from.Address != strings.TrimSpace(request.From) || !isASCII(from.Address) {
 		return models.OutboundMessage{}, fmt.Errorf("invalid report sender")
 	}
 	if _, ok := extractDomain(from.Address); !ok {
 		return models.OutboundMessage{}, fmt.Errorf("invalid report sender")
 	}
 	to, err := mail.ParseAddress(strings.TrimSpace(session.MailFrom))
-	if err != nil || to.Address != strings.TrimSpace(session.MailFrom) {
+	if err != nil || to.Address != strings.TrimSpace(session.MailFrom) || !isASCII(to.Address) {
 		return models.OutboundMessage{}, fmt.Errorf("invalid report recipient")
 	}
 	reportedRecipient, err := mail.ParseAddress(strings.TrimSpace(request.Recipient))
-	if err != nil || reportedRecipient.Address != strings.TrimSpace(request.Recipient) {
+	if err != nil || reportedRecipient.Address != strings.TrimSpace(request.Recipient) || !isASCII(reportedRecipient.Address) {
 		return models.OutboundMessage{}, fmt.Errorf("invalid reported recipient")
+	}
+	if _, err := mail.ReadMessage(bytes.NewReader(original)); err != nil {
+		return models.OutboundMessage{}, fmt.Errorf("invalid original message: %w", err)
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -87,7 +93,7 @@ func BuildReportMessage(request ReportRequest, session SessionMetadata, original
 	fmt.Fprintf(&raw, "To: %s\r\n", to.String())
 	fmt.Fprintf(&raw, "Date: %s\r\n", now.UTC().Format(time.RFC1123Z))
 	fmt.Fprintf(&raw, "Message-ID: <%s@%s>\r\n", messageID, domain)
-	fmt.Fprintf(&raw, "Subject: %s\r\n", subject)
+	fmt.Fprintf(&raw, "Subject: %s\r\n", encodeHeader(subject))
 	raw.WriteString("Auto-Submitted: auto-generated\r\n")
 	raw.WriteString("X-Auto-Response-Suppress: All\r\n")
 	raw.WriteString("MIME-Version: 1.0\r\n")
@@ -112,13 +118,17 @@ func writeHumanReadablePart(writer *multipart.Writer, message string) error {
 	}
 	part, err := writer.CreatePart(textproto.MIMEHeader{
 		"Content-Type":              {"text/plain; charset=utf-8"},
-		"Content-Transfer-Encoding": {"8bit"},
+		"Content-Transfer-Encoding": {"quoted-printable"},
 	})
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(part, "%s\r\n", message)
-	return err
+	encoded := quotedprintable.NewWriter(part)
+	if _, err := fmt.Fprintf(encoded, "%s\r\n", normalizeText(message)); err != nil {
+		_ = encoded.Close()
+		return err
+	}
+	return encoded.Close()
 }
 
 func writeARFParts(writer *multipart.Writer, request ReportRequest, session SessionMetadata, original []byte, now time.Time) error {
@@ -146,8 +156,9 @@ func writeOriginalReportParts(writer *multipart.Writer, request ReportRequest, s
 
 func writeFeedbackReportPart(writer *multipart.Writer, feedbackType string, request ReportRequest, session SessionMetadata, now time.Time) error {
 	part, err := writer.CreatePart(textproto.MIMEHeader{
-		"Content-Type":        {"message/feedback-report"},
-		"Content-Disposition": {"inline"},
+		"Content-Type":              {"message/feedback-report"},
+		"Content-Disposition":       {"inline"},
+		"Content-Transfer-Encoding": {"7bit"},
 	})
 	if err != nil {
 		return err
@@ -159,11 +170,16 @@ func writeFeedbackReportPart(writer *multipart.Writer, feedbackType string, requ
 	fmt.Fprintf(part, "Original-Rcpt-To: <%s>\r\n", request.Recipient)
 	domain, _ := extractDomain(request.From)
 	fmt.Fprintf(part, "Reporting-MTA: dns; %s\r\n", domain)
-	if strings.TrimSpace(session.RemoteIP) != "" {
-		fmt.Fprintf(part, "Source-IP: %s\r\n", session.RemoteIP)
+	if sourceIPText := strings.TrimSpace(session.RemoteIP); sourceIPText != "" {
+		sourceIP := net.ParseIP(sourceIPText)
+		if sourceIP == nil {
+			return fmt.Errorf("feedback report requires a valid source IP")
+		}
+		fmt.Fprintf(part, "Source-IP: %s\r\n", sourceIP.String())
 	}
 	fmt.Fprintf(part, "Arrival-Date: %s\r\n", now.UTC().Format(time.RFC1123Z))
-	return nil
+	_, err = fmt.Fprint(part, "\r\n")
+	return err
 }
 
 func writeXARFParts(writer *multipart.Writer, request ReportRequest, session SessionMetadata, original []byte, now time.Time, version int) error {
@@ -190,11 +206,14 @@ func writeXARFParts(writer *multipart.Writer, request ReportRequest, session Ses
 
 func buildXARFPayload(request ReportRequest, session SessionMetadata, original []byte, now time.Time, version int) ([]byte, error) {
 	domain, _ := extractDomain(request.From)
+	sourceIP := net.ParseIP(strings.TrimSpace(session.RemoteIP))
+	if sourceIP == nil {
+		return nil, fmt.Errorf("XARF requires a valid source IP")
+	}
+	if session.RemotePort < 1 || session.RemotePort > 65535 {
+		return nil, fmt.Errorf("XARF requires a valid SMTP source port")
+	}
 	if version == 3 {
-		sourceIP := strings.TrimSpace(session.RemoteIP)
-		if sourceIP == "" {
-			sourceIP = "0.0.0.0"
-		}
 		value := map[string]any{
 			"Version": "3",
 			"ReporterInfo": map[string]any{
@@ -208,7 +227,8 @@ func buildXARFPayload(request ReportRequest, session SessionMetadata, original [
 				"ReportType":          "Spam",
 				"ReportSubType":       "Trap",
 				"Date":                now.UTC().Format(time.RFC3339),
-				"SourceIp":            sourceIP,
+				"SourceIp":            sourceIP.String(),
+				"SourcePort":          session.RemotePort,
 				"DestinationPort":     25,
 				"SmtpMailFromAddress": session.MailFrom,
 				"SmtpRcptToAddress":   request.Recipient,
@@ -222,21 +242,20 @@ func buildXARFPayload(request ReportRequest, session SessionMetadata, original [
 		}
 		return json.MarshalIndent(value, "", "  ")
 	}
+	if version != 4 {
+		return nil, fmt.Errorf("unsupported XARF version %d", version)
+	}
 
 	digest := sha256.Sum256(original)
-	source := strings.TrimSpace(session.RemoteIP)
-	if source == "" {
-		source = "unknown"
-	}
 	contact := map[string]any{"org": "MailTail", "contact": request.From, "domain": domain}
 	value := map[string]any{
-		"xarf_version":      "4.0.0",
+		"xarf_version":      "4.2.0",
 		"report_id":         newReportID(),
 		"timestamp":         now.UTC().Format(time.RFC3339),
 		"reporter":          contact,
 		"sender":            contact,
-		"source_identifier": source,
-		"source_port":       25,
+		"source_identifier": sourceIP.String(),
+		"source_port":       session.RemotePort,
 		"category":          "messaging",
 		"type":              "spam",
 		"evidence_source":   "spamtrap",
@@ -250,12 +269,32 @@ func buildXARFPayload(request ReportRequest, session SessionMetadata, original [
 			"hash":         "sha256:" + hex.EncodeToString(digest[:]),
 		}},
 	}
+	if message, err := mail.ReadMessage(bytes.NewReader(original)); err == nil {
+		if subject := decodedHeader(message.Header.Get("Subject")); subject != "" {
+			value["subject"] = subject
+		}
+		if messageID := strings.TrimSpace(message.Header.Get("Message-ID")); messageID != "" {
+			value["message_id"] = messageID
+		}
+	}
 	return json.MarshalIndent(value, "", "  ")
 }
 
 func writeDSNParts(writer *multipart.Writer, request ReportRequest, session SessionMetadata, original []byte, now time.Time) error {
+	if request.Code < 500 || request.Code > 599 {
+		return fmt.Errorf("async bounce requires a permanent SMTP status code")
+	}
+	if !enhancedBounceCodePattern.MatchString(strings.TrimSpace(request.EnhancedCode)) {
+		return fmt.Errorf("async bounce requires a valid permanent enhanced status code")
+	}
+	if !validDSNDiagnostic(request.Message) {
+		return fmt.Errorf("async bounce diagnostic must be printable US-ASCII and at most 700 characters")
+	}
 	domain, _ := extractDomain(request.From)
-	part, err := writer.CreatePart(textproto.MIMEHeader{"Content-Type": {"message/delivery-status"}})
+	part, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Type":              {"message/delivery-status"},
+		"Content-Transfer-Encoding": {"7bit"},
+	})
 	if err != nil {
 		return err
 	}
@@ -266,6 +305,9 @@ func writeDSNParts(writer *multipart.Writer, request ReportRequest, session Sess
 	fmt.Fprintf(part, "Status: %s\r\n", request.EnhancedCode)
 	diagnostic := strings.Join(strings.Fields(request.Message), " ")
 	fmt.Fprintf(part, "Diagnostic-Code: smtp; %d %s %s\r\n", request.Code, request.EnhancedCode, diagnostic)
+	if _, err := fmt.Fprint(part, "\r\n"); err != nil {
+		return err
+	}
 	return writeOriginalPart(writer, original)
 }
 
@@ -287,11 +329,56 @@ func reportSubject(original []byte, fallback string) string {
 	if err != nil {
 		return fallback
 	}
-	subject := strings.Join(strings.Fields(message.Header.Get("Subject")), " ")
+	subject := decodedHeader(message.Header.Get("Subject"))
 	if subject == "" {
 		return fallback
 	}
 	return subject
+}
+
+func decodedHeader(value string) string {
+	decoded, err := new(mime.WordDecoder).DecodeHeader(value)
+	if err != nil {
+		decoded = value
+	}
+	return strings.Join(strings.Fields(decoded), " ")
+}
+
+func encodeHeader(value string) string {
+	for _, character := range value {
+		if character < 32 || character > 126 {
+			return mime.QEncoding.Encode("utf-8", value)
+		}
+	}
+	return value
+}
+
+func normalizeText(value string) string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, "\r", "\n")
+	return strings.ReplaceAll(value, "\n", "\r\n")
+}
+
+func isASCII(value string) bool {
+	for _, character := range value {
+		if character > 127 {
+			return false
+		}
+	}
+	return true
+}
+
+func validDSNDiagnostic(value string) bool {
+	value = strings.Join(strings.Fields(value), " ")
+	if value == "" || len(value) > 700 {
+		return false
+	}
+	for _, character := range value {
+		if character < 32 || character > 126 {
+			return false
+		}
+	}
+	return true
 }
 
 func newReportID() string {

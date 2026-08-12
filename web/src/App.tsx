@@ -1190,12 +1190,14 @@ export function App() {
                       <span>Bounce diagnostic text</span>
                       <input
                         value={editorDraft.message}
+                        maxLength={700}
+                        pattern="[\x20-\x7E]*"
                         onChange={(event) =>
                           updateMailFailRuleEditor(options.scope, (current) => ({ ...current, message: event.target.value }))
                         }
                         placeholder="Delivery failed after the message was accepted by MailTail."
                       />
-                      <small>Used in both the human-readable DSN part and its <code>Diagnostic-Code</code>. Leave empty for the default.</small>
+                      <small>Used in both the human-readable DSN part and its <code>Diagnostic-Code</code>. Printable US-ASCII, up to 700 characters. Leave empty for the default.</small>
                     </label>
                   ) : (
                     <div className="settingsField mailFailMessageField">

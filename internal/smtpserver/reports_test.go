@@ -2,16 +2,21 @@ package smtpserver
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"io"
 	"mime"
 	"mime/multipart"
+	"net/mail"
 	"net/textproto"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/vquie/MailTail/internal/models"
 )
 
@@ -20,9 +25,10 @@ func TestBuildReportMessageFormats(t *testing.T) {
 
 	now := time.Date(2026, time.August, 11, 12, 0, 0, 0, time.UTC)
 	session := SessionMetadata{
-		RemoteIP: "192.0.2.55",
-		MailFrom: "sender@sender.test",
-		RcptTo:   []string{"user+report@example.test"},
+		RemoteIP:   "192.0.2.55",
+		RemotePort: 54321,
+		MailFrom:   "sender@sender.test",
+		RcptTo:     []string{"user+report@example.test"},
 	}
 	original := []byte("From: sender@sender.test\r\nTo: user@example.test\r\nSubject: test\r\n\r\nHello\r\n")
 
@@ -107,12 +113,25 @@ func TestFeedbackReportsMatchHalonParserMIMEContract(t *testing.T) {
 				From:         "reports@example.test",
 				FeedbackType: test.feedbackType,
 				Message:      "Automated report",
-			}, SessionMetadata{RemoteIP: "192.0.2.55", MailFrom: "sender@sender.test"}, original, time.Now().UTC())
+			}, SessionMetadata{RemoteIP: "192.0.2.55", RemotePort: 54321, MailFrom: "sender@sender.test"}, original, time.Now().UTC())
 			if err != nil {
 				t.Fatalf("build report: %v", err)
 			}
 
 			header, parts := parseMultipartReport(t, message.Raw)
+			for _, required := range []string{"Date", "From", "To", "Subject", "MIME-Version", "Content-Type"} {
+				if len(header.Values(required)) != 1 {
+					t.Fatalf("outer report requires exactly one %s field, got %q", required, header.Values(required))
+				}
+			}
+			if _, err := mail.ParseDate(header.Get("Date")); err != nil {
+				t.Fatalf("invalid outer Date field: %v", err)
+			}
+			for _, addressField := range []string{"From", "To"} {
+				if _, err := mail.ParseAddressList(header.Get(addressField)); err != nil {
+					t.Fatalf("invalid outer %s field: %v", addressField, err)
+				}
+			}
 			mediaType, params, err := mime.ParseMediaType(header.Get("Content-Type"))
 			if err != nil {
 				t.Fatalf("parse outer content type: %v", err)
@@ -133,14 +152,32 @@ func TestFeedbackReportsMatchHalonParserMIMEContract(t *testing.T) {
 				}
 			}
 
-			feedback := parts[1].body
-			for _, field := range []string{
-				"Feedback-Type: " + test.wantFeedback,
-				"User-Agent: " + reportUserAgent,
-				"Version: 1",
+			feedbackReader := textproto.NewReader(bufio.NewReader(strings.NewReader(parts[1].body)))
+			feedback, err := feedbackReader.ReadMIMEHeader()
+			if err != nil {
+				t.Fatalf("parse message/feedback-report body as RFC fields: %v", err)
+			}
+			for field, want := range map[string]string{
+				"Feedback-Type": test.wantFeedback,
+				"User-Agent":    reportUserAgent,
+				"Version":       "1",
 			} {
-				if !strings.Contains(feedback, field) {
-					t.Fatalf("feedback report missing %q: %s", field, feedback)
+				if values := feedback.Values(field); len(values) != 1 || values[0] != want {
+					t.Fatalf("feedback report field %s is %q, want exactly %q", field, values, want)
+				}
+			}
+			if strings.HasPrefix(test.action, "xarf-") {
+				decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(parts[2].body))
+				if err != nil {
+					t.Fatalf("decode XARF MIME attachment: %v", err)
+				}
+				var payload map[string]any
+				if err := json.Unmarshal(decoded, &payload); err != nil {
+					t.Fatalf("parse XARF MIME attachment: %v", err)
+				}
+			} else {
+				if _, err := mail.ReadMessage(strings.NewReader(parts[2].body)); err != nil {
+					t.Fatalf("parse attached original message: %v", err)
 				}
 			}
 		})
@@ -186,7 +223,7 @@ func parseMultipartReport(t *testing.T, raw string) (textproto.MIMEHeader, []par
 func TestBuildXARFJSONMatchesRequestedVersion(t *testing.T) {
 	t.Parallel()
 
-	session := SessionMetadata{RemoteIP: "192.0.2.55", MailFrom: "sender@sender.test"}
+	session := SessionMetadata{RemoteIP: "192.0.2.55", RemotePort: 54321, MailFrom: "sender@sender.test"}
 	request := ReportRequest{From: "reports@example.test", Recipient: "trap@example.test"}
 	now := time.Date(2026, time.August, 11, 12, 0, 0, 0, time.UTC)
 	original := []byte("Subject: test\r\n\r\nbody")
@@ -203,9 +240,119 @@ func TestBuildXARFJSONMatchesRequestedVersion(t *testing.T) {
 		if version == 3 && value["Version"] != "3" {
 			t.Fatalf("unexpected v3 payload: %s", payload)
 		}
-		if version == 4 && value["xarf_version"] != "4.0.0" {
+		if version == 4 && value["xarf_version"] != "4.2.0" {
 			t.Fatalf("unexpected v4 payload: %s", payload)
 		}
+	}
+}
+
+func TestGeneratedXARFPayloadsMatchOfficialSchemas(t *testing.T) {
+	t.Parallel()
+
+	session := SessionMetadata{
+		RemoteIP:   "192.0.2.55",
+		RemotePort: 54321,
+		MailFrom:   "sender@sender.test",
+	}
+	request := ReportRequest{From: "reports@example.test", Recipient: "trap@example.test"}
+	original := []byte("From: sender@sender.test\r\nTo: trap@example.test\r\nSubject: test\r\nMessage-ID: <sample@sender.test>\r\n\r\nbody\r\n")
+	now := time.Date(2026, time.August, 11, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name      string
+		version   int
+		resources map[string]string
+		schemaURL string
+	}{
+		{
+			name:    "v3 spam",
+			version: 3,
+			resources: map[string]string{
+				"https://raw.githubusercontent.com/xarf/schema-discussion/master/schemas/3/xarf_shared.schema.json": filepath.Join("testdata", "xarf", "v3", "xarf_shared.schema.json"),
+				"https://raw.githubusercontent.com/xarf/schema-discussion/master/schemas/3/spam.schema.json":        filepath.Join("testdata", "xarf", "v3", "spam.schema.json"),
+			},
+			schemaURL: "https://raw.githubusercontent.com/xarf/schema-discussion/master/schemas/3/spam.schema.json",
+		},
+		{
+			name:    "v4 messaging spam",
+			version: 4,
+			resources: map[string]string{
+				"https://xarf.org/schemas/v4/xarf-core.json":            filepath.Join("testdata", "xarf", "v4", "xarf-core.json"),
+				"https://xarf.org/schemas/v4/types/messaging-spam.json": filepath.Join("testdata", "xarf", "v4", "types", "messaging-spam.json"),
+			},
+			schemaURL: "https://xarf.org/schemas/v4/types/messaging-spam.json",
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			compiler := jsonschema.NewCompiler()
+			compiler.AssertFormat()
+			for resourceURL, path := range test.resources {
+				file, err := os.Open(path)
+				if err != nil {
+					t.Fatalf("open pinned schema: %v", err)
+				}
+				document, decodeErr := jsonschema.UnmarshalJSON(file)
+				closeErr := file.Close()
+				if decodeErr != nil {
+					t.Fatalf("decode pinned schema: %v", decodeErr)
+				}
+				if closeErr != nil {
+					t.Fatalf("close pinned schema: %v", closeErr)
+				}
+				if err := compiler.AddResource(resourceURL, document); err != nil {
+					t.Fatalf("add pinned schema: %v", err)
+				}
+			}
+			schema, err := compiler.Compile(test.schemaURL)
+			if err != nil {
+				t.Fatalf("compile pinned schema: %v", err)
+			}
+			payload, err := buildXARFPayload(request, session, original, now, test.version)
+			if err != nil {
+				t.Fatalf("build XARF: %v", err)
+			}
+			instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(payload))
+			if err != nil {
+				t.Fatalf("decode generated XARF: %v", err)
+			}
+			if err := schema.Validate(instance); err != nil {
+				t.Fatalf("generated XARF does not match official schema: %v\n%s", err, payload)
+			}
+		})
+	}
+}
+
+func TestXARFRejectsMissingTransportEvidence(t *testing.T) {
+	t.Parallel()
+
+	request := ReportRequest{From: "reports@example.test", Recipient: "trap@example.test"}
+	original := []byte("Subject: test\r\n\r\nbody\r\n")
+	for _, session := range []SessionMetadata{
+		{RemoteIP: "not-an-ip", RemotePort: 54321, MailFrom: "sender@sender.test"},
+		{RemoteIP: "192.0.2.55", RemotePort: 0, MailFrom: "sender@sender.test"},
+	} {
+		if _, err := buildXARFPayload(request, session, original, time.Now().UTC(), 4); err == nil {
+			t.Fatalf("expected invalid XARF transport metadata to fail: %#v", session)
+		}
+	}
+}
+
+func TestARFRejectsInvalidSourceIP(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildReportMessage(ReportRequest{
+		Action:       "arf",
+		Recipient:    "trap@example.test",
+		From:         "reports@example.test",
+		FeedbackType: "abuse",
+	}, SessionMetadata{RemoteIP: "not-an-ip", MailFrom: "sender@sender.test"}, []byte("Subject: test\r\n\r\nbody\r\n"), time.Now().UTC())
+	if err == nil || !strings.Contains(err.Error(), "valid source IP") {
+		t.Fatalf("expected invalid ARF source IP to fail, got %v", err)
 	}
 }
 
@@ -217,7 +364,7 @@ func TestXARFEmailAttachmentContainsJSON(t *testing.T) {
 		Recipient: "trap@example.test",
 		From:      "reports@example.test",
 		Message:   "Spam report",
-	}, SessionMetadata{RemoteIP: "192.0.2.55", MailFrom: "sender@sender.test"}, []byte("Subject: test\r\n\r\nbody"), time.Now().UTC())
+	}, SessionMetadata{RemoteIP: "192.0.2.55", RemotePort: 54321, MailFrom: "sender@sender.test"}, []byte("Subject: test\r\n\r\nbody"), time.Now().UTC())
 	if err != nil {
 		t.Fatalf("build XARF report: %v", err)
 	}
@@ -333,6 +480,63 @@ func TestAsyncBounceUsesCustomDiagnosticText(t *testing.T) {
 		if !strings.Contains(message.Raw, want) {
 			t.Fatalf("async bounce missing %q", want)
 		}
+	}
+}
+
+func TestAsyncBounceMatchesRFC3464FieldStructure(t *testing.T) {
+	t.Parallel()
+
+	message, err := BuildReportMessage(ReportRequest{
+		Action:       "async-bounce",
+		Recipient:    "quota@example.test",
+		From:         "postmaster@example.test",
+		Code:         552,
+		EnhancedCode: "5.2.2",
+		Message:      "Mailbox quota exceeded",
+	}, SessionMetadata{MailFrom: "sender@sender.test"}, []byte("From: sender@sender.test\r\nSubject: quota\r\n\r\nbody\r\n"), time.Now().UTC())
+	if err != nil {
+		t.Fatalf("build async bounce: %v", err)
+	}
+	header, parts := parseMultipartReport(t, message.Raw)
+	_, params, err := mime.ParseMediaType(header.Get("Content-Type"))
+	if err != nil || params["report-type"] != "delivery-status" {
+		t.Fatalf("invalid DSN outer Content-Type: %q (%v)", header.Get("Content-Type"), err)
+	}
+	if len(parts) != 3 {
+		t.Fatalf("DSN requires human, delivery-status, and original parts; got %d", len(parts))
+	}
+	statusReader := textproto.NewReader(bufio.NewReader(strings.NewReader(parts[1].body)))
+	perMessage, err := statusReader.ReadMIMEHeader()
+	if err != nil {
+		t.Fatalf("parse DSN per-message fields: %v", err)
+	}
+	perRecipient, err := statusReader.ReadMIMEHeader()
+	if err != nil {
+		t.Fatalf("parse DSN per-recipient fields: %v", err)
+	}
+	if perMessage.Get("Reporting-MTA") != "dns; example.test" {
+		t.Fatalf("invalid Reporting-MTA: %q", perMessage.Get("Reporting-MTA"))
+	}
+	for field, want := range map[string]string{
+		"Final-Recipient": "rfc822; quota@example.test",
+		"Action":          "failed",
+		"Status":          "5.2.2",
+		"Diagnostic-Code": "smtp; 552 5.2.2 Mailbox quota exceeded",
+	} {
+		if values := perRecipient.Values(field); len(values) != 1 || values[0] != want {
+			t.Fatalf("DSN field %s is %q, want exactly %q", field, values, want)
+		}
+	}
+}
+
+func TestAsyncBounceRejectsNonASCIIDiagnostic(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewMailFailEngine([]models.MailFailRule{{
+		Name: "quota", Trigger: "quota", Action: "async-bounce", Message: "Postfach ist voll – erneut versuchen",
+	}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "printable US-ASCII") {
+		t.Fatalf("expected invalid DSN diagnostic to be rejected, got %v", err)
 	}
 }
 

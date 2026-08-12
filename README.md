@@ -287,11 +287,11 @@ Supported actions:
 - `xarf-v3`
   Accepts the message, then queues a legacy XARF v3 spam report as JSON in the XARF SMTP envelope.
 - `xarf-v4`
-  Accepts the message, then queues a XARF v4 `messaging/spam` report with hashed, base64-encoded evidence.
+  Accepts the message, then queues a XARF v4.2 `messaging/spam` report with hashed, base64-encoded evidence.
 - `original-report`
   Accepts the message, then queues an RFC 5965-compatible `other` feedback report with the original RFC822 message attached.
 - `async-bounce`
-  Accepts the message first, then queues an RFC 3464 delivery-status notification. Its SMTP envelope sender is empty to prevent bounce loops. The rule can define the text used in both the human-readable DSN part and `Diagnostic-Code`.
+  Accepts the message first, then queues an RFC 3464 delivery-status notification. Its SMTP envelope sender is empty to prevent bounce loops. The rule can define printable US-ASCII text used in both the human-readable DSN part and `Diagnostic-Code`.
 
 Report actions run automatically after `DATA` is accepted, so their stage is not configurable. ARF, XARF, and original-message reports use generated human-readable text; asynchronous bounces can override it per rule. Reports are delivered to the original SMTP envelope sender and are suppressed for null reverse-path messages and messages carrying an `Auto-Submitted` header.
 Queued reports are persisted in SQLite and retried with exponential backoff when outbound delivery is temporarily unavailable.

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/mail"
 	"net/textproto"
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,8 +68,9 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 
-	remoteIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
-	session := SessionMetadata{RemoteIP: remoteIP}
+	remoteIP, remotePortText, _ := net.SplitHostPort(conn.RemoteAddr().String())
+	remotePort, _ := strconv.Atoi(remotePortText)
+	session := SessionMetadata{RemoteIP: remoteIP, RemotePort: remotePort}
 	if response := s.policy.OnConnect(&session); response != nil {
 		s.logSMTPAction(session, "connect-rejected", "", "", response)
 		_ = s.sendStatus(conn, response.Code, response.Message)
@@ -317,7 +319,13 @@ func readDataBlock(reader *bufio.Reader) ([]byte, error) {
 		if strings.HasPrefix(line, "..") {
 			line = line[1:]
 		}
+		line = strings.TrimSuffix(line, "\n")
+		line = strings.TrimSuffix(line, "\r")
+		if strings.ContainsRune(line, '\r') {
+			return nil, fmt.Errorf("message data contains a bare carriage return")
+		}
 		buffer.WriteString(line)
+		buffer.WriteString("\r\n")
 	}
 	return buffer.Bytes(), nil
 }

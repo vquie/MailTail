@@ -176,6 +176,11 @@ func deliverSMTP(ctx context.Context, connection net.Conn, host, helo, tlsMode, 
 			return err
 		}
 	}
+	if contains8Bit(message.Raw) {
+		if supported, _ := client.Extension("8BITMIME"); !supported {
+			return fmt.Errorf("outbound SMTP server does not advertise 8BITMIME required by the report")
+		}
+	}
 	if err := client.Mail(message.EnvelopeFrom); err != nil {
 		return err
 	}
@@ -195,6 +200,15 @@ func deliverSMTP(ctx context.Context, connection net.Conn, host, helo, tlsMode, 
 	}
 	_ = client.Quit()
 	return nil
+}
+
+func contains8Bit(value string) bool {
+	for index := 0; index < len(value); index++ {
+		if value[index] >= 128 {
+			return true
+		}
+	}
+	return false
 }
 
 func outboundTLSConfig(host string, allowInvalidCertificate bool) *tls.Config {

@@ -28,6 +28,7 @@ type MessageReportPolicy interface {
 type SessionMetadata struct {
 	Helo        string
 	RemoteIP    string
+	RemotePort  int
 	MailFrom    string
 	RcptTo      []string
 	OwnerUserID int64
