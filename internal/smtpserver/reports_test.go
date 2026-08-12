@@ -562,6 +562,77 @@ func TestMailFailARFFeedbackType(t *testing.T) {
 	}
 }
 
+func TestFeedbackReportRecipientLocalPart(t *testing.T) {
+	t.Parallel()
+
+	for _, action := range []string{"arf", "xarf-v3", "xarf-v4"} {
+		action := action
+		t.Run(action, func(t *testing.T) {
+			t.Parallel()
+
+			engine, err := NewMailFailEngine([]models.MailFailRule{{
+				Name:                     action,
+				Trigger:                  action,
+				Action:                   action,
+				ReportRecipientLocalPart: "fbl",
+			}}, nil)
+			if err != nil {
+				t.Fatalf("create engine: %v", err)
+			}
+			requests := engine.MatchReports([]string{"user+" + action + "@mailtail.test"})
+			if len(requests) != 1 || requests[0].ReportRecipientLocalPart != "fbl" {
+				t.Fatalf("unexpected report request: %#v", requests)
+			}
+			requests[0].From = "postmaster@mailtail.test"
+
+			message, err := BuildReportMessage(requests[0], SessionMetadata{
+				MailFrom:   "bounce-123@sender.test",
+				RemoteIP:   "192.0.2.55",
+				RemotePort: 12345,
+			}, []byte("From: sender@sender.test\r\nSubject: test\r\n\r\nbody\r\n"), time.Now().UTC())
+			if err != nil {
+				t.Fatalf("build report: %v", err)
+			}
+			if message.Recipient != "fbl@sender.test" {
+				t.Fatalf("unexpected report recipient: %q", message.Recipient)
+			}
+			if !strings.Contains(message.Raw, "To: <fbl@sender.test>\r\n") {
+				t.Fatalf("report To header does not use configured local part:\n%s", message.Raw)
+			}
+		})
+	}
+}
+
+func TestFeedbackReportRecipientLocalPartValidation(t *testing.T) {
+	t.Parallel()
+
+	for _, localPart := range []string{"fbl@example.test", ".fbl", "fbl.", "fbl..reports", "fbl reports"} {
+		localPart := localPart
+		t.Run(localPart, func(t *testing.T) {
+			t.Parallel()
+			_, err := NewMailFailEngine([]models.MailFailRule{{
+				Name:                     "arf",
+				Trigger:                  "arf",
+				Action:                   "arf",
+				ReportRecipientLocalPart: localPart,
+			}}, nil)
+			if err == nil || !strings.Contains(err.Error(), "invalid report recipient local part") {
+				t.Fatalf("expected invalid local part %q to fail, got %v", localPart, err)
+			}
+		})
+	}
+
+	_, err := NewMailFailEngine([]models.MailFailRule{{
+		Name:                     "original",
+		Trigger:                  "original",
+		Action:                   "original-report",
+		ReportRecipientLocalPart: "fbl",
+	}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "unsupported action") {
+		t.Fatalf("expected local part on original report to fail, got %v", err)
+	}
+}
+
 func TestMailFailReportRulesDoNotRequireStageOrMessage(t *testing.T) {
 	t.Parallel()
 

@@ -54,6 +54,7 @@ export type MailFailRule = {
   code: number;
   enhancedCode: string;
   feedbackType: "" | "abuse" | "fraud" | "virus" | "other" | "not-spam";
+  reportRecipientLocalPart: string;
   message: string;
 };
 

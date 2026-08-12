@@ -128,6 +128,7 @@ func normalizeMailFailRules(rules []models.MailFailRule) []models.MailFailRule {
 		stage := strings.TrimSpace(rule.Stage)
 		message := strings.TrimSpace(rule.Message)
 		feedbackType := strings.ToLower(strings.TrimSpace(rule.FeedbackType))
+		reportRecipientLocalPart := strings.TrimSpace(rule.ReportRecipientLocalPart)
 		if isReportAction(action) {
 			stage = "data"
 			if action != "async-bounce" {
@@ -137,21 +138,34 @@ func normalizeMailFailRules(rules []models.MailFailRule) []models.MailFailRule {
 		if action != "arf" {
 			feedbackType = ""
 		}
+		if !supportsReportRecipientLocalPart(action) {
+			reportRecipientLocalPart = ""
+		}
 		normalized = append(normalized, models.MailFailRule{
-			Name:          strings.TrimSpace(rule.Name),
-			Trigger:       strings.TrimSpace(rule.Trigger),
-			Stage:         stage,
-			Action:        action,
-			AllowAfter:    rule.AllowAfter,
-			MinRetryAfter: strings.TrimSpace(rule.MinRetryAfter),
-			ResetAfter:    strings.TrimSpace(rule.ResetAfter),
-			Code:          rule.Code,
-			EnhancedCode:  strings.TrimSpace(rule.EnhancedCode),
-			FeedbackType:  feedbackType,
-			Message:       message,
+			Name:                     strings.TrimSpace(rule.Name),
+			Trigger:                  strings.TrimSpace(rule.Trigger),
+			Stage:                    stage,
+			Action:                   action,
+			AllowAfter:               rule.AllowAfter,
+			MinRetryAfter:            strings.TrimSpace(rule.MinRetryAfter),
+			ResetAfter:               strings.TrimSpace(rule.ResetAfter),
+			Code:                     rule.Code,
+			EnhancedCode:             strings.TrimSpace(rule.EnhancedCode),
+			FeedbackType:             feedbackType,
+			ReportRecipientLocalPart: reportRecipientLocalPart,
+			Message:                  message,
 		})
 	}
 	return normalized
+}
+
+func supportsReportRecipientLocalPart(action string) bool {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "arf", "xarf-v3", "xarf-v4":
+		return true
+	default:
+		return false
+	}
 }
 
 func isReportAction(action string) bool {

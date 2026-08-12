@@ -59,6 +59,7 @@ type Store interface {
 	ListDueOutboundMessages(ctx context.Context, before time.Time, limit int) ([]models.OutboundMessage, error)
 	DeleteOutboundMessage(ctx context.Context, id int64) error
 	RescheduleOutboundMessage(ctx context.Context, id int64, attempts int, nextAttempt time.Time, lastError string) error
+	DeferOutboundMessagesForDomain(ctx context.Context, domain string, exceptID int64, nextAttempt time.Time, lastError string) error
 	GetMessage(ctx context.Context, id int64, principal models.SessionPrincipal) (models.Message, error)
 	GetRawMessage(ctx context.Context, id int64, principal models.SessionPrincipal) (string, error)
 	GetAttachment(ctx context.Context, messageID, attachmentID int64, principal models.SessionPrincipal) (models.Attachment, []byte, error)
@@ -242,6 +243,23 @@ func (s *SQLiteStore) RescheduleOutboundMessage(ctx context.Context, id int64, a
 		SET attempts = ?, next_attempt = ?, last_error = ?
 		WHERE id = ?
 	`, attempts, nextAttempt.UTC().Format(time.RFC3339Nano), lastError, id)
+	return err
+}
+
+func (s *SQLiteStore) DeferOutboundMessagesForDomain(ctx context.Context, domain string, exceptID int64, nextAttempt time.Time, lastError string) error {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" {
+		return fmt.Errorf("outbound recipient domain is required")
+	}
+	retryAt := nextAttempt.UTC().Format(time.RFC3339Nano)
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE outbound_messages
+		SET next_attempt = CASE WHEN julianday(next_attempt) < julianday(?) THEN ? ELSE next_attempt END,
+			last_error = ?
+		WHERE id != ?
+			AND instr(recipient, '@') > 1
+			AND lower(substr(recipient, instr(recipient, '@') + 1)) = ?
+	`, retryAt, retryAt, lastError, exceptID, domain)
 	return err
 }
 

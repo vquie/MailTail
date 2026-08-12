@@ -107,17 +107,18 @@ type AppSettings struct {
 }
 
 type MailFailRule struct {
-	Name          string `json:"name"`
-	Trigger       string `json:"trigger"`
-	Stage         string `json:"stage"`
-	Action        string `json:"action"`
-	AllowAfter    int    `json:"allowAfter,omitempty"`
-	MinRetryAfter string `json:"minRetryAfter,omitempty"`
-	ResetAfter    string `json:"resetAfter,omitempty"`
-	Code          int    `json:"code"`
-	EnhancedCode  string `json:"enhancedCode,omitempty"`
-	FeedbackType  string `json:"feedbackType,omitempty"`
-	Message       string `json:"message"`
+	Name                     string `json:"name"`
+	Trigger                  string `json:"trigger"`
+	Stage                    string `json:"stage"`
+	Action                   string `json:"action"`
+	AllowAfter               int    `json:"allowAfter,omitempty"`
+	MinRetryAfter            string `json:"minRetryAfter,omitempty"`
+	ResetAfter               string `json:"resetAfter,omitempty"`
+	Code                     int    `json:"code"`
+	EnhancedCode             string `json:"enhancedCode,omitempty"`
+	FeedbackType             string `json:"feedbackType,omitempty"`
+	ReportRecipientLocalPart string `json:"reportRecipientLocalPart,omitempty"`
+	Message                  string `json:"message"`
 }
 
 type OutboundMessage struct {

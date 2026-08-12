@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/textproto"
 	"sort"
 	"strings"
 	"time"
@@ -20,6 +21,26 @@ import (
 
 type OutboundSender interface {
 	Send(ctx context.Context, message models.OutboundMessage) error
+}
+
+type outboundQueue interface {
+	ListDueOutboundMessages(ctx context.Context, before time.Time, limit int) ([]models.OutboundMessage, error)
+	DeleteOutboundMessage(ctx context.Context, id int64) error
+	RescheduleOutboundMessage(ctx context.Context, id int64, attempts int, nextAttempt time.Time, lastError string) error
+	DeferOutboundMessagesForDomain(ctx context.Context, domain string, exceptID int64, nextAttempt time.Time, lastError string) error
+}
+
+type outboundDeliveryError struct {
+	message   string
+	temporary bool
+}
+
+func (e *outboundDeliveryError) Error() string {
+	return e.message
+}
+
+func (e *outboundDeliveryError) Temporary() bool {
+	return e.temporary
 }
 
 type DirectSender struct {
@@ -55,7 +76,7 @@ func (s *DirectSender) Send(ctx context.Context, message models.OutboundMessage)
 	if err != nil {
 		var dnsError *net.DNSError
 		if !errors.As(err, &dnsError) || !dnsError.IsNotFound {
-			return fmt.Errorf("MX lookup for %s failed: %w", domain, err)
+			return &outboundDeliveryError{message: fmt.Sprintf("MX lookup for %s failed: %v", domain, err), temporary: true}
 		}
 		mxRecords = nil
 	}
@@ -67,6 +88,7 @@ func (s *DirectSender) Send(ctx context.Context, message models.OutboundMessage)
 	})
 
 	failures := make([]string, 0, len(mxRecords))
+	temporary := false
 	for _, record := range mxRecords {
 		host := strings.TrimSuffix(strings.TrimSpace(record.Host), ".")
 		if host == "" {
@@ -75,6 +97,7 @@ func (s *DirectSender) Send(ctx context.Context, message models.OutboundMessage)
 		connection, err := s.dialContext(ctx, "tcp", net.JoinHostPort(host, "25"))
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", host, err))
+			temporary = true
 			continue
 		}
 		err = deliverSMTP(ctx, connection, host, s.helo, "opportunistic", "", "", message)
@@ -82,8 +105,12 @@ func (s *DirectSender) Send(ctx context.Context, message models.OutboundMessage)
 			return nil
 		}
 		failures = append(failures, fmt.Sprintf("%s: %v", host, err))
+		temporary = temporary || isTemporaryOutboundError(err)
 	}
-	return fmt.Errorf("direct delivery to %s failed: %s", domain, strings.Join(failures, "; "))
+	return &outboundDeliveryError{
+		message:   fmt.Sprintf("direct delivery to %s failed: %s", domain, strings.Join(failures, "; ")),
+		temporary: temporary,
+	}
 }
 
 type RelayConfig struct {
@@ -226,34 +253,7 @@ func RunOutboundWorker(ctx context.Context, logger *log.Logger, store storage.St
 		return
 	}
 	run := func() {
-		messages, err := store.ListDueOutboundMessages(ctx, time.Now().UTC(), 25)
-		if err != nil {
-			if ctx.Err() == nil {
-				logger.Printf("outbound report queue lookup failed: %v", err)
-			}
-			return
-		}
-		for _, message := range messages {
-			sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			err := sender.Send(sendCtx, message)
-			cancel()
-			if err == nil {
-				if err := store.DeleteOutboundMessage(ctx, message.ID); err != nil {
-					logger.Printf("outbound report completion failed id=%d: %v", message.ID, err)
-					continue
-				}
-				logger.Printf("outbound report delivered id=%d recipient=%q", message.ID, sanitizeLogValue(message.Recipient))
-				continue
-			}
-			attempts := message.Attempts + 1
-			nextAttempt := time.Now().UTC().Add(outboundRetryDelay(attempts))
-			lastError := sanitizeLogValue(err.Error())
-			if err := store.RescheduleOutboundMessage(ctx, message.ID, attempts, nextAttempt, lastError); err != nil {
-				logger.Printf("outbound report reschedule failed id=%d: %v", message.ID, err)
-				continue
-			}
-			logger.Printf("outbound report delivery failed id=%d attempt=%d retry_at=%s error=%q", message.ID, attempts, nextAttempt.Format(time.RFC3339), lastError)
-		}
+		runOutboundBatch(ctx, logger, store, sender, time.Now().UTC())
 	}
 
 	run()
@@ -267,6 +267,77 @@ func RunOutboundWorker(ctx context.Context, logger *log.Logger, store storage.St
 			run()
 		}
 	}
+}
+
+func runOutboundBatch(ctx context.Context, logger *log.Logger, store outboundQueue, sender OutboundSender, now time.Time) {
+	messages, err := store.ListDueOutboundMessages(ctx, now, 25)
+	if err != nil {
+		if ctx.Err() == nil {
+			logger.Printf("outbound report queue lookup failed: %v", err)
+		}
+		return
+	}
+	deferredDomains := make(map[string]time.Time)
+	for _, message := range messages {
+		domain, hasDomain := extractDomain(message.Recipient)
+		if retryAt, deferred := deferredDomains[domain]; hasDomain && deferred {
+			if now.Before(retryAt) {
+				lastError := "recipient domain temporarily deferred after SMTP throttle"
+				if err := store.RescheduleOutboundMessage(ctx, message.ID, message.Attempts, retryAt, lastError); err != nil {
+					logger.Printf("outbound report throttle reschedule failed id=%d: %v", message.ID, err)
+					continue
+				}
+				logger.Printf("outbound report deferred id=%d domain=%q retry_at=%s", message.ID, sanitizeLogValue(domain), retryAt.Format(time.RFC3339))
+				continue
+			}
+		}
+
+		sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		err := sender.Send(sendCtx, message)
+		cancel()
+		if err == nil {
+			if err := store.DeleteOutboundMessage(ctx, message.ID); err != nil {
+				logger.Printf("outbound report completion failed id=%d: %v", message.ID, err)
+				continue
+			}
+			logger.Printf("outbound report delivered id=%d recipient=%q", message.ID, sanitizeLogValue(message.Recipient))
+			continue
+		}
+
+		attempts := message.Attempts + 1
+		nextAttempt := now.Add(outboundRetryDelay(attempts))
+		temporary := isTemporaryOutboundError(err)
+		if temporary && hasDomain {
+			deferredDomains[domain] = nextAttempt
+		}
+		lastError := sanitizeLogValue(err.Error())
+		if err := store.RescheduleOutboundMessage(ctx, message.ID, attempts, nextAttempt, lastError); err != nil {
+			logger.Printf("outbound report reschedule failed id=%d: %v", message.ID, err)
+			continue
+		}
+		if temporary && hasDomain {
+			if err := store.DeferOutboundMessagesForDomain(ctx, domain, message.ID, nextAttempt, "recipient domain temporarily deferred after SMTP throttle"); err != nil {
+				logger.Printf("outbound report domain throttle persistence failed domain=%q: %v", sanitizeLogValue(domain), err)
+			}
+		}
+		logger.Printf("outbound report delivery failed id=%d attempt=%d temporary=%t retry_at=%s error=%q", message.ID, attempts, temporary, nextAttempt.Format(time.RFC3339), lastError)
+	}
+}
+
+func isTemporaryOutboundError(err error) bool {
+	var smtpError *textproto.Error
+	if errors.As(err, &smtpError) {
+		return smtpError.Code >= 400 && smtpError.Code < 500
+	}
+	var classified interface{ Temporary() bool }
+	if errors.As(err, &classified) {
+		return classified.Temporary()
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var networkError net.Error
+	return errors.As(err, &networkError)
 }
 
 func outboundRetryDelay(attempts int) time.Duration {

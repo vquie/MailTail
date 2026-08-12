@@ -30,9 +30,13 @@ func BuildReportMessage(request ReportRequest, session SessionMetadata, original
 	if _, ok := extractDomain(from.Address); !ok {
 		return models.OutboundMessage{}, fmt.Errorf("invalid report sender")
 	}
-	to, err := mail.ParseAddress(strings.TrimSpace(session.MailFrom))
-	if err != nil || to.Address != strings.TrimSpace(session.MailFrom) || !isASCII(to.Address) {
+	originalSender, err := mail.ParseAddress(strings.TrimSpace(session.MailFrom))
+	if err != nil || originalSender.Address != strings.TrimSpace(session.MailFrom) || !isASCII(originalSender.Address) {
 		return models.OutboundMessage{}, fmt.Errorf("invalid report recipient")
+	}
+	to, err := resolveReportRecipient(request, originalSender)
+	if err != nil {
+		return models.OutboundMessage{}, err
 	}
 	reportedRecipient, err := mail.ParseAddress(strings.TrimSpace(request.Recipient))
 	if err != nil || reportedRecipient.Address != strings.TrimSpace(request.Recipient) || !isASCII(reportedRecipient.Address) {
@@ -110,6 +114,29 @@ func BuildReportMessage(request ReportRequest, session SessionMetadata, original
 		Raw:          raw.String(),
 		NextAttempt:  now.UTC(),
 	}, nil
+}
+
+func resolveReportRecipient(request ReportRequest, originalSender *mail.Address) (*mail.Address, error) {
+	localPart := strings.TrimSpace(request.ReportRecipientLocalPart)
+	if localPart == "" {
+		return originalSender, nil
+	}
+	if !supportsReportRecipientLocalPart(request.Action) {
+		return nil, fmt.Errorf("report recipient local part is unsupported for action %q", request.Action)
+	}
+	if !validReportRecipientLocalPart(localPart) {
+		return nil, fmt.Errorf("invalid report recipient local part")
+	}
+	domain, ok := extractDomain(originalSender.Address)
+	if !ok {
+		return nil, fmt.Errorf("invalid report recipient domain")
+	}
+	recipient := localPart + "@" + domain
+	parsed, err := mail.ParseAddress(recipient)
+	if err != nil || parsed.Address != recipient || !isASCII(parsed.Address) {
+		return nil, fmt.Errorf("invalid report recipient")
+	}
+	return parsed, nil
 }
 
 func writeHumanReadablePart(writer *multipart.Writer, message string) error {

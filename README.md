@@ -283,18 +283,22 @@ Supported actions:
   `minRetryAfter` defines how long the sender must wait before the retry is accepted.
   `resetAfter` defines when the greylist state expires and becomes temporary again. The default is `1h`.
 - `arf`
-  Accepts the message, then queues an RFC 5965 feedback report with the original message attached. The registered feedback type can be `abuse`, `fraud`, `virus`, `other`, or `not-spam` and defaults to `abuse`.
+  Accepts the message, then queues an RFC 5965 feedback report with the original message attached. The registered feedback type can be `abuse`, `fraud`, `virus`, `other`, or `not-spam` and defaults to `abuse`. An optional `reportRecipientLocalPart` such as `fbl` replaces only the local part of the original envelope sender.
 - `xarf-v3`
-  Accepts the message, then queues a legacy XARF v3 spam report as JSON in the XARF SMTP envelope.
+  Accepts the message, then queues a legacy XARF v3 spam report as JSON in the XARF SMTP envelope. It supports the same optional `reportRecipientLocalPart` setting.
 - `xarf-v4`
-  Accepts the message, then queues a XARF v4.2 `messaging/spam` report with hashed, base64-encoded evidence.
+  Accepts the message, then queues a XARF v4.2 `messaging/spam` report with hashed, base64-encoded evidence. It supports the same optional `reportRecipientLocalPart` setting.
 - `original-report`
   Accepts the message, then queues an RFC 5965-compatible `other` feedback report with the original RFC822 message attached.
 - `async-bounce`
   Accepts the message first, then queues an RFC 3464 delivery-status notification. Its SMTP envelope sender is empty to prevent bounce loops. The rule can define printable US-ASCII text used in both the human-readable DSN part and `Diagnostic-Code`.
 
-Report actions run automatically after `DATA` is accepted, so their stage is not configurable. ARF, XARF, and original-message reports use generated human-readable text; asynchronous bounces can override it per rule. Reports are delivered to the original SMTP envelope sender and are suppressed for null reverse-path messages and messages carrying an `Auto-Submitted` header.
-Queued reports are persisted in SQLite and retried with exponential backoff when outbound delivery is temporarily unavailable.
+Report actions run automatically after `DATA` is accepted, so their stage is not configurable. ARF, XARF, and original-message reports use generated human-readable text; asynchronous bounces can override it per rule.
+
+By default reports are delivered to the original SMTP envelope sender. For ARF and XARF, `reportRecipientLocalPart: fbl` changes `bounce-123@example.test` to `fbl@example.test`; values containing `@` or a domain are rejected.
+
+Reports are suppressed for null reverse-path messages and messages carrying an `Auto-Submitted` header.
+Queued reports are persisted in SQLite and retried without a fixed attempt limit. Temporary SMTP failures use exponential backoff capped at one hour and defer other queued reports to the same recipient domain, preventing a throttled destination from being hammered by the rest of a batch.
 
 Each mailbox can set `Report sender` in the Rules UI. If it is empty, MailTail derives `postmaster@<recipient-domain>` only when that domain is configured as an exact accepted recipient domain. Regex and catch-all recipient policies require an explicit report sender. MailTail never copies the original recipient address into the report sender.
 

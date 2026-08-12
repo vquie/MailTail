@@ -1,6 +1,6 @@
 # Outbound reports
 
-MailTail rules can accept an inbound test message and asynchronously send a report to its SMTP envelope sender. The generated message is stored in a durable SQLite outbox before delivery. Temporary delivery failures are retried with exponential backoff capped at one hour.
+MailTail rules can accept an inbound test message and asynchronously send a report to its SMTP envelope sender. The generated message is stored in a durable SQLite outbox before delivery. Delivery failures remain queued without a fixed attempt limit. Temporary failures are retried with exponential backoff capped at one hour.
 
 ## Actions
 
@@ -15,6 +15,10 @@ All outbound actions run after MailTail has accepted `DATA` and match the same p
 Report messages include `Auto-Submitted: auto-generated` and `X-Auto-Response-Suppress: All`. MailTail does not create reports for messages with an empty envelope sender or an existing non-`no` `Auto-Submitted` header.
 
 ARF rules default to `Feedback-Type: abuse`. The Rules UI also exposes the registered ARF feedback types `fraud`, `virus`, `other`, and `not-spam`.
+
+ARF, XARF v3, and XARF v4 rules may set an optional report recipient local part. MailTail retains the domain of the original SMTP envelope sender and replaces only its local part. For example, `reportRecipientLocalPart: fbl` sends a report for `bounce-123@example.test` to `fbl@example.test`.
+
+The value is limited to a 64-byte ASCII dot-atom local part; addresses containing `@`, domains, whitespace, quoted strings, leading or trailing dots, and consecutive dots are rejected. Leaving it empty preserves delivery to the complete original envelope sender. Original-message reports and asynchronous bounces do not support this override.
 
 XARF transport uses `Feedback-Type: xarf`, which is an intentional unofficial RFC 5965 extension defined by XARF. XARF itself is not an IETF RFC. Its third MIME part is the XARF JSON document. MailTail's v3 and v4 payloads are tested against pinned copies of the official spam schemas.
 
@@ -51,6 +55,10 @@ Asynchronous bounces still use the configured or derived address in the visible 
 ## Outbound transport
 
 Outbound delivery has one instance-wide mode that applies to ARF, XARF, original-message reports, and asynchronous bounces alike. `direct` is the default. Set `MAILTAIL_OUTBOUND_MODE=relay` only when every outbound action should use a relay.
+
+SMTP `4xx` responses, network timeouts, and temporary DNS failures retain the report in the SQLite outbox. Once a destination returns a temporary failure, other due reports for the same recipient domain are moved to the same persistent retry time instead of being attempted immediately.
+
+This domain backoff survives process restarts because every affected outbox entry receives its own updated `next_attempt` value.
 
 ### Direct-to-MX delivery
 

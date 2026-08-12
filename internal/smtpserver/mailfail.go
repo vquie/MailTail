@@ -17,30 +17,35 @@ type MailFailEngine struct {
 }
 
 type mailFailRule struct {
-	name          string
-	trigger       string
-	stage         string
-	action        string
-	allowAfter    int
-	minRetryAfter time.Duration
-	resetAfter    time.Duration
-	code          int
-	enhancedCode  string
-	feedbackType  string
-	message       string
+	name                     string
+	trigger                  string
+	stage                    string
+	action                   string
+	allowAfter               int
+	minRetryAfter            time.Duration
+	resetAfter               time.Duration
+	code                     int
+	enhancedCode             string
+	feedbackType             string
+	reportRecipientLocalPart string
+	message                  string
 }
 
 type ReportRequest struct {
-	Action       string
-	Recipient    string
-	From         string
-	Code         int
-	EnhancedCode string
-	FeedbackType string
-	Message      string
+	Action                   string
+	Recipient                string
+	From                     string
+	Code                     int
+	EnhancedCode             string
+	FeedbackType             string
+	ReportRecipientLocalPart string
+	Message                  string
 }
 
-var enhancedBounceCodePattern = regexp.MustCompile(`^5\.[0-9]{1,3}\.[0-9]{1,3}$`)
+var (
+	enhancedBounceCodePattern       = regexp.MustCompile(`^5\.[0-9]{1,3}\.[0-9]{1,3}$`)
+	reportRecipientLocalPartPattern = regexp.MustCompile("^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*$")
+)
 
 func NewMailFailEngine(rules []models.MailFailRule, store storage.Store) (*MailFailEngine, error) {
 	engine := &MailFailEngine{
@@ -108,12 +113,13 @@ func (e *MailFailEngine) MatchReports(recipients []string) []ReportRequest {
 			}
 			if containsExactSegment(segments, rule.trigger) {
 				requests = append(requests, ReportRequest{
-					Action:       rule.action,
-					Recipient:    recipient,
-					Code:         rule.code,
-					EnhancedCode: rule.enhancedCode,
-					FeedbackType: rule.feedbackType,
-					Message:      rule.message,
+					Action:                   rule.action,
+					Recipient:                recipient,
+					Code:                     rule.code,
+					EnhancedCode:             rule.enhancedCode,
+					FeedbackType:             rule.feedbackType,
+					ReportRecipientLocalPart: rule.reportRecipientLocalPart,
+					Message:                  rule.message,
 				})
 				break
 			}
@@ -226,15 +232,16 @@ func (e *MailFailEngine) saveGreylistState(ctx context.Context, state models.Gre
 
 func compileMailFailRule(rule models.MailFailRule) (mailFailRule, error) {
 	compiled := mailFailRule{
-		name:         strings.TrimSpace(rule.Name),
-		trigger:      strings.ToLower(strings.TrimSpace(rule.Trigger)),
-		stage:        strings.ToLower(strings.TrimSpace(rule.Stage)),
-		action:       strings.ToLower(strings.TrimSpace(rule.Action)),
-		allowAfter:   rule.AllowAfter,
-		code:         rule.Code,
-		enhancedCode: strings.TrimSpace(rule.EnhancedCode),
-		feedbackType: strings.ToLower(strings.TrimSpace(rule.FeedbackType)),
-		message:      strings.TrimSpace(rule.Message),
+		name:                     strings.TrimSpace(rule.Name),
+		trigger:                  strings.ToLower(strings.TrimSpace(rule.Trigger)),
+		stage:                    strings.ToLower(strings.TrimSpace(rule.Stage)),
+		action:                   strings.ToLower(strings.TrimSpace(rule.Action)),
+		allowAfter:               rule.AllowAfter,
+		code:                     rule.Code,
+		enhancedCode:             strings.TrimSpace(rule.EnhancedCode),
+		feedbackType:             strings.ToLower(strings.TrimSpace(rule.FeedbackType)),
+		reportRecipientLocalPart: strings.TrimSpace(rule.ReportRecipientLocalPart),
+		message:                  strings.TrimSpace(rule.Message),
 	}
 
 	if compiled.trigger == "" {
@@ -277,6 +284,13 @@ func compileMailFailRule(rule models.MailFailRule) (mailFailRule, error) {
 		}
 	} else {
 		compiled.feedbackType = ""
+	}
+	if supportsReportRecipientLocalPart(compiled.action) {
+		if !validReportRecipientLocalPart(compiled.reportRecipientLocalPart) {
+			return mailFailRule{}, fmt.Errorf("mailfail rule %q has invalid report recipient local part %q", compiled.name, rule.ReportRecipientLocalPart)
+		}
+	} else if compiled.reportRecipientLocalPart != "" {
+		return mailFailRule{}, fmt.Errorf("mailfail rule %q uses report recipient local part with unsupported action %q", compiled.name, compiled.action)
 	}
 	if (compiled.action == "reject" || compiled.action == "greylist") && (compiled.code < 400 || compiled.code > 599) {
 		return mailFailRule{}, fmt.Errorf("mailfail rule %q has invalid code %d", compiled.name, rule.Code)
@@ -352,6 +366,22 @@ func isReportAction(action string) bool {
 	default:
 		return false
 	}
+}
+
+func supportsReportRecipientLocalPart(action string) bool {
+	switch action {
+	case "arf", "xarf-v3", "xarf-v4":
+		return true
+	default:
+		return false
+	}
+}
+
+func validReportRecipientLocalPart(value string) bool {
+	if value == "" {
+		return true
+	}
+	return len(value) <= 64 && reportRecipientLocalPartPattern.MatchString(value)
 }
 
 func (r mailFailRule) replyText() string {

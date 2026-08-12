@@ -10,8 +10,11 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"io"
+	"log"
 	"math/big"
 	"net"
+	"net/textproto"
 	"strings"
 	"testing"
 	"time"
@@ -231,6 +234,170 @@ func TestOutboundRetryDelayIsCapped(t *testing.T) {
 	}
 	if got := outboundRetryDelay(100); got != time.Hour {
 		t.Fatalf("unexpected capped delay: %s", got)
+	}
+}
+
+func TestDirectSenderClassifiesEndOfDATATemporaryFailure(t *testing.T) {
+	t.Parallel()
+
+	clientConnection, serverConnection := net.Pipe()
+	commands := make(chan []string, 1)
+	go serveSMTPTemporaryFailure(serverConnection, commands)
+
+	sender := NewDirectSender("mx.mailtail.test")
+	sender.lookupMX = func(context.Context, string) ([]*net.MX, error) {
+		return []*net.MX{{Host: "mx.sender.test.", Pref: 10}}, nil
+	}
+	sender.dialContext = func(context.Context, string, string) (net.Conn, error) {
+		return clientConnection, nil
+	}
+	err := sender.Send(context.Background(), models.OutboundMessage{
+		EnvelopeFrom: "reports@mailtail.test",
+		Recipient:    "fbl@sender.test",
+		Raw:          "From: reports@mailtail.test\r\nTo: fbl@sender.test\r\nSubject: report\r\n\r\nbody\r\n",
+	})
+	if err == nil || !isTemporaryOutboundError(err) {
+		t.Fatalf("expected retryable 421 error, got %v", err)
+	}
+	select {
+	case <-commands:
+	case <-time.After(time.Second):
+		t.Fatal("SMTP test server did not receive DATA")
+	}
+}
+
+func TestOutboundBatchDefersSameDomainAfterThrottle(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.August, 12, 12, 10, 35, 0, time.UTC)
+	queue := &outboundQueueStub{messages: []models.OutboundMessage{
+		{ID: 1, Recipient: "fbl@sender.test"},
+		{ID: 2, Recipient: "other@sender.test"},
+		{ID: 3, Recipient: "fbl@other.test"},
+	}}
+	var sent []int64
+	sender := outboundSenderFunc(func(_ context.Context, message models.OutboundMessage) error {
+		sent = append(sent, message.ID)
+		if message.ID == 1 {
+			return &textproto.Error{Code: 421, Msg: "4.3.5 End-of-DATA rejected: Try later"}
+		}
+		return nil
+	})
+
+	runOutboundBatch(context.Background(), log.New(io.Discard, "", 0), queue, sender, now)
+
+	if got := fmt.Sprint(sent); got != "[1 3]" {
+		t.Fatalf("same-domain message should be deferred without another SMTP attempt, sent=%s", got)
+	}
+	first := queue.rescheduled[1]
+	second := queue.rescheduled[2]
+	if first.attempts != 1 || second.attempts != 0 {
+		t.Fatalf("unexpected attempt counters: first=%d second=%d", first.attempts, second.attempts)
+	}
+	if !first.nextAttempt.Equal(now.Add(time.Minute)) || !second.nextAttempt.Equal(first.nextAttempt) {
+		t.Fatalf("same-domain messages should share retry time: first=%s second=%s", first.nextAttempt, second.nextAttempt)
+	}
+	if got := fmt.Sprint(queue.deferredDomains); got != "[sender.test]" {
+		t.Fatalf("temporary failure should persist domain deferral, got %s", got)
+	}
+	if got := fmt.Sprint(queue.deleted); got != "[3]" {
+		t.Fatalf("unexpected completed messages: %s", got)
+	}
+}
+
+type outboundSenderFunc func(context.Context, models.OutboundMessage) error
+
+func (f outboundSenderFunc) Send(ctx context.Context, message models.OutboundMessage) error {
+	return f(ctx, message)
+}
+
+type outboundReschedule struct {
+	attempts    int
+	nextAttempt time.Time
+	lastError   string
+}
+
+type outboundQueueStub struct {
+	messages        []models.OutboundMessage
+	deleted         []int64
+	rescheduled     map[int64]outboundReschedule
+	deferredDomains []string
+}
+
+func (s *outboundQueueStub) DeferOutboundMessagesForDomain(_ context.Context, domain string, exceptID int64, nextAttempt time.Time, lastError string) error {
+	s.deferredDomains = append(s.deferredDomains, domain)
+	for _, message := range s.messages {
+		messageDomain, ok := extractDomain(message.Recipient)
+		if message.ID == exceptID || !ok || messageDomain != domain {
+			continue
+		}
+		current := s.rescheduled[message.ID]
+		if current.nextAttempt.IsZero() || current.nextAttempt.Before(nextAttempt) {
+			current.nextAttempt = nextAttempt
+		}
+		current.lastError = lastError
+		s.rescheduled[message.ID] = current
+	}
+	return nil
+}
+
+func (s *outboundQueueStub) ListDueOutboundMessages(context.Context, time.Time, int) ([]models.OutboundMessage, error) {
+	return append([]models.OutboundMessage(nil), s.messages...), nil
+}
+
+func (s *outboundQueueStub) DeleteOutboundMessage(_ context.Context, id int64) error {
+	s.deleted = append(s.deleted, id)
+	return nil
+}
+
+func (s *outboundQueueStub) RescheduleOutboundMessage(_ context.Context, id int64, attempts int, nextAttempt time.Time, lastError string) error {
+	if s.rescheduled == nil {
+		s.rescheduled = make(map[int64]outboundReschedule)
+	}
+	s.rescheduled[id] = outboundReschedule{attempts: attempts, nextAttempt: nextAttempt, lastError: lastError}
+	return nil
+}
+
+func serveSMTPTemporaryFailure(connection net.Conn, commands chan<- []string) {
+	defer connection.Close()
+	reader := bufio.NewReader(connection)
+	writer := bufio.NewWriter(connection)
+	write := func(value string) {
+		_, _ = fmt.Fprintf(writer, "%s\r\n", value)
+		_ = writer.Flush()
+	}
+	write("220 smtp.test ready")
+
+	var received []string
+	data := false
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return
+		}
+		line = strings.TrimRight(line, "\r\n")
+		received = append(received, line)
+		if data {
+			if line == "." {
+				write("421 4.3.5 End-of-DATA rejected: Try later")
+				commands <- received
+				return
+			}
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "EHLO "):
+			write("250 smtp.test")
+		case strings.HasPrefix(line, "MAIL FROM:"):
+			write("250 sender ok")
+		case strings.HasPrefix(line, "RCPT TO:"):
+			write("250 recipient ok")
+		case line == "DATA":
+			data = true
+			write("354 send data")
+		default:
+			write("500 unsupported")
+		}
 	}
 }
 

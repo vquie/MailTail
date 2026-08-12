@@ -41,6 +41,7 @@ const defaultMailFailRulesTemplate: MailFailRule[] = [
     code: 550,
     enhancedCode: "5.1.1",
     feedbackType: "",
+    reportRecipientLocalPart: "",
     message: "User unknown"
   },
   {
@@ -54,6 +55,7 @@ const defaultMailFailRulesTemplate: MailFailRule[] = [
     code: 451,
     enhancedCode: "4.7.1",
     feedbackType: "",
+    reportRecipientLocalPart: "",
     message: "Try again later"
   },
   {
@@ -67,6 +69,7 @@ const defaultMailFailRulesTemplate: MailFailRule[] = [
     code: 552,
     enhancedCode: "5.2.2",
     feedbackType: "",
+    reportRecipientLocalPart: "",
     message: "Mailbox full"
   }
 ];
@@ -81,6 +84,7 @@ const emptyMailFailRule: MailFailRule = {
   code: 550,
   enhancedCode: "",
   feedbackType: "",
+  reportRecipientLocalPart: "",
   message: ""
 };
 const emptySettings: AppSettings = {
@@ -845,6 +849,14 @@ export function App() {
       showSettingsError("MailFail rules require a reply message.");
       return null;
     }
+    if (
+      supportsReportRecipientLocalPart(normalizedRule.action) &&
+      normalizedRule.reportRecipientLocalPart &&
+      !isValidReportRecipientLocalPart(normalizedRule.reportRecipientLocalPart)
+    ) {
+      showSettingsError("Report recipient must be a local part only, without @ or a domain.");
+      return null;
+    }
     const rules = scopedSettings.mailFailRules ?? [];
     const nextRules = [...rules];
 
@@ -1088,6 +1100,9 @@ export function App() {
                           code: action === "async-bounce" ? 550 : current.code,
                           enhancedCode: action === "async-bounce" ? current.enhancedCode || "5.0.0" : current.enhancedCode,
                           feedbackType: action === "arf" ? current.feedbackType || "abuse" : "",
+                          reportRecipientLocalPart: supportsReportRecipientLocalPart(action)
+                            ? current.reportRecipientLocalPart
+                            : "",
                           message: isReportAction(action) ? "" : current.message
                         }));
                       }}
@@ -1121,6 +1136,26 @@ export function App() {
                         <option value="not-spam">Not spam</option>
                       </select>
                       <small>Written to the RFC 5965 <code>Feedback-Type</code> field.</small>
+                    </label>
+                  ) : null}
+
+                  {supportsReportRecipientLocalPart(editorDraft.action) ? (
+                    <label className="settingsField">
+                      <span>Report recipient local part</span>
+                      <input
+                        value={editorDraft.reportRecipientLocalPart}
+                        maxLength={64}
+                        onChange={(event) =>
+                          updateMailFailRuleEditor(options.scope, (current) => ({
+                            ...current,
+                            reportRecipientLocalPart: event.target.value
+                          }))
+                        }
+                        placeholder="fbl"
+                      />
+                      <small>
+                        Local part only. The domain is taken from the original envelope sender; for example, <code>fbl</code> sends to <code>fbl@sender-domain</code>.
+                      </small>
                     </label>
                   ) : null}
 
@@ -2979,6 +3014,7 @@ function cloneMailFailRule(rule: MailFailRule): MailFailRule {
     code: rule.code ?? emptyMailFailRule.code,
     enhancedCode: rule.enhancedCode ?? "",
     feedbackType: rule.feedbackType ?? "",
+    reportRecipientLocalPart: rule.reportRecipientLocalPart ?? "",
     message: rule.message ?? ""
   };
 }
@@ -3001,6 +3037,7 @@ function hasMailFailRuleDraftChanges(rule: MailFailRule): boolean {
     rule.code !== emptyMailFailRule.code ||
     (rule.enhancedCode ?? "").trim() !== "" ||
     (rule.feedbackType ?? "").trim() !== "" ||
+    (rule.reportRecipientLocalPart ?? "").trim() !== "" ||
     rule.allowAfter !== emptyMailFailRule.allowAfter ||
     (rule.minRetryAfter ?? "").trim() !== "" ||
     (rule.resetAfter ?? "").trim() !== emptyMailFailRule.resetAfter
@@ -3031,6 +3068,9 @@ function normalizeMailFailRuleDraft(rule: MailFailRule): MailFailRule {
         ? normalizedInput.enhancedCode.trim() || "5.0.0"
         : normalizedInput.enhancedCode.trim(),
     feedbackType: normalizedInput.action === "arf" ? normalizedInput.feedbackType || "abuse" : "",
+    reportRecipientLocalPart: supportsReportRecipientLocalPart(normalizedInput.action)
+      ? normalizedInput.reportRecipientLocalPart.trim()
+      : "",
     message: reportAction && normalizedInput.action !== "async-bounce" ? "" : normalizedInput.message.trim()
   };
 }
@@ -3039,12 +3079,22 @@ function isReportAction(action: MailFailRule["action"]): boolean {
   return ["arf", "xarf-v3", "xarf-v4", "original-report", "async-bounce"].includes(action);
 }
 
+function supportsReportRecipientLocalPart(action: MailFailRule["action"]): boolean {
+  return ["arf", "xarf-v3", "xarf-v4"].includes(action);
+}
+
+function isValidReportRecipientLocalPart(value: string): boolean {
+  return value.length <= 64 && /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/.test(value);
+}
+
 function mailFailRuleSummary(rule: MailFailRule): string {
   if (rule.action === "async-bounce") {
     return rule.message || "Default delivery failure text.";
   }
   if (isReportAction(rule.action)) {
-    return "Generated automatically after message acceptance.";
+    return rule.reportRecipientLocalPart
+      ? `Generated after acceptance for ${rule.reportRecipientLocalPart}@sender-domain.`
+      : "Generated automatically after message acceptance.";
   }
   return rule.message || "No reply message configured.";
 }
