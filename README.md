@@ -2,6 +2,8 @@
 
 MailTail is a modern open-source SMTP test inbox focused on mail infrastructure testing. This MVP accepts SMTP traffic, stores full RFC822 messages and session metadata, exposes a REST API, and ships with a React-based web UI.
 
+![MailTail inbox with fictional demo messages, tags, and message inspection](docs/images/mailtail-inbox.png)
+
 ## Features
 
 - SMTP server on port `8025`
@@ -222,6 +224,8 @@ curl --url smtp://localhost:8025 \
 ## MailFail
 
 MailTail can optionally simulate SMTP failures based on the localpart of the sender or recipient address.
+
+![MailFail rule workspace with SMTP response and feedback report rules](docs/images/mailtail-rules.png)
 
 MailFail is disabled by default. Rules are now managed directly in the web UI per user.
 
