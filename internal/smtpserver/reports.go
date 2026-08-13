@@ -51,15 +51,22 @@ func BuildReportMessage(request ReportRequest, session SessionMetadata, original
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
+	mediaType := "multipart/report"
 	reportType := "feedback-report"
 	subject := reportSubject(original, "MailTail report")
-	if request.Action == "async-bounce" {
+	if request.Action == "original-report" {
+		mediaType = "multipart/mixed"
+		reportType = ""
+		subject = originalReportSubject(session)
+	} else if request.Action == "async-bounce" {
 		reportType = "delivery-status"
 		subject = "Delivery Status Notification (Failure)"
 	}
 
-	if err := writeHumanReadablePart(writer, request.Message); err != nil {
-		return models.OutboundMessage{}, err
+	if request.Action != "original-report" {
+		if err := writeHumanReadablePart(writer, request.Message); err != nil {
+			return models.OutboundMessage{}, err
+		}
 	}
 	switch request.Action {
 	case "arf":
@@ -69,7 +76,7 @@ func BuildReportMessage(request ReportRequest, session SessionMetadata, original
 	case "xarf-v4":
 		err = writeXARFParts(writer, request, session, original, now, 4)
 	case "original-report":
-		err = writeOriginalReportParts(writer, request, session, original, now)
+		err = writeInlineOriginalPart(writer, original)
 	case "async-bounce":
 		err = writeDSNParts(writer, request, session, original, now)
 	default:
@@ -90,7 +97,10 @@ func BuildReportMessage(request ReportRequest, session SessionMetadata, original
 		fromAddress.Name = "Mail Delivery System"
 		fromHeader = fromAddress.String()
 	}
-	contentType := fmt.Sprintf("multipart/report; report-type=%s; boundary=%q", reportType, writer.Boundary())
+	contentType := fmt.Sprintf("%s; boundary=%q", mediaType, writer.Boundary())
+	if reportType != "" {
+		contentType = fmt.Sprintf("%s; report-type=%s; boundary=%q", mediaType, reportType, writer.Boundary())
+	}
 
 	var raw bytes.Buffer
 	fmt.Fprintf(&raw, "From: %s\r\n", fromHeader)
@@ -169,13 +179,6 @@ func writeARFParts(writer *multipart.Writer, request ReportRequest, session Sess
 		return fmt.Errorf("unsupported ARF feedback type %q", request.FeedbackType)
 	}
 	if err := writeFeedbackReportPart(writer, feedbackType, request, session, now); err != nil {
-		return err
-	}
-	return writeOriginalPart(writer, original)
-}
-
-func writeOriginalReportParts(writer *multipart.Writer, request ReportRequest, session SessionMetadata, original []byte, now time.Time) error {
-	if err := writeFeedbackReportPart(writer, "other", request, session, now); err != nil {
 		return err
 	}
 	return writeOriginalPart(writer, original)
@@ -349,6 +352,25 @@ func writeOriginalPart(writer *multipart.Writer, original []byte) error {
 	}
 	_, err = part.Write(original)
 	return err
+}
+
+func writeInlineOriginalPart(writer *multipart.Writer, original []byte) error {
+	part, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Type":        {"message/rfc822"},
+		"Content-Disposition": {"inline"},
+	})
+	if err != nil {
+		return err
+	}
+	_, err = part.Write(original)
+	return err
+}
+
+func originalReportSubject(session SessionMetadata) string {
+	if sourceIP := net.ParseIP(strings.TrimSpace(session.RemoteIP)); sourceIP != nil {
+		return "complaint about message from " + sourceIP.String()
+	}
+	return "complaint about original message"
 }
 
 func reportSubject(original []byte, fallback string) string {

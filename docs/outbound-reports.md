@@ -9,7 +9,7 @@ All outbound actions run after MailTail has accepted `DATA` and match the same p
 - `arf`: RFC 5965 `multipart/report` with a registered feedback type and the original message. It uses the configured or derived report sender.
 - `xarf-v3`: Legacy XARF v3 spam JSON transported in an ARF-shaped feedback report. It uses the configured or derived report sender.
 - `xarf-v4`: XARF v4.2 `messaging/spam` JSON with SHA-256 evidence metadata. It uses the configured or derived report sender.
-- `original-report`: RFC 5965 `other` feedback report with the original RFC822 message. It uses the configured or derived report sender.
+- `original-report`: Microsoft-style `multipart/mixed` complaint containing the original RFC822 message as its only inline `message/rfc822` part. It uses the configured or derived report sender and is not ARF.
 - `async-bounce`: RFC 3464 `multipart/report; report-type=delivery-status` with an empty reverse path (`<>`).
 
 Report messages include `Auto-Submitted: auto-generated` and `X-Auto-Response-Suppress: All`. MailTail does not create reports for messages with an empty envelope sender or an existing non-`no` `Auto-Submitted` header.
@@ -24,7 +24,7 @@ XARF transport uses `Feedback-Type: xarf`, which is an intentional unofficial RF
 
 XARF reports include the actual source IP and source TCP port of the inbound SMTP connection. MailTail refuses to generate XARF when either value is unavailable or invalid rather than substituting misleading transport evidence.
 
-An `original-report` uses `Feedback-Type: other` so ARF parsers can discover its `message/feedback-report` metadata and attached `message/rfc822` part.
+An `original-report` follows the historical Microsoft complaint shape: the subject identifies the inbound SMTP source IP, and the `multipart/mixed` body contains exactly one inline `message/rfc822` part. It has no `report-type`, `message/feedback-report`, or `Feedback-Type`, so receivers must not classify it as ARF.
 
 For `async-bounce`, the optional rule text is written to both the first human-readable MIME part and the SMTP `Diagnostic-Code` in `message/delivery-status`. If it is empty, MailTail uses its standard delivery failure text. Because the registered `smtp` diagnostic type uses graphic US-ASCII, custom diagnostic text must contain printable US-ASCII and is limited to 700 characters.
 
@@ -32,7 +32,8 @@ For `async-bounce`, the optional rule text is written to both the first human-re
 
 The report generator and its tests enforce the following contracts:
 
-- ARF and original-message feedback use the RFC 5965 three-part `multipart/report` layout. The machine-readable part contains exactly one `Feedback-Type`, `User-Agent`, and `Version` field and terminates as a complete RFC-style field block.
+- ARF uses the RFC 5965 three-part `multipart/report` layout. Its machine-readable part contains exactly one `Feedback-Type`, `User-Agent`, and `Version` field and terminates as a complete RFC-style field block.
+- Original-message reports use the historical Microsoft `multipart/mixed` shape with exactly one inline `message/rfc822` part and no ARF fields.
 - Asynchronous bounces use the RFC 3464 `multipart/report; report-type=delivery-status` layout, an empty envelope reverse path, one per-message field block, and one complete per-recipient field block.
 - XARF v3 and v4 JSON payloads validate with format assertions against pinned official schemas. The containing email follows the XARF email transport layout.
 - Generated MIME is parsed again in tests with strict field-block and multipart readers. The tests specifically cover the byte-level blank-line terminators required by Halon's `MailMessage::String()` flow.

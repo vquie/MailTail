@@ -36,11 +36,17 @@ func TestBuildReportMessageFormats(t *testing.T) {
 		action      string
 		contentType string
 		want        []string
+		wantAbsent  []string
 	}{
 		{action: "arf", contentType: "multipart/report", want: []string{"report-type=feedback-report", "Feedback-Type: abuse", "Content-Type: message/rfc822"}},
 		{action: "xarf-v3", contentType: "multipart/report", want: []string{"Feedback-Type: xarf", "application/json; name=xarf.json"}},
 		{action: "xarf-v4", contentType: "multipart/report", want: []string{"Feedback-Type: xarf", "application/json; name=xarf.json"}},
-		{action: "original-report", contentType: "multipart/report", want: []string{"report-type=feedback-report", "Feedback-Type: other", "Content-Type: message/rfc822", "Hello"}},
+		{
+			action:      "original-report",
+			contentType: "multipart/mixed",
+			want:        []string{"Content-Type: message/rfc822", "Content-Disposition: inline", "Hello"},
+			wantAbsent:  []string{"report-type=feedback-report", "message/feedback-report", "Feedback-Type:"},
+		},
 		{action: "async-bounce", contentType: "multipart/report", want: []string{"report-type=delivery-status", "Content-Type: message/delivery-status", "Action: failed", "Status: 5.1.1"}},
 	}
 
@@ -74,12 +80,20 @@ func TestBuildReportMessageFormats(t *testing.T) {
 			if !strings.Contains(message.Raw, "Auto-Submitted: auto-generated") {
 				t.Fatal("missing loop prevention header")
 			}
-			if test.action != "async-bounce" && !strings.Contains(message.Raw, "Subject: test\r\n") {
+			if test.action == "original-report" && !strings.Contains(message.Raw, "Subject: complaint about message from 192.0.2.55\r\n") {
+				t.Fatal("original report must identify the SMTP source IP in its subject")
+			}
+			if test.action != "async-bounce" && test.action != "original-report" && !strings.Contains(message.Raw, "Subject: test\r\n") {
 				t.Fatal("feedback report must preserve the original subject")
 			}
 			for _, want := range test.want {
 				if !strings.Contains(message.Raw, want) {
 					t.Fatalf("missing %q in report", want)
+				}
+			}
+			for _, unwanted := range test.wantAbsent {
+				if strings.Contains(message.Raw, unwanted) {
+					t.Fatalf("unexpected %q in report", unwanted)
 				}
 			}
 		})
@@ -99,7 +113,6 @@ func TestFeedbackReportsMatchHalonParserMIMEContract(t *testing.T) {
 		{action: "arf", feedbackType: "fraud", wantFeedback: "fraud", wantParts: []string{"text/plain", "message/feedback-report", "message/rfc822"}},
 		{action: "xarf-v3", wantFeedback: "xarf", wantParts: []string{"text/plain", "message/feedback-report", "application/json"}},
 		{action: "xarf-v4", wantFeedback: "xarf", wantParts: []string{"text/plain", "message/feedback-report", "application/json"}},
-		{action: "original-report", wantFeedback: "other", wantParts: []string{"text/plain", "message/feedback-report", "message/rfc822"}},
 	}
 
 	for _, test := range tests {
@@ -181,6 +194,51 @@ func TestFeedbackReportsMatchHalonParserMIMEContract(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestOriginalReportMatchesMicrosoftMIMEShape(t *testing.T) {
+	t.Parallel()
+
+	original := "From: sender@sender.test\r\nTo: trap@example.test\r\nSubject: test\r\n\r\nbody\r\n"
+	message, err := BuildReportMessage(ReportRequest{
+		Action:    "original-report",
+		Recipient: "trap@example.test",
+		From:      "reports@example.test",
+	}, SessionMetadata{
+		RemoteIP: "192.0.2.55",
+		MailFrom: "sender@sender.test",
+	}, []byte(original), time.Now().UTC())
+	if err != nil {
+		t.Fatalf("build original report: %v", err)
+	}
+
+	header, parts := parseMultipartReport(t, message.Raw)
+	mediaType, params, err := mime.ParseMediaType(header.Get("Content-Type"))
+	if err != nil {
+		t.Fatalf("parse outer content type: %v", err)
+	}
+	if mediaType != "multipart/mixed" || params["report-type"] != "" {
+		t.Fatalf("unexpected outer content type: %q", header.Get("Content-Type"))
+	}
+	if len(parts) != 1 {
+		t.Fatalf("original report requires exactly one MIME part, got %d", len(parts))
+	}
+	partType, _, err := mime.ParseMediaType(parts[0].header.Get("Content-Type"))
+	if err != nil {
+		t.Fatalf("parse original part content type: %v", err)
+	}
+	if partType != "message/rfc822" || parts[0].header.Get("Content-Disposition") != "inline" {
+		t.Fatalf("unexpected original part headers: %#v", parts[0].header)
+	}
+	if parts[0].header.Get("Content-Transfer-Encoding") != "" {
+		t.Fatalf("Microsoft-style original part must not add a transfer encoding: %#v", parts[0].header)
+	}
+	if parts[0].body != original {
+		t.Fatalf("embedded message changed:\ngot:  %q\nwant: %q", parts[0].body, original)
+	}
+	if strings.Contains(message.Raw, "message/feedback-report") || strings.Contains(message.Raw, "Feedback-Type:") {
+		t.Fatal("original report must not be identifiable as ARF")
 	}
 }
 

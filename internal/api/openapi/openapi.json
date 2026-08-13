@@ -839,7 +839,7 @@
           "message": {
             "type": "string",
             "example": "Try again later",
-            "description": "Required for reject and greylist actions. Optional for async-bounce, where it becomes the human-readable and machine-readable DSN diagnostic text. Other report actions use generated text."
+            "description": "Required for reject and greylist actions. Optional for async-bounce, where it becomes the human-readable and machine-readable DSN diagnostic text. ARF and XARF actions use generated text. Original-message reports ignore this field."
           }
         }
       },

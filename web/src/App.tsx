@@ -1237,7 +1237,11 @@ export function App() {
                   ) : (
                     <div className="settingsField mailFailMessageField">
                       <span>Post-accept action</span>
-                      <small>MailTail runs this action after accepting DATA and generates the standard report text automatically.</small>
+                      <small>
+                        {editorDraft.action === "original-report"
+                          ? "MailTail wraps the original message in a Microsoft-style complaint after accepting DATA. This is not ARF."
+                          : "MailTail runs this action after accepting DATA and generates the standard report text automatically."}
+                      </small>
                     </div>
                   )}
 
@@ -3092,6 +3096,11 @@ function mailFailRuleSummary(rule: MailFailRule): string {
     return rule.message || "Default delivery failure text.";
   }
   if (isReportAction(rule.action)) {
+    if (rule.action === "original-report") {
+      return rule.reportRecipientLocalPart
+        ? `Original message for ${rule.reportRecipientLocalPart}@sender-domain.`
+        : "Microsoft-style original message complaint.";
+    }
     return rule.reportRecipientLocalPart
       ? `Generated after acceptance for ${rule.reportRecipientLocalPart}@sender-domain.`
       : "Generated automatically after message acceptance.";
