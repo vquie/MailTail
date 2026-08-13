@@ -16,9 +16,9 @@ Report messages include `Auto-Submitted: auto-generated` and `X-Auto-Response-Su
 
 ARF rules default to `Feedback-Type: abuse`. The Rules UI also exposes the registered ARF feedback types `fraud`, `virus`, `other`, and `not-spam`.
 
-ARF, XARF v3, and XARF v4 rules may set an optional report recipient local part. MailTail retains the domain of the original SMTP envelope sender and replaces only its local part. For example, `reportRecipientLocalPart: fbl` sends a report for `bounce-123@example.test` to `fbl@example.test`.
+ARF, XARF v3, XARF v4, and original-message report rules may set an optional report recipient local part. MailTail retains the domain of the original SMTP envelope sender and replaces only its local part. For example, `reportRecipientLocalPart: fbl` sends a report for `bounce-123@example.test` to `fbl@example.test`.
 
-The value is limited to a 64-byte ASCII dot-atom local part; addresses containing `@`, domains, whitespace, quoted strings, leading or trailing dots, and consecutive dots are rejected. Leaving it empty preserves delivery to the complete original envelope sender. Original-message reports and asynchronous bounces do not support this override.
+The value is limited to a 64-byte ASCII dot-atom local part; addresses containing `@`, domains, whitespace, quoted strings, leading or trailing dots, and consecutive dots are rejected. Leaving it empty preserves delivery to the complete original envelope sender. Asynchronous bounces do not support this override.
 
 XARF transport uses `Feedback-Type: xarf`, which is an intentional unofficial RFC 5965 extension defined by XARF. XARF itself is not an IETF RFC. Its third MIME part is the XARF JSON document. MailTail's v3 and v4 payloads are tested against pinned copies of the official spam schemas.
 

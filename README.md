@@ -293,13 +293,13 @@ Supported actions:
 - `xarf-v4`
   Accepts the message, then queues a XARF v4.2 `messaging/spam` report with hashed, base64-encoded evidence. It supports the same optional `reportRecipientLocalPart` setting.
 - `original-report`
-  Accepts the message, then queues an RFC 5965-compatible `other` feedback report with the original RFC822 message attached.
+  Accepts the message, then queues an RFC 5965-compatible `other` feedback report with the original RFC822 message attached. It supports the same optional `reportRecipientLocalPart` setting.
 - `async-bounce`
   Accepts the message first, then queues an RFC 3464 delivery-status notification. Its SMTP envelope sender is empty to prevent bounce loops. The rule can define printable US-ASCII text used in both the human-readable DSN part and `Diagnostic-Code`.
 
 Report actions run automatically after `DATA` is accepted, so their stage is not configurable. ARF, XARF, and original-message reports use generated human-readable text; asynchronous bounces can override it per rule.
 
-By default reports are delivered to the original SMTP envelope sender. For ARF and XARF, `reportRecipientLocalPart: fbl` changes `bounce-123@example.test` to `fbl@example.test`; values containing `@` or a domain are rejected.
+By default reports are delivered to the original SMTP envelope sender. For ARF, XARF, and original-message reports, `reportRecipientLocalPart: fbl` changes `bounce-123@example.test` to `fbl@example.test`; values containing `@` or a domain are rejected.
 
 Reports are suppressed for null reverse-path messages and messages carrying an `Auto-Submitted` header.
 Queued reports are persisted in SQLite and retried without a fixed attempt limit. Temporary SMTP failures use exponential backoff capped at one hour and defer other queued reports to the same recipient domain, preventing a throttled destination from being hammered by the rest of a batch.

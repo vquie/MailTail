@@ -565,7 +565,7 @@ func TestMailFailARFFeedbackType(t *testing.T) {
 func TestFeedbackReportRecipientLocalPart(t *testing.T) {
 	t.Parallel()
 
-	for _, action := range []string{"arf", "xarf-v3", "xarf-v4"} {
+	for _, action := range []string{"arf", "xarf-v3", "xarf-v4", "original-report"} {
 		action := action
 		t.Run(action, func(t *testing.T) {
 			t.Parallel()
@@ -623,13 +623,13 @@ func TestFeedbackReportRecipientLocalPartValidation(t *testing.T) {
 	}
 
 	_, err := NewMailFailEngine([]models.MailFailRule{{
-		Name:                     "original",
-		Trigger:                  "original",
-		Action:                   "original-report",
+		Name:                     "bounce",
+		Trigger:                  "bounce",
+		Action:                   "async-bounce",
 		ReportRecipientLocalPart: "fbl",
 	}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "unsupported action") {
-		t.Fatalf("expected local part on original report to fail, got %v", err)
+		t.Fatalf("expected local part on async bounce to fail, got %v", err)
 	}
 }
 

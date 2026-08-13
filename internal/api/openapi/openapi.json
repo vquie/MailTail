@@ -834,7 +834,7 @@
             "maxLength": 64,
             "pattern": "^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*$",
             "example": "fbl",
-            "description": "Optional recipient local part for ARF, XARF v3, and XARF v4. The recipient domain is retained from the original SMTP envelope sender. Must not contain @ or a domain."
+            "description": "Optional recipient local part for ARF, XARF v3, XARF v4, and original-message reports. The recipient domain is retained from the original SMTP envelope sender. Must not contain @ or a domain."
           },
           "message": {
             "type": "string",

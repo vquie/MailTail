@@ -161,7 +161,7 @@ func normalizeMailFailRules(rules []models.MailFailRule) []models.MailFailRule {
 
 func supportsReportRecipientLocalPart(action string) bool {
 	switch strings.ToLower(strings.TrimSpace(action)) {
-	case "arf", "xarf-v3", "xarf-v4":
+	case "arf", "xarf-v3", "xarf-v4", "original-report":
 		return true
 	default:
 		return false

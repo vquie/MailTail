@@ -370,7 +370,7 @@ func isReportAction(action string) bool {
 
 func supportsReportRecipientLocalPart(action string) bool {
 	switch action {
-	case "arf", "xarf-v3", "xarf-v4":
+	case "arf", "xarf-v3", "xarf-v4", "original-report":
 		return true
 	default:
 		return false

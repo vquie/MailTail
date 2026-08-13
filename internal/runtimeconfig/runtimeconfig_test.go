@@ -73,6 +73,24 @@ func TestNormalizeUserSettingsMakesARFStageAndTextImplicit(t *testing.T) {
 	}
 }
 
+func TestNormalizeUserSettingsPreservesOriginalReportRecipientLocalPart(t *testing.T) {
+	t.Parallel()
+
+	settings := NormalizeUserSettings(models.AppSettings{
+		MailFailRules: []models.MailFailRule{{
+			Name:                     "original",
+			Trigger:                  "mf-original",
+			Action:                   "original-report",
+			ReportRecipientLocalPart: " reports ",
+		}},
+	})
+
+	rule := settings.MailFailRules[0]
+	if rule.Stage != "data" || rule.ReportRecipientLocalPart != "reports" {
+		t.Fatalf("unexpected normalized original report: %#v", rule)
+	}
+}
+
 func TestNormalizeUserSettingsPreservesAsyncBounceText(t *testing.T) {
 	t.Parallel()
 

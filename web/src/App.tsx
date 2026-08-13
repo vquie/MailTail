@@ -3080,7 +3080,7 @@ function isReportAction(action: MailFailRule["action"]): boolean {
 }
 
 function supportsReportRecipientLocalPart(action: MailFailRule["action"]): boolean {
-  return ["arf", "xarf-v3", "xarf-v4"].includes(action);
+  return ["arf", "xarf-v3", "xarf-v4", "original-report"].includes(action);
 }
 
 function isValidReportRecipientLocalPart(value: string): boolean {
