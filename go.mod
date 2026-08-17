@@ -4,7 +4,7 @@ go 1.25.0
 
 require modernc.org/sqlite v1.54.0
 
-require github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
+require github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
