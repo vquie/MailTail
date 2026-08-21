@@ -26,6 +26,8 @@ type TabKey = "html" | "text" | "headers" | "raw" | "attachments";
 type MailFailSettingsScope = "user" | "adminMailbox";
 type SettingsTab = "instance" | "adminMailbox" | "users" | "delivery" | "retention";
 type SettingsSubTab = "general" | "rules";
+type AdminWorkspaceSnapshot = { adminMailboxSettings: AppSettings; users: User[] };
+type AdminWorkspaceSummary = { adminMailboxEnabled: boolean; userCount: number };
 
 const defaultPageSize = 25;
 const defaultAutoDeleteDays = 30;
@@ -121,6 +123,9 @@ export function App() {
   const [adminMailboxLimitAcceptedRcptDomains, setAdminMailboxLimitAcceptedRcptDomains] = useState(false);
   const [adminMailboxLimitAcceptedFromDomains, setAdminMailboxLimitAcceptedFromDomains] = useState(false);
   const [adminMailboxAutoDeleteEnabled, setAdminMailboxAutoDeleteEnabled] = useState(false);
+  const [adminWorkspaceSummary, setAdminWorkspaceSummary] = useState<AdminWorkspaceSummary | null>(null);
+  const [adminWorkspaceLoading, setAdminWorkspaceLoading] = useState(false);
+  const [adminWorkspaceError, setAdminWorkspaceError] = useState<string | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [queryInput, setQueryInput] = useState("");
@@ -172,6 +177,7 @@ export function App() {
   const userMenuRef = useRef<HTMLDetailsElement | null>(null);
   const nextCursorRef = useRef(nextCursor);
   const hasMoreRef = useRef(hasMore);
+  const adminWorkspaceRequestRef = useRef<Promise<AdminWorkspaceSnapshot> | null>(null);
 
   useEffect(() => {
     queryRef.current = query;
@@ -332,6 +338,7 @@ export function App() {
         await loadCurrentSettings();
       } else {
         setSettingsLoaded(false);
+        await loadAdminWorkspaceSummary().catch(() => undefined);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load session");
@@ -402,14 +409,16 @@ export function App() {
       setActiveSettingsTab(session?.isAdmin ? "instance" : "delivery");
       clearSettingsFlash();
       if (session?.isAdmin) {
-        const globalSettings = await fetchSettings();
-        const adminMailboxSettings = await fetchAdminMailboxSettings();
-        const users = await fetchUsers();
+        const [globalSettings, adminWorkspace] = await Promise.all([fetchSettings(), fetchAdminWorkspaceSnapshot()]);
+        const { adminMailboxSettings, users } = adminWorkspace;
         setGlobalSettingsDraft(normalizeSettingsDraft(globalSettings));
-        const normalizedAdminMailbox = normalizeSettingsDraft(adminMailboxSettings);
-        setAdminMailboxDraft(normalizedAdminMailbox);
-        applyAdminMailboxToggles(normalizedAdminMailbox);
+        setAdminMailboxDraft(adminMailboxSettings);
+        applyAdminMailboxToggles(adminMailboxSettings);
         setManagedUsers(users);
+        setAdminWorkspaceSummary({
+          adminMailboxEnabled: isMailboxPolicyEnabled(adminMailboxSettings),
+          userCount: users.length
+        });
         if (users.length > 0) {
           applyManagedUserDraft(users[0]);
           setSelectedManagedUserId(users[0].id);
@@ -436,6 +445,9 @@ export function App() {
   function openAboutPanel() {
     userMenuRef.current?.removeAttribute("open");
     setAboutOpen(true);
+    if (session?.isAdmin) {
+      void loadAdminWorkspaceSummary().catch(() => undefined);
+    }
   }
 
   async function handleSaveSettings(settingsToSave: AppSettings = settingsDraft) {
@@ -530,19 +542,53 @@ export function App() {
   }
 
   function applyAdminMailboxToggles(settings: AppSettings) {
-    setAdminMailboxEnabled(
-      Boolean(
-        settings.mailFailEnabled ||
-          settings.allowedRemoteIps.trim() ||
-          settings.acceptedRcptDomains.trim() ||
-          settings.acceptedFromDomains.trim() ||
-          settings.autoDeleteAfterDays > 0
-      )
-    );
+    setAdminMailboxEnabled(isMailboxPolicyEnabled(settings));
     setAdminMailboxLimitRemoteIps(Boolean(settings.allowedRemoteIps.trim()));
     setAdminMailboxLimitAcceptedRcptDomains(Boolean(settings.acceptedRcptDomains.trim()));
     setAdminMailboxLimitAcceptedFromDomains(Boolean(settings.acceptedFromDomains.trim()));
     setAdminMailboxAutoDeleteEnabled(settings.autoDeleteAfterDays > 0);
+  }
+
+  function fetchAdminWorkspaceSnapshot(): Promise<AdminWorkspaceSnapshot> {
+    if (adminWorkspaceRequestRef.current) {
+      return adminWorkspaceRequestRef.current;
+    }
+    const request = Promise.all([fetchAdminMailboxSettings(), fetchUsers()]).then(([settings, users]) => ({
+      adminMailboxSettings: normalizeSettingsDraft(settings),
+      users
+    }));
+    adminWorkspaceRequestRef.current = request;
+    void request.then(
+      () => {
+        if (adminWorkspaceRequestRef.current === request) {
+          adminWorkspaceRequestRef.current = null;
+        }
+      },
+      () => {
+        if (adminWorkspaceRequestRef.current === request) {
+          adminWorkspaceRequestRef.current = null;
+        }
+      }
+    );
+    return request;
+  }
+
+  async function loadAdminWorkspaceSummary(): Promise<void> {
+    try {
+      setAdminWorkspaceLoading(true);
+      setAdminWorkspaceError(null);
+      setAdminWorkspaceSummary(null);
+      const { adminMailboxSettings, users } = await fetchAdminWorkspaceSnapshot();
+      setAdminWorkspaceSummary({
+        adminMailboxEnabled: isMailboxPolicyEnabled(adminMailboxSettings),
+        userCount: users.length
+      });
+    } catch (err) {
+      setAdminWorkspaceError(err instanceof Error ? err.message : "Failed to load admin workspace");
+      throw err;
+    } finally {
+      setAdminWorkspaceLoading(false);
+    }
   }
 
   async function handleSaveAdminMailboxSettings(settingsToSave: AppSettings = adminMailboxDraft) {
@@ -2724,15 +2770,30 @@ export function App() {
                     <dt>Signed in as</dt>
                     <dd>{session?.username || "-"}</dd>
                   </div>
-                  <div>
-                    <dt>Local users</dt>
-                    <dd>{managedUsers.length}</dd>
-                  </div>
-                  <div>
-                    <dt>Admin mailbox</dt>
-                    <dd>{adminMailboxEnabled ? "Enabled" : "Disabled"}</dd>
-                  </div>
+                  {session?.isAdmin ? (
+                    <>
+                      <div>
+                        <dt>Local users</dt>
+                        <dd>{adminWorkspaceLoading ? "Loading…" : adminWorkspaceSummary?.userCount ?? "Unavailable"}</dd>
+                      </div>
+                      <div>
+                        <dt>Admin mailbox</dt>
+                        <dd>
+                          {adminWorkspaceLoading
+                            ? "Loading…"
+                            : adminWorkspaceSummary
+                              ? adminWorkspaceSummary.adminMailboxEnabled
+                                ? "Enabled"
+                                : "Disabled"
+                              : "Unavailable"}
+                        </dd>
+                      </div>
+                    </>
+                  ) : null}
                 </dl>
+                {session?.isAdmin && adminWorkspaceError ? (
+                  <p className="settingsError">{adminWorkspaceError}</p>
+                ) : null}
                 <div className="settingsCardActions">
                   <a className="ghostButton compactButton toolbarButton settingsSupportLink" href={repoUrl} target="_blank" rel="noreferrer">
                     <GitHubIcon />
@@ -2922,6 +2983,16 @@ function normalizeSettingsDraft(settings: AppSettings): AppSettings {
     mailFailRules: cloneMailFailRules(settings.mailFailRules ?? []),
     autoDeleteAfterDays: settings.autoDeleteAfterDays > 0 ? settings.autoDeleteAfterDays : 0
   };
+}
+
+function isMailboxPolicyEnabled(settings: AppSettings): boolean {
+  return Boolean(
+    settings.mailFailEnabled ||
+      settings.allowedRemoteIps.trim() ||
+      settings.acceptedRcptDomains.trim() ||
+      settings.acceptedFromDomains.trim() ||
+      settings.autoDeleteAfterDays > 0
+  );
 }
 
 function buildSettingsPayload(
