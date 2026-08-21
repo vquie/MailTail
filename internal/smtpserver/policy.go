@@ -214,7 +214,7 @@ func (p *DomainPolicy) ReportsFor(session *SessionMetadata) ([]ReportRequest, er
 		return nil, nil
 	}
 
-	state, err := p.reportState(session.OwnerUserID)
+	state, err := p.mailboxState(session.OwnerUserID)
 	if err != nil || state.mailFail == nil {
 		return nil, err
 	}
@@ -228,7 +228,7 @@ func (p *DomainPolicy) ReportsFor(session *SessionMetadata) ([]ReportRequest, er
 	return requests, nil
 }
 
-func (p *DomainPolicy) reportState(ownerUserID int64) (domainPolicyState, error) {
+func (p *DomainPolicy) mailboxState(ownerUserID int64) (domainPolicyState, error) {
 	if ownerUserID == 0 {
 		users, err := p.policyUsers()
 		if err != nil {
@@ -350,28 +350,14 @@ func (p *DomainPolicy) OnData(session *SessionMetadata) *ResponseError {
 	if session == nil {
 		return nil
 	}
-	if session.OwnerUserID == 0 {
-		state := p.snapshot()
-		if state.mailFail == nil {
-			return nil
-		}
-		return state.mailFail.MatchData(session.MailFrom, session.RcptTo)
-	}
-
-	users, err := p.policyUsers()
+	state, err := p.mailboxState(session.OwnerUserID)
 	if err != nil {
 		return &ResponseError{Code: 451, Message: "Temporary policy lookup failure"}
 	}
-	for _, user := range users {
-		if user.userID != session.OwnerUserID {
-			continue
-		}
-		if user.mailFail == nil {
-			return nil
-		}
-		return user.mailFail.MatchData(session.MailFrom, session.RcptTo)
+	if state.mailFail == nil {
+		return nil
 	}
-	return nil
+	return state.mailFail.MatchData(session.MailFrom, session.RcptTo)
 }
 
 func (p *DomainPolicy) snapshot() domainPolicyState {

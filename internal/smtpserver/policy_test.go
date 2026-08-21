@@ -136,6 +136,48 @@ func TestDomainPolicyRejectsCatchAllUserWhenAnotherMailboxHasRecipientDomains(t 
 	}
 }
 
+func TestDomainPolicyAppliesAdminMailboxDataRule(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := context.Background()
+	if err := store.SaveAdminMailboxSettings(ctx, models.AppSettings{
+		AcceptedRcptDomains: "mt.quiering.com",
+		MailFailEnabled:     true,
+		MailFailRules: []models.MailFailRule{{
+			Name:         "quota",
+			Trigger:      "mf-quota",
+			Stage:        "data",
+			Action:       "reject",
+			Code:         552,
+			EnhancedCode: "5.2.2",
+			Message:      "Mailbox full",
+		}},
+	}); err != nil {
+		t.Fatalf("save admin mailbox settings: %v", err)
+	}
+
+	policy, err := NewDomainPolicy(DomainPolicyConfig{}, store)
+	if err != nil {
+		t.Fatalf("new policy: %v", err)
+	}
+
+	session := &SessionMetadata{RemoteIP: "127.0.0.1", MailFrom: "sender@outside.test"}
+	recipient := "2026082101+mf-quota@mt.quiering.com"
+	if response := policy.OnRcptTo(session, recipient); response != nil {
+		t.Fatalf("unexpected rcpt response: %v", response)
+	}
+	session.RcptTo = append(session.RcptTo, recipient)
+
+	response := policy.OnData(session)
+	if response == nil {
+		t.Fatal("expected admin mailbox DATA rejection")
+	}
+	if response.Code != 552 || response.Message != "5.2.2 Mailbox full" {
+		t.Fatalf("unexpected DATA response: %#v", response)
+	}
+}
+
 func newTestStore(t *testing.T) *storage.SQLiteStore {
 	t.Helper()
 
