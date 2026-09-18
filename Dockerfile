@@ -40,6 +40,6 @@ ENV MAILTAIL_SMTP_ADDR=:8025
 ENV MAILTAIL_WEB_DIR=/app/web/dist
 # Root is used only to migrate mounted volume ownership; the entrypoint drops to UID/GID 10001 before starting MailTail.
 # hadolint ignore=DL3002
-USER root
+USER 0:0
 ENTRYPOINT ["/usr/local/bin/mailtail-entrypoint"]
 CMD ["/app/mailtail"]
