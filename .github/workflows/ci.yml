@@ -1,0 +1,260 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  merge_group:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION_FILE: go.mod
+  NODE_VERSION: "24"
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+
+      - name: Verify formatting
+        shell: bash
+        run: |
+          unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
+          if [[ -n "${unformatted}" ]]; then
+            printf 'The following Go files are not formatted:\n%s\n' "${unformatted}"
+            exit 1
+          fi
+
+      - name: Verify module files
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run tests with race detector and coverage
+        run: go test -race -shuffle=on -count=1 -coverprofile=coverage.out ./...
+
+      - name: Enforce coverage floor
+        env:
+          MINIMUM_COVERAGE: "30.0"
+        shell: bash
+        run: |
+          coverage="$(go tool cover -func=coverage.out | awk '/^total:/ { gsub(/%/, "", $3); print $3 }')"
+          awk -v actual="${coverage}" -v minimum="${MINIMUM_COVERAGE}" 'BEGIN {
+            printf "Total coverage: %.1f%% (minimum: %.1f%%)\n", actual, minimum
+            exit !(actual >= minimum)
+          }'
+
+      - name: Build static backend binary
+        env:
+          CGO_ENABLED: "0"
+        run: go build -trimpath -o /tmp/mailtail ./cmd/mailtail
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Type-check and build frontend
+        run: npm run build
+
+  lint:
+    name: Repository lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run MegaLinter
+        uses: oxsecurity/megalinter@9949bad031045f366be2467e00e8371a7328a2e2 # v10.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SKIP_CLI_LINT_MODES: project
+          VALIDATE_ALL_CODEBASE: true
+
+  container:
+    name: Container
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - name: Build production image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          push: false
+          tags: mailtail:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan image for fixable high-severity vulnerabilities
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          image-ref: mailtail:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          version: v0.74.0
+
+      - name: Smoke-test HTTP, SMTP, and persistence
+        shell: bash
+        run: |
+          docker run --detach --name mailtail-ci \
+            --publish 127.0.0.1:18025:8025 \
+            --publish 127.0.0.1:18080:8080 \
+            mailtail:ci
+          trap 'docker rm --force mailtail-ci >/dev/null 2>&1 || true' EXIT
+
+          ready=false
+          for _ in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:18080/api/app >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "${ready}" != "true" ]]; then
+            docker logs mailtail-ci
+            exit 1
+          fi
+
+          curl --fail --silent --show-error http://127.0.0.1:18080/ >/dev/null
+          python3 - <<'PY'
+          import json
+          import smtplib
+          import time
+          import urllib.request
+          from email.message import EmailMessage
+
+          message = EmailMessage()
+          message["From"] = "ci-sender@example.test"
+          message["To"] = "ci-recipient@example.test"
+          message["Subject"] = "MailTail CI smoke test"
+          message.set_content("Container smoke test")
+
+          with smtplib.SMTP("127.0.0.1", 18025, timeout=10) as client:
+              client.send_message(message)
+
+          for _ in range(30):
+              with urllib.request.urlopen("http://127.0.0.1:18080/api/messages", timeout=10) as response:
+                  payload = json.load(response)
+              if any(item["subject"] == "MailTail CI smoke test" for item in payload["messages"]):
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit("SMTP message did not appear in the HTTP API")
+          PY
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high
+          fail-on-scopes: runtime
+          license-check: true
+          deny-licenses: AGPL-1.0-only, AGPL-1.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later
+
+  merge-gate:
+    name: Merge gate
+    if: always()
+    needs:
+      - backend
+      - frontend
+      - lint
+      - container
+      - dependency-review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every applicable check to pass
+        env:
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          CONTAINER_RESULT: ${{ needs.container.result }}
+          DEPENDENCY_REVIEW_RESULT: ${{ needs.dependency-review.result }}
+        shell: bash
+        run: |
+          failed=0
+          for check in \
+            "Backend:${BACKEND_RESULT}" \
+            "Frontend:${FRONTEND_RESULT}" \
+            "Repository lint:${LINT_RESULT}" \
+            "Container:${CONTAINER_RESULT}" \
+            "Dependency review:${DEPENDENCY_REVIEW_RESULT}"; do
+            name="${check%%:*}"
+            result="${check#*:}"
+            printf '%-24s %s\n' "${name}" "${result}"
+            if [[ "${result}" != "success" && "${result}" != "skipped" ]]; then
+              failed=1
+            fi
+          done
+          exit "${failed}"

@@ -40,6 +40,7 @@ web
 ```bash
 cp .env.example .env
 make install
+make check
 make test
 make lint
 make build
@@ -48,6 +49,7 @@ make docker-run
 ```
 
 `make lint` runs MegaLinter in Docker. `make lint-fix` enables automatic fixes where supported by the active linters.
+`make check` runs formatting and module drift checks, `go vet`, the race detector, and the coverage floor used by CI.
 If `.env` exists in the project root, `make run` and `make docker-run` load it automatically.
 `make build`, `make run`, and `make docker-build` run `go test ./...` first, so OpenAPI drift and other backend test failures block artifact creation.
 If the local Node.js version is too old for the current Vite toolchain, `make build-web` automatically falls back to an official `node:24-alpine` Docker build so the frontend build path still works.
@@ -124,6 +126,8 @@ ghcr.io/vquie/mailtail:latest
 
 The workflow uses the repository `GITHUB_TOKEN`, so no extra registry secret is required as long as GitHub Actions has permission to write packages.
 The Git tag itself must start with `v`, for example `v0.1.0`.
+
+Pull requests and merge-queue commits are protected by build, test, lint, dependency, container, vulnerability, and CodeQL checks. See [Auto-merge safety gate](docs/auto-merge.md) for the required repository settings and Renovate policy.
 
 ## REST API
 

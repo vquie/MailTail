@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
@@ -90,20 +92,27 @@ jobs:
           sbom: true
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
-        with:
-          generate_release_notes: true
-          append_body: true
-          body: |
-            ## Container image
-
-            `${{ steps.image.outputs.name }}:${{ github.ref_name }}`
-
-            ## Multi-arch
-
-            - `linux/amd64`
-            - `linux/arm64`
-
-            ## Digest
-
-            `${{ steps.build.outputs.digest }}`
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        shell: bash
+        run: |
+          body="$(printf '%s\n' \
+            '## Container image' \
+            '' \
+            "\`${IMAGE_NAME}:${RELEASE_TAG}\`" \
+            '' \
+            '## Multi-arch' \
+            '' \
+            '- linux/amd64' \
+            '- linux/arm64' \
+            '' \
+            '## Digest' \
+            '' \
+            "\`${IMAGE_DIGEST}\`")"
+          gh release create "${RELEASE_TAG}" \
+            --verify-tag \
+            --generate-notes \
+            --notes "${body}"
