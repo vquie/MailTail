@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -18,6 +19,12 @@ import (
 	"github.com/vquie/MailTail/internal/parser"
 	"github.com/vquie/MailTail/internal/storage"
 )
+
+const maxMessageSize = 10 * 1024 * 1024
+const maxSMTPDataLineSize = 1000
+
+var errMessageTooLarge = errors.New("message exceeds maximum size")
+var errDataLineTooLong = errors.New("message contains an overlong SMTP line")
 
 type Server struct {
 	addr         string
@@ -100,7 +107,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		case "EHLO", "HELO":
 			session.Helo = argument
 			s.logSMTPAction(session, "helo", "", "", nil)
-			if err := s.sendLine(conn, "250-Hello "+argument+"\r\n250 SIZE 10485760"); err != nil {
+			if err := s.sendLine(conn, fmt.Sprintf("250-Hello %s\r\n250 SIZE %d", argument, maxMessageSize)); err != nil {
 				return
 			}
 		case "MAIL":
@@ -110,6 +117,17 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 				_ = s.sendStatus(conn, 501, "Syntax: MAIL FROM:<address>")
 				continue
 			}
+			declaredSize, hasDeclaredSize, sizeErr := parseDeclaredMessageSize(argument)
+			if sizeErr != nil {
+				s.logSMTPAction(session, "mailfrom-rejected", from, "", &ResponseError{Code: 501, Message: "Invalid SIZE parameter"})
+				_ = s.sendStatus(conn, 501, "Invalid SIZE parameter")
+				continue
+			}
+			if hasDeclaredSize && declaredSize > maxMessageSize {
+				s.logSMTPAction(session, "mailfrom-rejected", from, "", &ResponseError{Code: 552, Message: "Message size exceeds fixed maximum message size"})
+				_ = s.sendStatus(conn, 552, "Message size exceeds fixed maximum message size")
+				continue
+			}
 			if response := s.policy.OnMailFrom(&session, from); response != nil {
 				s.logSMTPAction(session, "mailfrom-rejected", from, "", response)
 				_ = s.sendStatus(conn, response.Code, response.Message)
@@ -117,6 +135,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 			}
 			session.RcptTo = nil
 			session.OwnerUserID = 0
+			session.OwnerSet = false
 			s.logSMTPAction(session, "mailfrom-accepted", from, "", nil)
 			if err := s.sendStatus(conn, 250, "Sender OK"); err != nil {
 				return
@@ -152,8 +171,18 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 			if err := s.sendStatus(conn, 354, "End data with <CR><LF>.<CR><LF>"); err != nil {
 				return
 			}
-			raw, err := readDataBlock(reader.R)
+			raw, err := readDataBlockLimit(reader.R, maxMessageSize)
 			if err != nil {
+				if errors.Is(err, errMessageTooLarge) {
+					s.logSMTPAction(session, "data-rejected", "", "", &ResponseError{Code: 552, Message: "Message size exceeds fixed maximum message size"})
+					_ = s.sendStatus(conn, 552, "Message size exceeds fixed maximum message size")
+					continue
+				}
+				if errors.Is(err, errDataLineTooLong) {
+					s.logSMTPAction(session, "data-rejected", "", "", &ResponseError{Code: 554, Message: "Message contains an overlong SMTP line"})
+					_ = s.sendStatus(conn, 554, "Message contains an overlong SMTP line")
+					continue
+				}
 				s.logSMTPAction(session, "data-read-failed", "", "", &ResponseError{Code: 451, Message: "Failed to read message data"})
 				_ = s.sendStatus(conn, 451, "Failed to read message data")
 				return
@@ -168,9 +197,15 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 			if err := s.sendStatus(conn, 250, "Message accepted"); err != nil {
 				return
 			}
+			session.MailFrom = ""
+			session.RcptTo = nil
+			session.OwnerUserID = 0
+			session.OwnerSet = false
 		case "RSET":
 			session.MailFrom = ""
 			session.RcptTo = nil
+			session.OwnerUserID = 0
+			session.OwnerSet = false
 			s.logSMTPAction(session, "reset", "", "", nil)
 			if err := s.sendStatus(conn, 250, "State reset"); err != nil {
 				return
@@ -306,12 +341,42 @@ func parsePathArgument(argument, prefix string) (string, bool) {
 	return strings.TrimSpace(fields[0]), true
 }
 
+func parseDeclaredMessageSize(argument string) (int64, bool, error) {
+	for _, field := range strings.Fields(argument) {
+		if !strings.HasPrefix(strings.ToUpper(field), "SIZE=") {
+			continue
+		}
+		value := strings.TrimSpace(field[len("SIZE="):])
+		size, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || size < 0 {
+			return 0, true, fmt.Errorf("invalid SIZE parameter")
+		}
+		return size, true, nil
+	}
+	return 0, false, nil
+}
+
 func readDataBlock(reader *bufio.Reader) ([]byte, error) {
+	return readDataBlockLimit(reader, maxMessageSize)
+}
+
+func readDataBlockLimit(reader *bufio.Reader, limit int) ([]byte, error) {
 	var buffer bytes.Buffer
+	total := 0
+	tooLarge := false
+	lineTooLong := false
 	for {
-		line, err := reader.ReadString('\n')
+		line, wireSize, overlong, err := readDataLine(reader)
 		if err != nil {
 			return nil, err
+		}
+		if overlong {
+			lineTooLong = true
+			total += wireSize
+			if total > limit {
+				tooLarge = true
+			}
+			continue
 		}
 		if line == ".\r\n" || line == ".\n" {
 			break
@@ -324,10 +389,46 @@ func readDataBlock(reader *bufio.Reader) ([]byte, error) {
 		if strings.ContainsRune(line, '\r') {
 			return nil, fmt.Errorf("message data contains a bare carriage return")
 		}
+		total += len(line) + 2
+		if total > limit {
+			tooLarge = true
+			continue
+		}
 		buffer.WriteString(line)
 		buffer.WriteString("\r\n")
 	}
+	if tooLarge {
+		return nil, errMessageTooLarge
+	}
+	if lineTooLong {
+		return nil, errDataLineTooLong
+	}
 	return buffer.Bytes(), nil
+}
+
+func readDataLine(reader *bufio.Reader) (string, int, bool, error) {
+	var line bytes.Buffer
+	wireSize := 0
+	overlong := false
+	for {
+		fragment, err := reader.ReadSlice('\n')
+		wireSize += len(fragment)
+		if !overlong {
+			if line.Len()+len(fragment) > maxSMTPDataLineSize {
+				overlong = true
+			} else {
+				_, _ = line.Write(fragment)
+			}
+		}
+		switch {
+		case err == nil:
+			return line.String(), wireSize, overlong, nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		default:
+			return "", wireSize, overlong, err
+		}
+	}
 }
 
 func (s *Server) sendStatus(conn net.Conn, code int, message string) error {

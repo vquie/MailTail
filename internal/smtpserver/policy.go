@@ -32,6 +32,7 @@ type SessionMetadata struct {
 	MailFrom    string
 	RcptTo      []string
 	OwnerUserID int64
+	OwnerSet    bool
 }
 
 type ResponseError struct {
@@ -321,7 +322,11 @@ func (p *DomainPolicy) OnRcptTo(session *SessionMetadata, recipient string) *Res
 
 	switch len(candidates) {
 	case 0:
-		if len(users) > 0 {
+		managed, lookupErr := p.hasManagedMailboxes()
+		if lookupErr != nil {
+			return &ResponseError{Code: 451, Message: "Temporary policy lookup failure"}
+		}
+		if len(users) > 0 || managed {
 			return &ResponseError{Code: 550, Message: "Recipient not allowed"}
 		}
 		state := p.snapshot()
@@ -329,9 +334,10 @@ func (p *DomainPolicy) OnRcptTo(session *SessionMetadata, recipient string) *Res
 			return response
 		}
 		session.OwnerUserID = 0
+		session.OwnerSet = true
 		return nil
 	case 1:
-		if session.OwnerUserID != 0 && session.OwnerUserID != candidates[0].userID {
+		if session.OwnerSet && session.OwnerUserID != candidates[0].userID {
 			return &ResponseError{Code: 550, Message: "Recipient belongs to a different user"}
 		}
 		if candidates[0].mailFail != nil {
@@ -340,6 +346,7 @@ func (p *DomainPolicy) OnRcptTo(session *SessionMetadata, recipient string) *Res
 			}
 		}
 		session.OwnerUserID = candidates[0].userID
+		session.OwnerSet = true
 		return nil
 	default:
 		return &ResponseError{Code: 550, Message: "Recipient is ambiguous for configured users"}
@@ -383,16 +390,38 @@ func (p *DomainPolicy) policyUsers() ([]domainPolicyState, error) {
 		if err != nil {
 			return nil, err
 		}
-		policies = append(policies, state)
+		if !state.acceptedRcptDomains.Empty() {
+			policies = append(policies, state)
+		}
 	}
 	for _, user := range users {
 		state, err := p.userState(user)
 		if err != nil {
 			return nil, err
 		}
-		policies = append(policies, state)
+		if !state.acceptedRcptDomains.Empty() {
+			policies = append(policies, state)
+		}
 	}
 	return policies, nil
+}
+
+func (p *DomainPolicy) hasManagedMailboxes() (bool, error) {
+	if p.store == nil {
+		return false, nil
+	}
+	users, err := p.store.ListUsers(context.Background())
+	if err != nil {
+		return false, err
+	}
+	if len(users) > 0 {
+		return true, nil
+	}
+	settings, ok, err := p.store.LoadAdminMailboxSettings(context.Background())
+	if err != nil {
+		return false, err
+	}
+	return ok && adminMailboxEnabled(settings), nil
 }
 
 func adminMailboxEnabled(settings models.AppSettings) bool {
