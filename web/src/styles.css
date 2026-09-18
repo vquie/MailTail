@@ -589,6 +589,16 @@ select {
   word-break: break-word;
 }
 
+.commandSnippetRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.commandSnippetRow .commandSnippet {
+  flex: 1;
+}
+
 .tabs {
   display: flex;
   gap: 8px;
@@ -1513,6 +1523,55 @@ select {
 
 .createUserGrid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.createUserDomainField,
+.routingNotice {
+  grid-column: 1 / -1;
+}
+
+.routingBadge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.74rem;
+}
+
+.routingBadgeActive {
+  color: #9ee6bd;
+  border-color: rgb(83 196 132 / 30%);
+  background: rgb(83 196 132 / 10%);
+}
+
+.routingBadgeInactive {
+  color: #f2c382;
+  border-color: rgb(242 179 91 / 30%);
+  background: rgb(242 179 91 / 10%);
+}
+
+.routingNotice {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.routingNotice span {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+}
+
+.routingNoticeActive {
+  border-color: rgb(83 196 132 / 24%);
+  background: rgb(83 196 132 / 7%);
+}
+
+.routingNoticeInactive {
+  border-color: rgb(242 179 91 / 26%);
+  background: rgb(242 179 91 / 8%);
 }
 
 .settingsBanner {

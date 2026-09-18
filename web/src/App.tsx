@@ -21,6 +21,7 @@ import {
   updateUser
 } from "./api";
 import type { AppSettings, MailFailRule, Message, SessionInfo, Stats, User } from "./types";
+import { mailboxIsRouted, mailboxRoutingSummary } from "./mailboxRouting";
 
 type TabKey = "html" | "text" | "headers" | "raw" | "attachments";
 type MailFailSettingsScope = "user" | "adminMailbox";
@@ -164,6 +165,8 @@ export function App() {
   const [mailFailRuleDraft, setMailFailRuleDraft] = useState<MailFailRule>(emptyMailFailRule);
   const [managedUsername, setManagedUsername] = useState(emptyManagedUser.username);
   const [managedPassword, setManagedPassword] = useState(emptyManagedUser.password);
+  const [managedRecipientDomainsOnCreate, setManagedRecipientDomainsOnCreate] = useState("");
+  const [copiedCommand, setCopiedCommand] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selectedManagedUser = useMemo(
     () => managedUsers.find((user) => user.id === selectedManagedUserId) ?? null,
@@ -225,6 +228,66 @@ export function App() {
 
     return () => window.clearTimeout(timer);
   }, [settingsNotice]);
+
+  useEffect(() => {
+    if (!settingsOpen && !aboutOpen && !createUserOpen) {
+      return;
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      if (createUserOpen) {
+        setCreateUserOpen(false);
+      } else if (aboutOpen) {
+        setAboutOpen(false);
+      } else {
+        setSettingsOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [aboutOpen, createUserOpen, settingsOpen]);
+
+  useEffect(() => {
+    if (!settingsOpen && !aboutOpen && !createUserOpen) {
+      return;
+    }
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialogs = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]'));
+    const activeDialog = dialogs[dialogs.length - 1];
+    if (!activeDialog) {
+      return;
+    }
+    const selector = 'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+    const focusable = Array.from(activeDialog.querySelectorAll<HTMLElement>(selector));
+    (activeDialog.querySelector<HTMLElement>("[autofocus]") ?? focusable[0])?.focus();
+
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") {
+        return;
+      }
+      const current = Array.from(activeDialog.querySelectorAll<HTMLElement>(selector));
+      if (current.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = current[0];
+      const last = current[current.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", trapFocus);
+    return () => {
+      window.removeEventListener("keydown", trapFocus);
+      previouslyFocused?.focus();
+    };
+  }, [aboutOpen, createUserOpen, settingsOpen]);
 
   useEffect(() => {
     void loadSessionInfo();
@@ -623,7 +686,10 @@ export function App() {
       const savedUser = await createUser({
         username: managedUsername.trim(),
         password: managedPassword,
-        settings: emptySettings
+        settings: {
+          ...emptySettings,
+          acceptedRcptDomains: managedRecipientDomainsOnCreate.trim()
+        }
       });
 
       const users = await fetchUsers();
@@ -631,7 +697,12 @@ export function App() {
       setSelectedManagedUserId(savedUser.id);
       applyManagedUserDraft(savedUser);
       setCreateUserOpen(false);
-      showSettingsNotice("User created. Configure delivery policies on the right.");
+      setManagedRecipientDomainsOnCreate("");
+      showSettingsNotice(
+        savedUser.settings.acceptedRcptDomains.trim()
+          ? "User created and routing is active."
+          : "User created without routing. Add a recipient domain before sending mail to this mailbox."
+      );
     } catch (err) {
       showSettingsError(err instanceof Error ? err.message : "Failed to create user");
     } finally {
@@ -685,7 +756,18 @@ export function App() {
     setUserEditorSubTab("general");
     setSelectedManagedUserId(null);
     applyManagedUserDraft(null);
+    setManagedRecipientDomainsOnCreate("");
     clearSettingsFlash();
+  }
+
+  async function handleCopySMTPCommand() {
+    try {
+      await writeClipboard(`swaks -s 127.0.0.1:8025 --to ${smtpExampleRecipient} --from ${smtpExampleSender}`);
+      setCopiedCommand(true);
+      window.setTimeout(() => setCopiedCommand(false), 1500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to copy SMTP command");
+    }
   }
 
   async function handleCopyHeaderValue(headerKey: string, value: string) {
@@ -1935,7 +2017,13 @@ export function App() {
                 Inject a test email over SMTP on port 8025. The first captured message will open here with HTML, text,
                 headers, raw source and attachments.
               </p>
-              <pre className="commandSnippet">{`swaks -s 127.0.0.1:8025 --to ${smtpExampleRecipient} --from ${smtpExampleSender}`}</pre>
+              <div className="commandSnippetRow">
+                <pre className="commandSnippet">{`swaks -s 127.0.0.1:8025 --to ${smtpExampleRecipient} --from ${smtpExampleSender}`}</pre>
+                <button className="ghostButton compactButton" type="button" onClick={() => void handleCopySMTPCommand()}>
+                  {copiedCommand ? <CheckIcon /> : <CopyIcon />}
+                  <span>{copiedCommand ? "Copied" : "Copy"}</span>
+                </button>
+              </div>
             </div>
             <div className="heroActions">
             </div>
@@ -1946,11 +2034,17 @@ export function App() {
 
         {settingsOpen ? (
           <div className="settingsOverlay settingsPageOverlay" onClick={() => setSettingsOpen(false)}>
-            <section className="settingsPanel settingsPageShell" onClick={(event) => event.stopPropagation()}>
+            <section
+              className="settingsPanel settingsPageShell"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="settings-title"
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="settingsPageHeader">
                 <div className="settingsPageTitle">
                   <p className="eyebrow">{session?.isAdmin ? "Admin area" : "User settings"}</p>
-                  <h2>Settings</h2>
+                  <h2 id="settings-title">Settings</h2>
                   <p className="settingsLead">
                     {session?.isAdmin
                       ? "Configure the MailTail instance, the admin mailbox and local users from one structured workspace."
@@ -1983,6 +2077,8 @@ export function App() {
                     {settingsTabs.map((tab) => (
                       <button
                         key={tab.key}
+                        role="tab"
+                        aria-selected={activeSettingsTab === tab.key}
                         className={activeSettingsTab === tab.key ? "settingsTabButton active" : "settingsTabButton"}
                         onClick={() => handleSettingsSectionChange(tab.key)}
                         type="button"
@@ -2108,6 +2204,8 @@ export function App() {
                             {settingsSubTabs.map((tab) => (
                               <button
                                 key={tab.key}
+                                role="tab"
+                                aria-selected={adminMailboxSubTab === tab.key}
                                 className={adminMailboxSubTab === tab.key ? "settingsSubTabButton active" : "settingsSubTabButton"}
                                 onClick={() => handleSettingsSubTabChange("adminMailbox", tab.key)}
                                 type="button"
@@ -2142,6 +2240,14 @@ export function App() {
 
                           {adminMailboxEnabled && adminMailboxSubTab === "general" ? (
                             <div className="settingsGrid adminMailboxGrid">
+                              <div className={adminMailboxDraft.acceptedRcptDomains.trim() ? "routingNotice routingNoticeActive" : "routingNotice routingNoticeInactive"}>
+                                <strong>{adminMailboxDraft.acceptedRcptDomains.trim() ? "Routing active" : "Routing inactive"}</strong>
+                                <span>
+                                  {adminMailboxDraft.acceptedRcptDomains.trim()
+                                    ? `Admin SMTP is assigned using: ${adminMailboxDraft.acceptedRcptDomains}`
+                                    : "The admin mailbox will not receive SMTP until an accepted recipient domain is configured."}
+                                </span>
+                              </div>
                               <div className="settingsField toggleField">
                                 <span>Allowed remote IPs</span>
                                 <label className="toggleRow">
@@ -2188,6 +2294,7 @@ export function App() {
                                     }
                                   />
                                 ) : null}
+                                <small>Required for routing. Prefer exact domains; regex patterns are an advanced option.</small>
                               </div>
 
                               <div className="settingsField toggleField">
@@ -2342,7 +2449,9 @@ export function App() {
                                 type="button"
                               >
                                 <strong>{user.username}</strong>
-                                <span className="mutedText">{user.settings.acceptedRcptDomains || "No recipient filter"}</span>
+                                <span className={mailboxIsRouted(user.settings.acceptedRcptDomains) ? "routingBadge routingBadgeActive" : "routingBadge routingBadgeInactive"}>
+                                  {mailboxRoutingSummary(user.settings.acceptedRcptDomains)}
+                                </span>
                               </button>
                             ))
                           ) : (
@@ -2378,10 +2487,20 @@ export function App() {
 
                         {selectedManagedUserId ? (
                           <>
+                            <div className={settingsDraft.acceptedRcptDomains.trim() ? "routingNotice routingNoticeActive" : "routingNotice routingNoticeInactive"}>
+                              <strong>{settingsDraft.acceptedRcptDomains.trim() ? "Routing active" : "Routing inactive"}</strong>
+                              <span>
+                                {settingsDraft.acceptedRcptDomains.trim()
+                                  ? `Incoming SMTP is assigned using: ${settingsDraft.acceptedRcptDomains}`
+                                  : "This user can sign in, but no incoming SMTP message is assigned until a recipient domain is configured."}
+                              </span>
+                            </div>
                             <div className="settingsSubTabs" role="tablist" aria-label="User editor sections">
                               {settingsSubTabs.map((tab) => (
-                                <button
-                                  key={tab.key}
+                              <button
+                                key={tab.key}
+                                role="tab"
+                                aria-selected={userEditorSubTab === tab.key}
                                   className={userEditorSubTab === tab.key ? "settingsSubTabButton active" : "settingsSubTabButton"}
                                   onClick={() => handleSettingsSubTabChange("user", tab.key)}
                                   type="button"
@@ -2442,7 +2561,7 @@ export function App() {
                                       onChange={(event) => updateSettingsField("acceptedRcptDomains", event.target.value)}
                                     />
                                   ) : null}
-                                  <small>Comma-separated recipient domains or regex patterns to accept.</small>
+                                  <small>Required for routing. Use exact domains where possible; comma-separated regex patterns are an advanced option.</small>
                                 </div>
 
                                 <div className="settingsField toggleField">
@@ -2528,6 +2647,14 @@ export function App() {
                         </div>
 
                         <div className="settingsGrid">
+                          <div className={settingsDraft.acceptedRcptDomains.trim() ? "routingNotice routingNoticeActive" : "routingNotice routingNoticeInactive"}>
+                            <strong>{settingsDraft.acceptedRcptDomains.trim() ? "Routing active" : "Routing inactive"}</strong>
+                            <span>
+                              {settingsDraft.acceptedRcptDomains.trim()
+                                ? `This mailbox receives domains: ${settingsDraft.acceptedRcptDomains}`
+                                : "Ask an administrator to assign a recipient domain before sending mail to this mailbox."}
+                            </span>
+                          </div>
                           <div className="settingsField toggleField">
                             <span>MailFail enabled</span>
                             <label className="toggleRow">
@@ -2590,7 +2717,7 @@ export function App() {
                                 onChange={(event) => updateSettingsField("acceptedRcptDomains", event.target.value)}
                               />
                             ) : null}
-                            <small>Comma-separated recipient domains or regex patterns to accept.</small>
+                            <small>Required for routing. Use exact domains where possible; regex patterns are for advanced setups.</small>
                           </div>
 
                           <div className="settingsField toggleField">
@@ -2708,29 +2835,45 @@ export function App() {
 
         {settingsOpen && session?.isAdmin && createUserOpen ? (
           <div className="settingsOverlay nestedOverlay" onClick={() => setCreateUserOpen(false)}>
-            <section className="createUserDialog" onClick={(event) => event.stopPropagation()}>
+            <section
+              className="createUserDialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="create-user-title"
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="settingsPanelHeader">
                 <div>
                   <p className="eyebrow">Admin area</p>
-                  <h2>Create user</h2>
+                  <h2 id="create-user-title">Create user</h2>
                 </div>
                 <button className="ghostButton compactButton" onClick={() => setCreateUserOpen(false)}>
                   Close
                 </button>
               </div>
 
-              <p className="settingsLead">Create a local user first. Delivery policies can be edited right after creation.</p>
+              <p className="settingsLead">Assign a recipient domain now to activate routing, or leave it empty to create a login-only mailbox.</p>
 
               <div className="settingsGrid createUserGrid">
                 <label className="settingsField">
                   <span>Username</span>
-                  <input value={managedUsername} onChange={(event) => setManagedUsername(event.target.value)} />
+                  <input autoFocus value={managedUsername} onChange={(event) => setManagedUsername(event.target.value)} />
                   <small>Local username used for login.</small>
                 </label>
                 <label className="settingsField">
                   <span>Password</span>
                   <input type="password" value={managedPassword} onChange={(event) => setManagedPassword(event.target.value)} />
                   <small>Required when creating a user.</small>
+                </label>
+                <label className="settingsField createUserDomainField">
+                  <span>Recipient domains</span>
+                  <textarea
+                    rows={3}
+                    value={managedRecipientDomainsOnCreate}
+                    onChange={(event) => setManagedRecipientDomainsOnCreate(event.target.value)}
+                    placeholder="community.example.test"
+                  />
+                  <small>Optional. Without a domain this user can sign in, but incoming SMTP is not routed to the mailbox.</small>
                 </label>
               </div>
 
@@ -2748,11 +2891,17 @@ export function App() {
 
         {aboutOpen ? (
           <div className="settingsOverlay" onClick={() => setAboutOpen(false)}>
-            <section className="settingsPanel aboutPanel" onClick={(event) => event.stopPropagation()}>
+            <section
+              className="settingsPanel aboutPanel"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="about-title"
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="settingsPanelHeader">
                 <div className="settingsPageTitle">
                   <p className="eyebrow">About</p>
-                  <h2>MailTail</h2>
+                  <h2 id="about-title">MailTail</h2>
                   <p className="settingsLead">Useful runtime details for the current workspace.</p>
                 </div>
                 <button className="ghostButton compactButton settingsToolbarCloseButton" type="button" onClick={() => setAboutOpen(false)}>
