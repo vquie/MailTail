@@ -37,4 +37,6 @@ make lint
 make docker-build
 ```
 
+`make lint` checks changes relative to `origin/main`. Use `make lint-all-files` when a full file-based repository scan is required.
+
 The CI runner uses Node.js 24. Local frontend builds require Node.js 22 or newer; `make build-web` falls back to the pinned Node.js container when necessary.

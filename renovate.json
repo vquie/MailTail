@@ -3,6 +3,7 @@
   "extends": [
     "config:recommended",
     "config:best-practices",
+    "customManagers:makefileVersions",
     "schedule:weekdays",
     ":noUnscheduledUpdates",
     "mergeConfidence:all-badges"
@@ -40,5 +41,15 @@
     "addLabels": ["security"]
   },
   "osvVulnerabilityAlerts": true,
-  "dependencyDashboardOSVVulnerabilitySummary": "all"
+  "dependencyDashboardOSVVulnerabilitySummary": "all",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update digest-pinned Docker images in Makefiles",
+      "managerFilePatterns": ["/(^|/)Makefile$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-zA-Z0-9-._]+?) depName=(?<depName>[^\\s]+?)(?: versioning=(?<versioning>[^\\s]+?))?\\s+[A-Za-z0-9_]+?_IMAGE\\s*:*\\??=\\s*[^\\s:]+:(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)"
+      ]
+    }
+  ]
 }

@@ -48,7 +48,7 @@ make run
 make docker-run
 ```
 
-`make lint` runs MegaLinter in Docker. `make lint-fix` enables automatic fixes where supported by the active linters.
+`make lint` runs MegaLinter in Docker for files changed relative to `origin/main`. `make lint-fix` enables automatic fixes for those files where supported. Use `make lint-all-files` for an explicitly confirmed full file-lint run, or `make lint-all` to include project-level linters.
 `make check` runs formatting and module drift checks, `go vet`, the race detector, and the coverage floor used by CI.
 If `.env` exists in the project root, `make run` and `make docker-run` load it automatically.
 `make build`, `make run`, and `make docker-build` run `go test ./...` first, so OpenAPI drift and other backend test failures block artifact creation.
