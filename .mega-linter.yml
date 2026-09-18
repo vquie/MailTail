@@ -3,3 +3,7 @@ DISABLE_LINTERS:
   - SPELL_CSPELL
   - SPELL_LYCHEE
   - TYPESCRIPT_STANDARD
+
+# Zizmor needs the read-only workflow token for online action tag audits.
+ACTION_ZIZMOR_UNSECURED_ENV_VARIABLES:
+  - GITHUB_TOKEN
