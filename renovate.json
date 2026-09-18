@@ -35,6 +35,15 @@
       "description": "Never auto-merge major updates",
       "matchUpdateTypes": ["major"],
       "automerge": false
+    },
+    {
+      "description": "Do not digest-pin MegaLinter images referenced through the shared Makefile version variable",
+      "matchPackageNames": [
+        "ghcr.io/oxsecurity/megalinter",
+        "ghcr.io/oxsecurity/megalinter-ci_light"
+      ],
+      "matchUpdateTypes": ["pin"],
+      "enabled": false
     }
   ],
   "vulnerabilityAlerts": {
