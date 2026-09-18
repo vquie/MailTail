@@ -163,6 +163,48 @@ func TestCreateUserWithoutRecipientDomainsAllowedAlongsideScopedAdminMailbox(t *
 	}
 }
 
+func TestUserSettingsReadsAndWritesStayOwnerScoped(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	service := NewService(store, nil, "test", nil, nil)
+	ctx := context.Background()
+	userA, err := service.CreateUser(ctx, "user-a", "secret", models.AppSettings{AcceptedRcptDomains: "a.test"}, "")
+	if err != nil {
+		t.Fatalf("create user A: %v", err)
+	}
+	userB, err := service.CreateUser(ctx, "user-b", "secret", models.AppSettings{AcceptedRcptDomains: "b.test"}, "")
+	if err != nil {
+		t.Fatalf("create user B: %v", err)
+	}
+	principalA := models.SessionPrincipal{UserID: userA.ID, Username: userA.Username}
+	updated, err := service.UpdateSettings(ctx, principalA, models.AppSettings{
+		AcceptedRcptDomains: "a.test",
+		AcceptedFromDomains: "trusted.test",
+		AutoDeleteAfterDays: 7,
+	})
+	if err != nil {
+		t.Fatalf("update user A settings: %v", err)
+	}
+	if updated.AcceptedFromDomains != "trusted.test" || updated.AutoDeleteAfterDays != 7 {
+		t.Fatalf("unexpected user A settings: %+v", updated)
+	}
+	storedB, ok, err := store.GetUser(ctx, userB.ID)
+	if err != nil || !ok {
+		t.Fatalf("load user B: ok=%v err=%v", ok, err)
+	}
+	if storedB.Settings.AcceptedRcptDomains != "b.test" || storedB.Settings.AcceptedFromDomains != "" || storedB.Settings.AutoDeleteAfterDays != 0 {
+		t.Fatalf("user B settings changed through user A: %+v", storedB.Settings)
+	}
+	loadedA, err := service.Settings(ctx, principalA)
+	if err != nil {
+		t.Fatalf("load user A settings: %v", err)
+	}
+	if loadedA.AcceptedRcptDomains != "a.test" || loadedA.AcceptedFromDomains != "trusted.test" {
+		t.Fatalf("loaded wrong user settings: %+v", loadedA)
+	}
+}
+
 func newTestStore(t *testing.T) *storage.SQLiteStore {
 	t.Helper()
 

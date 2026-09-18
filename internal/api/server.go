@@ -59,7 +59,7 @@ func NewServer(addr, staticDir string, service *Service, logger *log.Logger, sto
 
 	server.httpServer = &http.Server{
 		Addr:              addr,
-		Handler:           sessionAuth.Middleware(loggingMiddleware(logger, corsMiddleware(mux, corsConfig))),
+		Handler:           securityHeadersMiddleware(sessionAuth.Middleware(loggingMiddleware(logger, corsMiddleware(mux, corsConfig)))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -471,6 +471,16 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func loggingMiddleware(logger *log.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isNoisyPollingRequest(r) {
@@ -518,7 +528,7 @@ func corsMiddleware(next http.Handler, config CORSConfig) http.Handler {
 			w.Header().Add("Vary", "Origin")
 		}
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
 		if r.Method == http.MethodOptions {
 			if origin != "" && !allowedOrigin {
 				w.WriteHeader(http.StatusForbidden)

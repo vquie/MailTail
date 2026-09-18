@@ -119,6 +119,17 @@ func (a *SessionAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		sessionUsername = credentials.User.Username
 		userID = credentials.User.ID
+		if passwordHashNeedsUpgrade(credentials.PasswordHash) {
+			upgradedHash, hashErr := hashPassword(password)
+			if hashErr != nil {
+				http.Error(w, "Failed to process login", http.StatusInternalServerError)
+				return
+			}
+			if err := a.store.UpdateUserPassword(r.Context(), userID, upgradedHash); err != nil {
+				http.Error(w, "Failed to process login", http.StatusInternalServerError)
+				return
+			}
+		}
 	}
 
 	if !isAdmin && userID == 0 {
@@ -327,13 +338,6 @@ func requiresCSRFFProtection(method string) bool {
 }
 
 func clientIP(r *http.Request) string {
-	if forwardedFor := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwardedFor != "" {
-		parts := strings.Split(forwardedFor, ",")
-		return strings.TrimSpace(parts[0])
-	}
-	if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
-		return realIP
-	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil {
 		return host
