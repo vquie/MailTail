@@ -158,11 +158,20 @@ jobs:
       - name: Smoke-test HTTP, SMTP, and persistence
         shell: bash
         run: |
+          docker volume create mailtail-ci-data >/dev/null
+          docker run --rm \
+            --user 0 \
+            --entrypoint sh \
+            --volume mailtail-ci-data:/data \
+            mailtail:ci \
+            -c 'touch /data/legacy-volume && chown -R 0:0 /data'
+
           docker run --detach --name mailtail-ci \
             --publish 127.0.0.1:18025:8025 \
             --publish 127.0.0.1:18080:8080 \
+            --volume mailtail-ci-data:/data \
             mailtail:ci
-          trap 'docker rm --force mailtail-ci >/dev/null 2>&1 || true' EXIT
+          trap 'docker rm --force mailtail-ci >/dev/null 2>&1 || true; docker volume rm mailtail-ci-data >/dev/null 2>&1 || true' EXIT
 
           ready=false
           for _ in {1..30}; do
@@ -176,6 +185,10 @@ jobs:
             docker logs mailtail-ci
             exit 1
           fi
+
+          test "$(docker exec mailtail-ci stat -c '%u:%g' /data/legacy-volume)" = "10001:10001"
+          process_uid="$(docker exec mailtail-ci awk '/^Uid:/ { print $2 }' /proc/1/status)"
+          test "${process_uid}" = "10001"
 
           curl --fail --silent --show-error http://127.0.0.1:18080/ >/dev/null
           python3 - <<'PY'

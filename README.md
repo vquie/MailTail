@@ -103,6 +103,8 @@ make docker-rm
 
 Data is persisted in the Docker volume `mailtail-data` by default.
 
+On startup, the container updates the ownership of the configured data directory and then drops privileges to UID/GID `10001`. This automatically migrates volumes created by older MailTail images that used a different container user ID. When overriding the container user with `--user`, make sure that user can write to `MAILTAIL_DATA_DIR`.
+
 ### GitHub release workflow
 
 Pushing a Git tag that starts with `v` creates a GitHub Release and publishes a multi-arch image to GHCR.

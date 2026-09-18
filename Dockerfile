@@ -22,18 +22,24 @@ LABEL org.opencontainers.image.title="MailTail" \
       org.opencontainers.image.url="https://github.com/vquie/MailTail" \
       org.opencontainers.image.source="https://github.com/vquie/MailTail" \
       org.opencontainers.image.documentation="https://github.com/vquie/MailTail#readme"
-RUN addgroup -S -g 10001 mailtail \
+RUN apk add --no-cache su-exec \
+  && addgroup -S -g 10001 mailtail \
   && adduser -S -D -h /app -u 10001 -G mailtail mailtail
 WORKDIR /app
 COPY --from=go-build /out/mailtail /app/mailtail
 COPY --from=web-build /src/web/dist /app/web/dist
+COPY docker-entrypoint.sh /usr/local/bin/mailtail-entrypoint
 RUN mkdir -p /data \
-  && chown -R mailtail:mailtail /app /data
-USER 10001:10001
+  && chown -R mailtail:mailtail /app /data \
+  && chmod 0755 /usr/local/bin/mailtail-entrypoint
 EXPOSE 8025 8080
 VOLUME ["/data"]
 ENV MAILTAIL_DATA_DIR=/data
 ENV MAILTAIL_HTTP_ADDR=:8080
 ENV MAILTAIL_SMTP_ADDR=:8025
 ENV MAILTAIL_WEB_DIR=/app/web/dist
+# Root is used only to migrate mounted volume ownership; the entrypoint drops to UID/GID 10001 before starting MailTail.
+# hadolint ignore=DL3002
+USER root
+ENTRYPOINT ["/usr/local/bin/mailtail-entrypoint"]
 CMD ["/app/mailtail"]
