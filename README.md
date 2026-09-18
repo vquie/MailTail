@@ -13,6 +13,7 @@ MailTail is a modern open-source SMTP test inbox focused on mail infrastructure 
 - Search over subject, sender, and recipient
 - Full raw message storage
 - Rule-driven ARF, XARF v3/v4, original-message reports, and asynchronous DSN bounces
+- Local multi-user mailboxes with recipient-domain routing and owner-scoped inboxes
 - Extensible SMTP response policy interface for future MailFail behavior
 
 ## Project Structure
@@ -42,6 +43,7 @@ cp .env.example .env
 make install
 make check
 make test
+make test-web
 make lint
 make build
 make run
@@ -362,7 +364,7 @@ The runtime-setting bootstrap variables are:
 - `MAILTAIL_ACCEPTED_RCPT_DOMAINS` default: empty, accepts recipients for all domains and logs a startup warning. Values may be exact domains or regular expressions.
 - `MAILTAIL_ACCEPTED_FROM_DOMAINS` default: empty, accepts senders for all domains and logs a startup warning. Values may be exact domains or regular expressions.
 
-For the planned multi-user direction and the intended split between instance-wide settings and user-owned mail policies, see [docs/multi-user-target.md](/Users/vitaliquiering/git/MailTail/docs/multi-user-target.md).
+For the current multi-user architecture and future extensions, see [Multi-user architecture](docs/multi-user-target.md).
 
 Example:
 
@@ -373,11 +375,18 @@ make run
 
 To enable login protection, set both `MAILTAIL_ADMIN_USERNAME` and `MAILTAIL_ADMIN_PASSWORD`. If only one is set, MailTail exits on startup.
 MailTail then serves a login form and stores an authenticated session in a secure HTTP-only cookie, so you do not need to re-enter credentials on every API request.
+Local user passwords are stored with salted PBKDF2-HMAC-SHA256 hashes. Older MailTail password hashes are accepted once and upgraded after a successful login.
 This protects the web UI and REST API. SMTP remains unauthenticated in this MVP.
 When MailTail runs behind TLS termination, make sure your proxy forwards `X-Forwarded-Proto: https` or `Forwarded: proto=https` so the session cookie is marked `Secure`.
 Cross-origin browser access is off by default. If you explicitly need it, set `MAILTAIL_ALLOWED_ORIGINS` to a comma-separated allow-list such as `https://mail.example.com,https://ops.example.com`.
 To restrict SMTP access, set `MAILTAIL_ALLOWED_REMOTE_IPS` to a comma-separated list such as `127.0.0.1,10.0.0.0/8,192.168.0.0/16`.
 Recipient and sender allow-lists accept either exact domains such as `example.test` or regular expressions such as `^.+@example\\.test$` or `(^|\\.)example\\.test$`.
+
+For managed local users and the admin mailbox, at least one accepted recipient domain is required before SMTP is routed to that mailbox.
+A user without a recipient domain can sign in but is intentionally not part of SMTP routing. Once managed users exist, recipients that do not match a routed mailbox are rejected instead of falling through to another user.
+The bootstrap instance policy remains available when no managed mailbox exists.
+
+MailTail advertises and enforces a maximum SMTP message size of 10 MiB. Oversized DATA payloads are drained and rejected with SMTP status `552` without being stored.
 
 If a sender domain is not allowed, MailTail rejects `MAIL FROM` with `550 Sender domain not allowed`.
 If a recipient domain is not allowed, MailTail rejects `RCPT TO` with `550 Recipient domain not allowed`.

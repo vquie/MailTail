@@ -2,7 +2,8 @@ FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json web/tsconfig.json web/tsconfig.app.json web/vite.config.ts web/index.html ./
 COPY web/src ./src
-RUN npm ci && npm run build
+COPY web/tests ./tests
+RUN npm ci && npm test && npm run build
 
 FROM golang:1.27-alpine@sha256:26402d86be3d72e6a9410afa0108f03529f51f0c1b5eb7f503d0bc44cc7857ac AS go-build
 WORKDIR /src

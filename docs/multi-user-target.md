@@ -1,8 +1,10 @@
 # Multi-User Target
 
-This document describes the intended direction for MailTail once the project moves from a single-admin instance to a real multi-user setup.
+This document describes MailTail's current multi-user foundation and the intended direction for future tenant features.
 
-It is not implemented yet. It exists to keep current changes compatible with that future.
+The current implementation supports local users, user-owned settings and messages, recipient-domain routing, separate MailFail policies, owner-scoped API access, and an environment-admin mailbox. A mailbox without an accepted recipient domain is intentionally not routable. SMTP envelopes may contain multiple recipients only when every accepted recipient resolves to the same owner.
+
+The profile, external identity provider, quota, and richer tenant concepts below remain future work.
 
 ## Goals
 
@@ -43,32 +45,26 @@ These should become user-owned:
 
 ### users
 
-Core identity records.
-
-Suggested fields:
+Core identity records currently include:
 
 - `id`
-- `email` or `username`
+- `username`
 - `password_hash`
-- `display_name`
-- `is_active`
 - `created_at`
 - `updated_at`
 
+Display names and explicit active/disabled state remain future additions.
+
 ### user_settings
 
-One row per user for general UI/runtime preferences.
-
-Suggested fields:
+One row per user currently stores the mailbox settings JSON, keyed by:
 
 - `user_id`
-- `smtp_log_verbose`
-- `created_at`
 - `updated_at`
 
 ### user_mail_policies
 
-One row per user, or per user profile if multiple profiles per user are needed later.
+Mailbox policy fields currently live in the user's settings JSON. A normalized policy table remains a future option.
 
 Suggested fields:
 
@@ -89,13 +85,11 @@ If the product later supports multiple inbound identities per user, this should 
 
 ### messages
 
-Messages should eventually be owned explicitly.
-
-Suggested additions:
+Messages are owned explicitly through:
 
 - `owner_user_id`
 - optional `mail_profile_id`
-- optional `expires_at`
+- `expires_at`
 
 That allows:
 
@@ -106,12 +100,12 @@ That allows:
 
 ### auth_sessions
 
-Already persisted in SQLite. This table is compatible with multi-user and should evolve to reference a real user row instead of only storing a username string.
-
-Suggested target fields:
+Already persisted in SQLite with:
 
 - `session_id`
 - `user_id`
+- `username`
+- `is_admin`
 - `csrf_token`
 - `expires_at`
 
@@ -137,11 +131,11 @@ Suggested target key material:
 
 ## SMTP Routing Requirement
 
-The critical future design question is:
+The routing decision is:
 
 How does MailTail decide which user's policy applies to an incoming SMTP session?
 
-That decision must happen before policy checks can be user-specific.
+MailTail currently answers it using recipient-domain ownership before user-specific policy checks run.
 
 ### Preferred routing signals
 
@@ -153,7 +147,7 @@ The cleanest options are:
 
 The weakest option is trying to infer ownership too late from message content.
 
-### Recommended first strategy
+### Current strategy
 
 Use recipient domain ownership as the first routing key.
 
@@ -169,11 +163,11 @@ Then MailTail can:
 3. load the matching user policy
 4. evaluate accept/reject/MailFail rules against that policy
 
-This is the simplest path toward multi-user without redesigning SMTP flow later.
+Mailboxes without a recipient domain are excluded from routing. Ambiguous ownership and mixed-owner SMTP envelopes are rejected.
 
 ## API Direction
 
-The current global settings API should be treated as transitional.
+The current API uses `GET/PUT /api/settings` for the signed-in user's settings and separate `/api/admin/...` endpoints for admin mailbox and user management. A more explicit future shape could be:
 
 Recommended target API shape:
 
@@ -191,12 +185,10 @@ For admin workflows later:
 
 ## UI Direction
 
-The current Settings panel should eventually become user-scoped by default.
-
-That means:
+The Settings panel is user-scoped by default:
 
 - a user edits their own policy settings
-- admins may optionally switch context to manage another user
+- admins can switch context to manage another user
 - the inbox view only shows messages owned by the current user or tenant
 
 ## Retention And Cleanup
@@ -227,27 +219,18 @@ This should become the preferred model once retention is fully user-scoped.
 
 ## Current Compatibility Guidance
 
-When changing the current codebase before multi-user is implemented:
+When extending the current multi-user implementation:
 
 - prefer storing state in the database rather than only in memory
 - avoid hard-coding the assumption that one instance has exactly one policy
 - avoid naming things as `global settings` unless they truly are instance-wide
 - keep SMTP policy evaluation capable of loading settings from an owner-specific context
 
-## Near-Term Refactor Recommendation
+## Near-Term Evolution
 
-Before implementing real multi-user auth, the next clean preparatory step would be:
+The next useful extensions are:
 
-1. rename current persisted runtime settings to clarify that they are instance-scoped
-2. introduce a separate concept for mail policy settings
-3. make SMTP policy creation consume a policy object rather than a flat app settings object
-
-That keeps the future migration from:
-
-- one instance policy
-
-to:
-
-- many user-owned policies
-
-much more direct.
+1. split the current persisted settings document into explicit instance and mailbox-policy records
+2. introduce mail profiles when one user needs multiple independently managed inbound identities
+3. add external authentication providers without changing message ownership semantics
+4. add quotas and retention policy reporting per mailbox

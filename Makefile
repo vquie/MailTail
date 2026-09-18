@@ -90,6 +90,11 @@ install: install-web
 install-web:
 	cd $(WEB_DIR) && $(NPM) install
 
+## Run frontend unit tests
+.PHONY: test-web
+test-web:
+	cd $(WEB_DIR) && $(NPM) test
+
 ## Synchronize Go module files
 .PHONY: tidy
 tidy: setup
@@ -141,7 +146,7 @@ coverage: setup
 
 ## Run the local backend merge checks
 .PHONY: check
-check: fmt-check mod-check vet test-race coverage
+check: fmt-check mod-check vet test-race coverage test-web
 
 #########################################################################
 # MegaLinter
@@ -224,7 +229,7 @@ build: test build-web
 
 ## Build frontend assets
 .PHONY: build-web
-build-web:
+build-web: test-web
 	@if node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit((major === 20 && minor >= 19) || major >= 22 ? 0 : 1)' >/dev/null 2>&1; then \
 		cd $(WEB_DIR) && $(NPM) run build; \
 	else \
