@@ -12,6 +12,9 @@
   "semanticCommits": "enabled",
   "separateMajorMinor": true,
   "separateMinorPatch": true,
+  "lockFileMaintenance": {
+    "automerge": true
+  },
   "packageRules": [
     {
       "description": "Auto-merge low-risk patch, pin, and digest updates after CI",
