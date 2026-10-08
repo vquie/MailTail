@@ -153,7 +153,7 @@ jobs:
           exit-code: "1"
           ignore-unfixed: true
           severity: HIGH,CRITICAL
-          version: v0.74.0
+          version: v0.75.0
 
       - name: Smoke-test HTTP, SMTP, and persistence
         shell: bash
