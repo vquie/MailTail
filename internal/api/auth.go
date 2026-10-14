@@ -119,17 +119,6 @@ func (a *SessionAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		sessionUsername = credentials.User.Username
 		userID = credentials.User.ID
-		if passwordHashNeedsUpgrade(credentials.PasswordHash) {
-			upgradedHash, hashErr := hashPassword(password)
-			if hashErr != nil {
-				http.Error(w, "Failed to process login", http.StatusInternalServerError)
-				return
-			}
-			if err := a.store.UpdateUserPassword(r.Context(), userID, upgradedHash); err != nil {
-				http.Error(w, "Failed to process login", http.StatusInternalServerError)
-				return
-			}
-		}
 	}
 
 	if !isAdmin && userID == 0 {

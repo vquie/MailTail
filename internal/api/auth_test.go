@@ -1,8 +1,6 @@
 package api
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"io"
 	"log"
 	"net/http"
@@ -37,41 +35,90 @@ func TestPasswordHashUsesPBKDF2AndVerifiesSafely(t *testing.T) {
 	}
 }
 
-func TestLegacyPasswordHashStillVerifiesAndRequestsUpgrade(t *testing.T) {
+// Fixed v1 hash of the synthetic password "legacy-secret" with salt
+// "0123456789abcdef" and 1,000 iterations of the retired algorithm.
+const legacyPasswordHashFixture = "mailtail-pwhash-v1$1000$MDEyMzQ1Njc4OWFiY2RlZg$P7R/LWn4wVcjVGe97dj0AJe1L3ymYUro42x+kQcGmrQ"
+
+func TestLegacyPasswordHashIsRejected(t *testing.T) {
 	t.Parallel()
 
-	salt := make([]byte, passwordSaltSize)
-	if _, err := rand.Read(salt); err != nil {
-		t.Fatalf("create salt: %v", err)
+	for _, password := range []string{"legacy-secret", "wrong", ""} {
+		if verifyPassword(password, legacyPasswordHashFixture) {
+			t.Fatal("legacy hash was accepted")
+		}
 	}
-	sum := deriveLegacyPasswordHash([]byte("legacy-secret"), salt, 1000)
-	encoded := legacyPasswordHashPrefix + "$1000$" + base64.RawStdEncoding.EncodeToString(salt) + "$" + base64.RawStdEncoding.EncodeToString(sum)
-	if !verifyPassword("legacy-secret", encoded) {
-		t.Fatal("legacy password was rejected")
-	}
-	if !passwordHashNeedsUpgrade(encoded) {
-		t.Fatal("legacy password hash was not marked for upgrade")
+	// Changing only the format marker must not make a legacy digest valid.
+	relabelled := strings.Replace(legacyPasswordHashFixture, "mailtail-pwhash-v1", passwordHashPrefix, 1)
+	if verifyPassword("legacy-secret", relabelled) {
+		t.Fatal("relabelled legacy hash was accepted")
 	}
 }
 
-func TestLegacyPasswordHashIsUpgradedAfterLogin(t *testing.T) {
+func TestLegacyPasswordLoginRequiresAdminReset(t *testing.T) {
 	t.Parallel()
 
 	store := newServerTestStore(t)
-	salt := []byte("0123456789abcdef")
-	sum := deriveLegacyPasswordHash([]byte("legacy-secret"), salt, 1000)
-	encoded := legacyPasswordHashPrefix + "$1000$" + base64.RawStdEncoding.EncodeToString(salt) + "$" + base64.RawStdEncoding.EncodeToString(sum)
-	if _, err := store.CreateUser(t.Context(), "legacy-user", encoded, models.AppSettings{AcceptedRcptDomains: "legacy.test"}); err != nil {
+	settings := models.AppSettings{AcceptedRcptDomains: "legacy.test"}
+	user, err := store.CreateUser(t.Context(), "legacy-user", legacyPasswordHashFixture, settings)
+	if err != nil {
 		t.Fatalf("create legacy user: %v", err)
 	}
-	auth := NewSessionAuth(AuthConfig{Username: "root", Password: "admin-secret"}, store)
-	loginForTest(t, auth.Middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})), "legacy-user", "legacy-secret")
+	service := NewService(store, parser.NewService(), "test", nil, nil)
+	server := NewServer(":0", t.TempDir(), service, log.New(io.Discard, "", 0), store, AuthConfig{
+		Username: "root", Password: "admin-secret",
+	}, CORSConfig{})
+	handler := server.httpServer.Handler
+	form := url.Values{"username": {"legacy-user"}, "password": {"legacy-secret"}}
+	request := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "Invalid username or password.") {
+		t.Fatalf("legacy login was not rejected: status=%d", recorder.Code)
+	}
+	if len(recorder.Result().Cookies()) != 0 {
+		t.Fatal("rejected legacy login issued cookies")
+	}
 	credentials, ok, err := store.GetUserByUsername(t.Context(), "legacy-user")
 	if err != nil || !ok {
-		t.Fatalf("load upgraded user: ok=%v err=%v", ok, err)
+		t.Fatalf("load legacy user: ok=%v err=%v", ok, err)
 	}
-	if passwordHashNeedsUpgrade(credentials.PasswordHash) {
-		t.Fatalf("legacy hash was not upgraded: %q", credentials.PasswordHash)
+	if credentials.PasswordHash != legacyPasswordHashFixture {
+		t.Fatal("rejected legacy login changed the stored hash")
+	}
+
+	adminCookies := loginForTest(t, handler, "root", "admin-secret")
+	resetRequest := httptest.NewRequest(http.MethodPut, "/api/admin/users/"+strconv.FormatInt(user.ID, 10),
+		strings.NewReader(`{"username":"legacy-user","password":"reset-secret","settings":{"acceptedRcptDomains":"legacy.test"}}`))
+	resetRequest.Header.Set("Content-Type", "application/json")
+	addCookies(resetRequest, adminCookies)
+	for _, cookie := range adminCookies {
+		if cookie.Name == csrfCookieName {
+			resetRequest.Header.Set("X-CSRF-Token", cookie.Value)
+		}
+	}
+	resetRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(resetRecorder, resetRequest)
+	if resetRecorder.Code != http.StatusOK {
+		t.Fatalf("admin reset failed: status=%d", resetRecorder.Code)
+	}
+	credentials, ok, err = store.GetUserByUsername(t.Context(), "legacy-user")
+	if err != nil || !ok {
+		t.Fatalf("load reset user: ok=%v err=%v", ok, err)
+	}
+	if !strings.HasPrefix(credentials.PasswordHash, passwordHashPrefix+"$") || !verifyPassword("reset-secret", credentials.PasswordHash) {
+		t.Fatal("reset did not store a valid PBKDF2 password")
+	}
+	if verifyPassword("legacy-secret", credentials.PasswordHash) {
+		t.Fatal("old password remained valid after reset")
+	}
+	if credentials.User.ID != user.ID || credentials.User.Settings.AcceptedRcptDomains != settings.AcceptedRcptDomains {
+		t.Fatal("password reset changed account identity or settings")
+	}
+	loginForTest(t, handler, "legacy-user", "reset-secret")
+	afterLogin, ok, err := store.GetUserByUsername(t.Context(), "legacy-user")
+	if err != nil || !ok || afterLogin.PasswordHash != credentials.PasswordHash {
+		t.Fatal("PBKDF2 login changed the stored hash")
 	}
 }
 

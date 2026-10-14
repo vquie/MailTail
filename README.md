@@ -377,7 +377,7 @@ make run
 
 To enable login protection, set both `MAILTAIL_ADMIN_USERNAME` and `MAILTAIL_ADMIN_PASSWORD`. If only one is set, MailTail exits on startup.
 MailTail then serves a login form and stores an authenticated session in a secure HTTP-only cookie, so you do not need to re-enter credentials on every API request.
-Local user passwords are stored with salted PBKDF2-HMAC-SHA256 hashes. Older MailTail password hashes are accepted once and upgraded after a successful login.
+Local user passwords are stored with salted PBKDF2-HMAC-SHA256 hashes. Legacy `mailtail-pwhash-v1` hashes are no longer accepted. An administrator must reset the password of each affected user through the admin UI before that user can sign in again. Existing `mailtail-pbkdf2-sha256-v2` passwords remain valid.
 This protects the web UI and REST API. SMTP remains unauthenticated in this MVP.
 When MailTail runs behind TLS termination, make sure your proxy forwards `X-Forwarded-Proto: https` or `Forwarded: proto=https` so the session cookie is marked `Secure`.
 Cross-origin browser access is off by default. If you explicitly need it, set `MAILTAIL_ALLOWED_ORIGINS` to a comma-separated allow-list such as `https://mail.example.com,https://ops.example.com`.
