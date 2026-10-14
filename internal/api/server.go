@@ -443,19 +443,75 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cleanPath := strings.TrimPrefix(filepath.Clean(r.URL.Path), string(filepath.Separator))
-	requestedPath := filepath.Join(s.staticDir, cleanPath)
-	if info, err := os.Stat(requestedPath); err == nil && !info.IsDir() {
-		http.ServeFile(w, r, requestedPath)
+	// Localize validates the URL path without hiding traversal components.
+	name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if name == "" {
+		name = "."
+	}
+	localPath, err := filepath.Localize(name)
+	if err != nil {
+		http.NotFound(w, r)
 		return
 	}
 
-	indexPath := filepath.Join(s.staticDir, "index.html")
-	if _, err := os.Stat(indexPath); err == nil {
-		http.ServeFile(w, r, indexPath)
+	root, err := os.OpenRoot(s.staticDir)
+	if err != nil {
+		webAssetsUnavailable(w)
+		return
+	}
+	defer root.Close()
+
+	// Open within the root and serve the same descriptor, so symlink changes
+	// cannot redirect a later file open outside the static directory.
+	file, err := root.Open(localPath)
+	if err == nil {
+		defer file.Close()
+		info, statErr := file.Stat()
+		if statErr != nil {
+			http.NotFound(w, r)
+			return
+		}
+		if info.Mode().IsRegular() {
+			serveAppContent(w, r, file, info)
+			return
+		}
+		if !info.IsDir() {
+			http.NotFound(w, r)
+			return
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		http.NotFound(w, r)
 		return
 	}
 
+	index, err := root.Open("index.html")
+	if err != nil {
+		webAssetsUnavailable(w)
+		return
+	}
+	defer index.Close()
+	info, err := index.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		webAssetsUnavailable(w)
+		return
+	}
+	serveAppContent(w, r, index, info)
+}
+
+func serveAppContent(w http.ResponseWriter, r *http.Request, file *os.File, info os.FileInfo) {
+	if strings.HasSuffix(r.URL.Path, "/index.html") {
+		location := "./"
+		if r.URL.RawQuery != "" {
+			location += "?" + r.URL.RawQuery
+		}
+		w.Header().Set("Location", location)
+		w.WriteHeader(http.StatusMovedPermanently)
+		return
+	}
+	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
+}
+
+func webAssetsUnavailable(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusServiceUnavailable)
 	_, _ = w.Write([]byte("MailTail web assets not found. Build the frontend in /web first."))
