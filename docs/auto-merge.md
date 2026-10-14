@@ -31,6 +31,8 @@ Create a branch ruleset for `main` with the following settings:
 
 Renovate may auto-merge patch, pin, and digest updates after three days and minor updates after seven days. All required checks still have to pass. Major updates are never auto-merged.
 
+Renovate runs `go mod tidy` after Go module updates so that dependency PRs include the resulting `go.mod` and `go.sum` cleanup before CI verifies module consistency.
+
 ## Local verification
 
 Run the same core checks before pushing:

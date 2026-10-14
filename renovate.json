@@ -17,6 +17,11 @@
   },
   "packageRules": [
     {
+      "description": "Tidy Go module files after dependency updates",
+      "matchManagers": ["gomod"],
+      "postUpdateOptions": ["gomodTidy"]
+    },
+    {
       "description": "Auto-merge low-risk patch, pin, and digest updates after CI",
       "matchUpdateTypes": ["patch", "pin", "digest"],
       "minimumReleaseAge": "3 days",
