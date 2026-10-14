@@ -7,6 +7,10 @@ The repository is prepared for auto-merge through two workflows:
 
 All third-party GitHub Actions are pinned to immutable commit SHAs. Renovate keeps those pins current.
 
+Independent checks continue after another check fails, while the job and merge gate still fail. Frontend auditing and the current dependency-free tests require only a successful Node.js setup; the frontend build requires a successful dependency installation. Container smoke tests require a successful image build and still run if the vulnerability scan fails. Cancellation stops these checks.
+
+Node.js setup runs without package-manager caching so cache initialization cannot fail the runtime setup. CodeQL analyzes frontend source without installing npm dependencies; Node.js is still provided for TypeScript extraction.
+
 ## Required GitHub settings
 
 Create a branch ruleset for `main` with the following settings:
