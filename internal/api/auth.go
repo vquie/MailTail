@@ -156,7 +156,7 @@ func (a *SessionAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setSessionCookies(w, r, sessionID, csrfToken, expiresAt)
+	setSessionCookies(w, sessionID, csrfToken, expiresAt)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -166,7 +166,7 @@ func (a *SessionAuth) handleLogout(w http.ResponseWriter, r *http.Request) {
 		_ = a.store.DeleteAuthSession(r.Context(), sessionID)
 	}
 
-	clearSessionCookies(w, r)
+	clearSessionCookies(w)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
@@ -212,7 +212,7 @@ func (a *SessionAuth) validCSRF(r *http.Request, record models.AuthSession) bool
 }
 
 func (a *SessionAuth) rejectUnauthorized(w http.ResponseWriter, r *http.Request) {
-	clearSessionCookies(w, r)
+	clearSessionCookies(w)
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
@@ -247,8 +247,7 @@ func (a *SessionAuth) clearLoginAttempts(r *http.Request) error {
 	return a.store.ClearLoginAttempts(r.Context(), key)
 }
 
-func setSessionCookies(w http.ResponseWriter, r *http.Request, sessionID, csrfToken string, expiresAt time.Time) {
-	secure := requestIsHTTPS(r)
+func setSessionCookies(w http.ResponseWriter, sessionID, csrfToken string, expiresAt time.Time) {
 	maxAge := int(time.Until(expiresAt).Seconds())
 
 	http.SetCookie(w, &http.Cookie{
@@ -257,7 +256,7 @@ func setSessionCookies(w http.ResponseWriter, r *http.Request, sessionID, csrfTo
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   secure,
+		Secure:   true,
 		Expires:  expiresAt,
 		MaxAge:   maxAge,
 	})
@@ -268,14 +267,13 @@ func setSessionCookies(w http.ResponseWriter, r *http.Request, sessionID, csrfTo
 		Path:     "/",
 		HttpOnly: false,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   secure,
+		Secure:   true,
 		Expires:  expiresAt,
 		MaxAge:   maxAge,
 	})
 }
 
-func clearSessionCookies(w http.ResponseWriter, r *http.Request) {
-	secure := requestIsHTTPS(r)
+func clearSessionCookies(w http.ResponseWriter) {
 	for _, name := range []string{sessionCookieName, csrfCookieName} {
 		http.SetCookie(w, &http.Cookie{
 			Name:     name,
@@ -283,30 +281,11 @@ func clearSessionCookies(w http.ResponseWriter, r *http.Request) {
 			Path:     "/",
 			HttpOnly: name == sessionCookieName,
 			SameSite: http.SameSiteLaxMode,
-			Secure:   secure,
+			Secure:   true,
 			MaxAge:   -1,
 			Expires:  time.Unix(0, 0),
 		})
 	}
-}
-
-func requestIsHTTPS(r *http.Request) bool {
-	if r.TLS != nil {
-		return true
-	}
-
-	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
-		return true
-	}
-
-	for _, part := range strings.Split(r.Header.Get("Forwarded"), ";") {
-		part = strings.TrimSpace(part)
-		if strings.HasPrefix(strings.ToLower(part), "proto=") && strings.EqualFold(strings.Trim(part[6:], `"`), "https") {
-			return true
-		}
-	}
-
-	return false
 }
 
 func randomToken(size int) (string, error) {

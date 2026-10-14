@@ -379,7 +379,7 @@ To enable login protection, set both `MAILTAIL_ADMIN_USERNAME` and `MAILTAIL_ADM
 MailTail then serves a login form and stores an authenticated session in a secure HTTP-only cookie, so you do not need to re-enter credentials on every API request.
 Local user passwords are stored with salted PBKDF2-HMAC-SHA256 hashes. Legacy `mailtail-pwhash-v1` hashes are no longer accepted. An administrator must reset the password of each affected user through the admin UI before that user can sign in again. Existing `mailtail-pbkdf2-sha256-v2` passwords remain valid.
 This protects the web UI and REST API. SMTP remains unauthenticated in this MVP.
-When MailTail runs behind TLS termination, make sure your proxy forwards `X-Forwarded-Proto: https` or `Forwarded: proto=https` so the session cookie is marked `Secure`.
+Session and CSRF cookies always carry the `Secure` attribute, including when they are cleared during logout. When login protection is enabled, use HTTPS at the browser-facing reverse proxy; plain HTTP access on a regular domain cannot maintain an authenticated browser session. The proxy may connect to MailTail over HTTP, and forwarded scheme headers are not required for cookie security.
 Cross-origin browser access is off by default. If you explicitly need it, set `MAILTAIL_ALLOWED_ORIGINS` to a comma-separated allow-list such as `https://mail.example.com,https://ops.example.com`.
 To restrict SMTP access, set `MAILTAIL_ALLOWED_REMOTE_IPS` to a comma-separated list such as `127.0.0.1,10.0.0.0/8,192.168.0.0/16`.
 Recipient and sender allow-lists accept either exact domains such as `example.test` or regular expressions such as `^.+@example\\.test$` or `(^|\\.)example\\.test$`.
