@@ -543,7 +543,7 @@ func loggingMiddleware(logger *log.Logger, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		logger.Printf("%s %s", r.Method, r.URL.Path)
+		logger.Printf("%+q %+q", r.Method, r.URL.Path)
 		next.ServeHTTP(w, r)
 	})
 }
