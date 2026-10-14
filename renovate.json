@@ -45,8 +45,7 @@
         "ghcr.io/oxsecurity/megalinter",
         "ghcr.io/oxsecurity/megalinter-ci_light"
       ],
-      "matchUpdateTypes": ["pin"],
-      "enabled": false
+      "pinDigests": false
     }
   ],
   "vulnerabilityAlerts": {
