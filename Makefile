@@ -16,7 +16,7 @@ GO_CACHE := $(CURDIR)/.cache/go-build
 GO_MOD_CACHE := $(CURDIR)/.cache/gomod
 GO_ENV := GOCACHE=$(GO_CACHE) GOMODCACHE=$(GO_MOD_CACHE)
 # renovate: datasource=docker depName=node versioning=docker
-NODE_BUILD_IMAGE ?= node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
+NODE_BUILD_IMAGE ?= node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85
 
 # Runtime
 HTTP_ADDR ?= :8080
