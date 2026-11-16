@@ -57,7 +57,9 @@
     "addLabels": ["security"]
   },
   "osvVulnerabilityAlerts": true,
-  "dependencyDashboardOSVVulnerabilitySummary": "all",
+  "dependencyDashboard": {
+    "osvVulnerabilitySummary": "all"
+  },
   "customManagers": [
     {
       "customType": "regex",
