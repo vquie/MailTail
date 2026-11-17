@@ -4,9 +4,10 @@
     "config:recommended",
     "config:best-practices",
     "customManagers:makefileVersions",
-    "schedule:weekdays",
+        "schedule:weekdays",
     ":noUnscheduledUpdates",
-    "mergeConfidence:all-badges"
+    "mergeConfidence:all-badges",
+    ":assignee(vquie)"
   ],
   "addLabels": ["{{updateType}}"],
   "semanticCommits": "enabled",
@@ -14,6 +15,13 @@
   "separateMinorPatch": true,
   "lockFileMaintenance": {
     "automerge": true
+  },
+  "vulnerabilityAlerts": {
+    "addLabels": ["security"]
+  },
+  "osvVulnerabilityAlerts": true,
+  "dependencyDashboard": {
+    "osvVulnerabilitySummary": "all"
   },
   "packageRules": [
     {
@@ -45,19 +53,15 @@
       "automerge": false
     },
     {
-      "description": "Do not digest-pin MegaLinter images referenced through the shared Makefile version variable",
-      "matchPackageNames": [
-        "ghcr.io/oxsecurity/megalinter",
-        "ghcr.io/oxsecurity/megalinter-ci_light"
-      ],
+      "description": "Keep the MegaLinter Makefile version on a floating major tag",
+      "matchManagers": ["custom.regex"],
+      "matchDatasources": ["docker"],
+      "matchFileNames": ["Makefile"],
+      "matchPackageNames": ["ghcr.io/oxsecurity/megalinter"],
+      "allowedVersions": "/^v[0-9]+$/",
       "pinDigests": false
     }
   ],
-  "vulnerabilityAlerts": {
-    "addLabels": ["security"]
-  },
-  "osvVulnerabilityAlerts": true,
-  "dependencyDashboardOSVVulnerabilitySummary": "all",
   "customManagers": [
     {
       "customType": "regex",
